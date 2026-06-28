@@ -131,6 +131,10 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 Make sure MongoDB is running locally, or point `MONGODB_URI` at your Atlas cluster.
 
+> **No MongoDB installed?** You can run the backend against a throwaway,
+> zero-setup in-memory MongoDB instead — see
+> [Zero-setup local database](#-zero-setup-local-database) below.
+
 ### 4. Run the app (dev)
 
 From the repository root, start **both** the API and the frontend together:
@@ -149,6 +153,19 @@ You can also run them individually:
 npm run dev:server   # Express API only
 npm run dev:client   # Vite frontend only
 ```
+
+### 🧪 Zero-setup local database
+
+If you don't have MongoDB installed, run the backend against an **in-memory
+MongoDB** that is downloaded and started automatically (great for local dev and
+quick verification — data is ephemeral and reset on restart):
+
+```bash
+npm run dev:memdb --workspace server
+```
+
+For a real/persistent database, use the standard `npm run dev:server` (or
+`npm start`) with a valid `MONGODB_URI`.
 
 ---
 
