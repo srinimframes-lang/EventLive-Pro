@@ -4,10 +4,10 @@ A full‑stack **event management & live‑streaming platform** built on the **M
 
 This repository is a **monorepo** containing two workspaces:
 
-| Workspace | Path        | Stack                                              |
-| --------- | ----------- | -------------------------------------------------- |
-| Frontend  | `client/`   | React 18, Vite, React Router, Tailwind CSS, Axios  |
-| Backend   | `server/`   | Node.js, Express, MongoDB, Mongoose, JWT, bcryptjs |
+| Workspace | Path        | Stack                                                            |
+| --------- | ----------- | ---------------------------------------------------------------- |
+| Frontend  | `client/`   | React 18, Vite, React Router, Tailwind CSS, Axios, socket.io‑client, hls.js |
+| Backend   | `server/`   | Node.js, Express, MongoDB, Mongoose, JWT, bcryptjs, Socket.IO    |
 
 ---
 
@@ -194,6 +194,38 @@ Base URL: `http://localhost:5000/api`
 
 `GET /events` query params: `page`, `limit`, `status`, `category`, `search`, `organizer`, `sort`, and `mine=true` (with a token, scopes to your own events).
 
+**Live streaming** (Phase 3)
+
+| Method | Endpoint                              | Auth          | Description                                  |
+| ------ | ------------------------------------- | ------------- | -------------------------------------------- |
+| GET    | `/events/:id/stream`                  | Public        | Player config (provider, sources, live flag) |
+| PATCH  | `/events/:id/stream`                  | Owner / admin | Update stream source/provider                |
+| GET    | `/events/:id/stream/key`              | Owner / admin | Reveal RTMP ingest URL + stream key          |
+| POST   | `/events/:id/stream/key/regenerate`   | Owner / admin | Rotate the RTMP stream key                   |
+| POST   | `/events/:id/stream/live`             | Owner / admin | Toggle live (`{ live: boolean }`)            |
+| GET    | `/events/:id/chat`                    | Public        | Recent chat history                          |
+| GET    | `/events/:id/questions`               | Public        | Q&A list (top-voted first)                   |
+
+**Real-time gateway (Socket.IO)** — connect with an optional `auth.token`:
+
+| Direction | Event              | Payload                              |
+| --------- | ------------------ | ------------------------------------ |
+| ⇧ emit    | `room:join`        | `{ eventId, guestName? }` → ack      |
+| ⇧ emit    | `chat:send`        | `{ text }`                           |
+| ⇧ emit    | `qa:ask`           | `{ text }`                           |
+| ⇧ emit    | `qa:upvote`        | `{ questionId }`                     |
+| ⇧ emit    | `qa:answer`        | `{ questionId, answer }` (owner/admin) |
+| ⇩ on      | `presence:viewers` | `{ eventId, count }`                 |
+| ⇩ on      | `chat:message`     | chat message                         |
+| ⇩ on      | `qa:question`      | new question                         |
+| ⇩ on      | `qa:updated`       | updated question (upvote/answer)     |
+| ⇩ on      | `stream:status`    | `{ isLive, status, ... }`            |
+
+Live player supports **YouTube embeds**, **HLS** (via `hls.js`), and **WebRTC** (WHEP).
+Broadcasters use the **streaming studio** (`/events/:id/studio`) to configure the
+source, manage the RTMP stream key, go live, and moderate chat & Q&A. Viewers watch
+at `/events/:slug/live`.
+
 The token is returned in the JSON body **and** set as an `httpOnly` cookie.
 For protected requests send it via the `Authorization: Bearer <token>` header
 (the frontend does this automatically).
@@ -254,7 +286,7 @@ Run from the repository root:
 
 - **Phase 1 — Foundation** ✅ Monorepo, auth, tooling
 - **Phase 2 — Events** ✅ Event CRUD API + UI (list/detail/create/edit), filtering, search, ownership auth
-- **Phase 3 — Live streaming** — WebRTC/HLS streaming, real‑time chat & Q&A
+- **Phase 3 — Live streaming** ✅ YouTube/HLS/WebRTC player, RTMP key mgmt, real‑time chat, Q&A, live viewer counter, studio dashboard
 - **Phase 4 — Analytics & payments** — dashboards, Stripe integration
 
 ---

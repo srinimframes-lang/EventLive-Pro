@@ -92,6 +92,23 @@ const eventSchema = new Schema(
       trim: true,
       default: '',
     },
+
+    // ── Live streaming (Phase 3) ──────────────────────────────
+    streamProvider: {
+      type: String,
+      enum: ['none', 'youtube', 'hls', 'webrtc', 'rtmp'],
+      default: 'none',
+    },
+    youtubeVideoId: { type: String, trim: true, default: '' },
+    hlsUrl: { type: String, trim: true, default: '' },
+    webrtcUrl: { type: String, trim: true, default: '' },
+    // Secret RTMP ingest key — never returned unless explicitly selected.
+    rtmpStreamKey: { type: String, default: '', select: false },
+    isLive: { type: Boolean, default: false, index: true },
+    liveStartedAt: { type: Date },
+    liveEndedAt: { type: Date },
+    peakViewers: { type: Number, default: 0, min: 0 },
+
     coverImage: {
       type: String,
       trim: true,

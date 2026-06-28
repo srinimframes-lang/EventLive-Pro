@@ -74,21 +74,32 @@ export default function EventDetail() {
           <h1 className="mt-3 text-3xl font-bold text-slate-900">{event.title}</h1>
         </div>
 
-        {canManage && (
-          <div className="flex gap-2">
-            <Link to={`/events/${event.id}/edit`} className="btn-ghost">
-              Edit
-            </Link>
-            <button
-              type="button"
-              className="btn bg-red-600 text-white hover:bg-red-700"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting ? 'Deleting…' : 'Delete'}
-            </button>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/events/${event.slug || event.id}/live`}
+            className={event.isLive ? 'btn bg-red-600 text-white hover:bg-red-700' : 'btn-primary'}
+          >
+            {event.isLive ? '● Watch live' : 'Watch'}
+          </Link>
+          {canManage && (
+            <>
+              <Link to={`/events/${event.id}/studio`} className="btn-ghost">
+                Studio
+              </Link>
+              <Link to={`/events/${event.id}/edit`} className="btn-ghost">
+                Edit
+              </Link>
+              <button
+                type="button"
+                className="btn bg-red-600 text-white hover:bg-red-700"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="card mt-6 grid gap-4 sm:grid-cols-2">

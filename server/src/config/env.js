@@ -28,5 +28,8 @@ export const env = {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     cookieExpiresDays: Number(process.env.JWT_COOKIE_EXPIRES_DAYS) || 7,
   },
+  // Base RTMP ingest URL that broadcasters point OBS at. The per-event stream
+  // key is appended to this (e.g. rtmp://localhost:1935/live/<streamKey>).
+  rtmpIngestUrl: process.env.RTMP_INGEST_URL || 'rtmp://localhost:1935/live',
   isProd: process.env.NODE_ENV === 'production',
 };

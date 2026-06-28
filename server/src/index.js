@@ -1,13 +1,23 @@
+import http from 'http';
 import app from './app.js';
 import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
+import { initSocket } from './realtime/socket.js';
 
 async function start() {
   await connectDB();
 
-  const server = app.listen(env.port, () => {
+  const server = http.createServer(app);
+
+  // Attach Socket.IO and expose it to controllers via app.get('io').
+  const io = initSocket(server);
+  app.set('io', io);
+
+  server.listen(env.port, () => {
     // eslint-disable-next-line no-console
     console.log(`[server] EventLive Pro API running on http://localhost:${env.port} (${env.nodeEnv})`);
+    // eslint-disable-next-line no-console
+    console.log('[server] Socket.IO real-time gateway ready');
   });
 
   // Graceful shutdown
