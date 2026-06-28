@@ -177,7 +177,7 @@ Base URL: `http://localhost:5000/api`
 
 | Method | Endpoint         | Auth    | Description                         |
 | ------ | ---------------- | ------- | ----------------------------------- |
-| POST   | `/auth/register` | Public  | Create a new account, returns JWT   |
+| POST   | `auth.service.js` | Public  | Create a new account, returns JWT   |
 | POST   | `/auth/login`    | Public  | Authenticate, returns JWT           |
 | POST   | `/auth/logout`   | Public  | Clears the auth cookie              |
 | GET    | `/auth/me`       | Private | Returns the current user            |
@@ -234,7 +234,7 @@ For protected requests send it via the `Authorization: Bearer <token>` header
 
 ```bash
 # Register
-curl -X POST http://localhost:5000/api/auth/register \
+curl -X POST http://localhost:5000/apiauth.service.js \
   -H "Content-Type: application/json" \
   -d '{"name":"Ada Lovelace","email":"ada@example.com","password":"supersecret"}'
 

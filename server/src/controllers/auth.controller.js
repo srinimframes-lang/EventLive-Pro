@@ -15,7 +15,7 @@ function sendAuthResponse(res, statusCode, user) {
 }
 
 /**
- * @route   POST /api/auth/register
+ * @route   POST /apiauth.service.js
  * @desc    Register a new user
  * @access  Public
  */

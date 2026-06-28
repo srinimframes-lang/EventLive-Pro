@@ -53,7 +53,7 @@
 | Vite `/api` proxy → Express                    | ✅ Forwards correctly (401 JSON returned) |
 | Backend dev server (`:5000`)                   | ✅ Connects to DB, listens |
 | `GET /health`                                  | ✅ `{ status: "ok" }` |
-| `POST /api/auth/register`                       | ✅ Creates user, issues JWT, role `user` |
+| `POST /apiauth.service.js`                       | ✅ Creates user, issues JWT, role `user` |
 | `GET /api/auth/me` (Bearer token)              | ✅ Returns user, password **not** leaked |
 
 > **Local database note:** No system MongoDB is required for development. The
@@ -84,7 +84,7 @@ npm run dev:memdb --workspace server
 
 | Method | Endpoint           | Auth    | Description                |
 | ------ | ------------------ | ------- | -------------------------- |
-| POST   | `/api/auth/register` | Public  | Register, returns JWT      |
+| POST   | `/apiauth.service.js` | Public  | Register, returns JWT      |
 | POST   | `/api/auth/login`    | Public  | Login, returns JWT         |
 | POST   | `/api/auth/logout`   | Public  | Clears auth cookie         |
 | GET    | `/api/auth/me`       | Private | Current authenticated user |

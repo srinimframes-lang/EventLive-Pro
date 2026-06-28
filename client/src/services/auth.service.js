@@ -2,7 +2,7 @@ import api from './api.js';
 
 export const authService = {
   async register(payload) {
-    const { data } = await api.post('/auth/register', payload);
+    const { data } = await api.post('auth.service.js', payload);
     return data;
   },
   async login(payload) {
