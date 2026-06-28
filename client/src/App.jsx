@@ -5,6 +5,9 @@ import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Events from './pages/Events.jsx';
+import EventDetail from './pages/EventDetail.jsx';
+import EventForm from './pages/EventForm.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -16,6 +19,24 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/events" element={<Events />} />
+          <Route
+            path="/events/new"
+            element={
+              <ProtectedRoute>
+                <EventForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/events/:id/edit"
+            element={
+              <ProtectedRoute>
+                <EventForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/events/:idOrSlug" element={<EventDetail />} />
           <Route
             path="/dashboard"
             element={

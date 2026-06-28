@@ -38,6 +38,32 @@ export async function protect(req, res, next) {
 }
 
 /**
+ * Like `protect`, but never blocks the request. If a valid token is present the
+ * user is attached to `req.user`; otherwise the request continues anonymously.
+ * Useful for public endpoints that personalise results when logged in.
+ */
+export async function optionalAuth(req, res, next) {
+  try {
+    let token;
+    const header = req.headers.authorization;
+    if (header && header.startsWith('Bearer ')) {
+      token = header.split(' ')[1];
+    } else if (req.cookies?.token) {
+      token = req.cookies.token;
+    }
+
+    if (token) {
+      const decoded = jwt.verify(token, env.jwt.secret);
+      const user = await User.findById(decoded.id);
+      if (user) req.user = user;
+    }
+  } catch {
+    // Ignore invalid/expired tokens for optional auth.
+  }
+  return next();
+}
+
+/**
  * Restricts a route to one or more roles. Use after `protect`.
  * @param {...string} roles
  */

@@ -173,12 +173,26 @@ For a real/persistent database, use the standard `npm run dev:server` (or
 
 Base URL: `http://localhost:5000/api`
 
+**Auth**
+
 | Method | Endpoint         | Auth    | Description                         |
 | ------ | ---------------- | ------- | ----------------------------------- |
 | POST   | `/auth/register` | Public  | Create a new account, returns JWT   |
 | POST   | `/auth/login`    | Public  | Authenticate, returns JWT           |
 | POST   | `/auth/logout`   | Public  | Clears the auth cookie              |
 | GET    | `/auth/me`       | Private | Returns the current user            |
+
+**Events** (Phase 2)
+
+| Method | Endpoint            | Auth          | Description                                   |
+| ------ | ------------------- | ------------- | --------------------------------------------- |
+| GET    | `/events`           | Public        | List events (pagination, filter, search)      |
+| GET    | `/events/:idOrSlug` | Public        | Get a single event by id or slug              |
+| POST   | `/events`           | Private        | Create an event (caller becomes organizer)    |
+| PATCH  | `/events/:id`       | Owner / admin  | Update an event                               |
+| DELETE | `/events/:id`       | Owner / admin  | Delete an event                               |
+
+`GET /events` query params: `page`, `limit`, `status`, `category`, `search`, `organizer`, `sort`, and `mine=true` (with a token, scopes to your own events).
 
 The token is returned in the JSON body **and** set as an `httpOnly` cookie.
 For protected requests send it via the `Authorization: Bearer <token>` header
@@ -238,8 +252,8 @@ Run from the repository root:
 
 ## 🗺️ Roadmap
 
-- **Phase 1 — Foundation** ✅ Monorepo, auth, tooling (this release)
-- **Phase 2 — Events** — CRUD for events, ticketing, organizer roles
+- **Phase 1 — Foundation** ✅ Monorepo, auth, tooling
+- **Phase 2 — Events** ✅ Event CRUD API + UI (list/detail/create/edit), filtering, search, ownership auth
 - **Phase 3 — Live streaming** — WebRTC/HLS streaming, real‑time chat & Q&A
 - **Phase 4 — Analytics & payments** — dashboards, Stripe integration
 

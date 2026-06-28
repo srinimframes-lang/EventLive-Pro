@@ -19,6 +19,9 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-2">
+          <Link to="/events" className="btn-ghost">
+            Events
+          </Link>
           {isAuthenticated ? (
             <>
               <Link to="/dashboard" className="btn-ghost">
