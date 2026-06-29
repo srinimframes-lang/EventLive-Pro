@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { streamService, STREAM_PROVIDERS } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
+import { extractYouTubeId } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
+import PhotoGallery from '../components/PhotoGallery.jsx';
 
 export default function Studio() {
   const { id } = useParams();
@@ -21,6 +23,10 @@ export default function Studio() {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ streamProvider: 'none', youtubeVideoId: '', hlsUrl: '', webrtcUrl: '' });
 
+  const [gallery, setGallery] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const galleryInputRef = useRef(null);
+
   useEffect(() => {
     let active = true;
     eventService
@@ -28,6 +34,7 @@ export default function Studio() {
       .then(async (ev) => {
         if (!active) return;
         setEvent(ev);
+        setGallery(ev.gallery || []);
         const cfg = await streamService.getConfig(ev.id);
         if (!active) return;
         setConfig(cfg);
@@ -53,6 +60,12 @@ export default function Studio() {
     return user.role === 'admin' || organizerId === user.id;
   }, [event, user]);
 
+  const coupleTitle = useMemo(() => {
+    if (!event) return '';
+    if (event.brideName && event.groomName) return `${event.groomName} & ${event.brideName}`;
+    return event.brideName || event.groomName || '';
+  }, [event]);
+
   const isLive = room.liveStatus ? room.liveStatus.isLive : config?.isLive;
 
   const flash = (msg) => {
@@ -67,8 +80,17 @@ export default function Studio() {
     setBusy(true);
     setError('');
     try {
-      const updated = await streamService.updateConfig(eventId, form);
+      const payload = {
+        ...form,
+        // Accept a full YouTube URL in the video-id field and normalise it.
+        youtubeVideoId:
+          form.streamProvider === 'youtube'
+            ? extractYouTubeId(form.youtubeVideoId)
+            : form.youtubeVideoId,
+      };
+      const updated = await streamService.updateConfig(eventId, payload);
       setConfig(updated);
+      setForm((f) => ({ ...f, youtubeVideoId: updated.youtubeVideoId || '' }));
       flash('Stream settings saved');
     } catch (err) {
       setError(err.message);
@@ -115,6 +137,33 @@ export default function Studio() {
     navigator.clipboard?.writeText(text).then(() => flash('Copied to clipboard'));
   };
 
+  const handleGalleryUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setError('');
+    try {
+      const updated = await eventService.uploadGallery(eventId, files);
+      setGallery(updated);
+      flash(`${files.length} photo(s) uploaded`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+    }
+  };
+
+  const handleDeletePhoto = async (photoId) => {
+    if (!window.confirm('Remove this photo?')) return;
+    try {
+      const updated = await eventService.deleteGalleryPhoto(eventId, photoId);
+      setGallery(updated);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   if (error && !event)
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
@@ -138,16 +187,20 @@ export default function Studio() {
     );
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <Link to={`/events/${event.slug || event.id}`} className="text-sm text-brand-600 hover:underline">
             ← {event.title}
           </Link>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">Streaming studio</h1>
+          {coupleTitle && <p className="text-sm font-medium text-brand-700">{coupleTitle}</p>}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <ViewerCount count={room.viewers} isLive={isLive} />
+          <Link to={`/events/${event.slug || event.id}/live`} className="btn-ghost">
+            Open watch page
+          </Link>
           <button
             type="button"
             className={`btn ${isLive ? 'bg-slate-700 text-white hover:bg-slate-800' : 'bg-red-600 text-white hover:bg-red-700'}`}
@@ -195,9 +248,17 @@ export default function Studio() {
             </div>
 
             {form.streamProvider === 'youtube' && (
-              <Field label="YouTube video ID" htmlFor="youtubeVideoId" hint="e.g. dQw4w9WgXcQ">
+              <Field label="YouTube Live URL or video ID" htmlFor="youtubeVideoId" hint="Paste the full YouTube Live link — it will be embedded on the watch page.">
                 <input id="youtubeVideoId" name="youtubeVideoId" className="input"
+                  placeholder="https://youtube.com/live/…  or  dQw4w9WgXcQ"
                   value={form.youtubeVideoId} onChange={handleChange} />
+                {form.youtubeVideoId && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {extractYouTubeId(form.youtubeVideoId)
+                      ? `Detected ID: ${extractYouTubeId(form.youtubeVideoId)}`
+                      : 'No YouTube ID detected yet.'}
+                  </p>
+                )}
               </Field>
             )}
 
@@ -219,6 +280,30 @@ export default function Studio() {
               {busy ? 'Saving…' : 'Save settings'}
             </button>
           </form>
+
+          {/* Photo gallery management */}
+          <div className="card space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-bold text-slate-900">Photo gallery</h2>
+              <span className="text-sm text-slate-500">{gallery.length} photos</span>
+            </div>
+            <p className="text-sm text-slate-600">
+              Upload photos to share with guests on the watch page.
+            </p>
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleGalleryUpload}
+              disabled={uploading}
+              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+            />
+            {uploading && <p className="text-sm text-slate-500">Uploading…</p>}
+            <div className="pt-2">
+              <PhotoGallery photos={gallery} onDelete={handleDeletePhoto} />
+            </div>
+          </div>
 
           {/* RTMP key management */}
           <div className="card space-y-3">
