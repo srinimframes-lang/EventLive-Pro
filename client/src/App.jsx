@@ -15,7 +15,6 @@ import BookingNew from './pages/BookingNew.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Admin from './pages/Admin.jsx';
 import Reseller from './pages/Reseller.jsx';
-import PaymentReturn from './pages/PaymentReturn.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
 import EventForm from './pages/EventForm.jsx';
@@ -108,14 +107,6 @@ export default function App() {
                 <ResellerRoute>
                   <Reseller />
                 </ResellerRoute>
-              }
-            />
-            <Route
-              path="/payment/return"
-              element={
-                <ProtectedRoute>
-                  <PaymentReturn />
-                </ProtectedRoute>
               }
             />
 

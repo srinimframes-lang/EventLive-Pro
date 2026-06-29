@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { bookingService } from '../../services/booking.service.js';
-import { formatCurrency, formatDateTime, resolveMediaUrl } from '../../utils/format.js';
+import { adminService } from '../../services/admin.service.js';
+import { formatCurrency, formatDateTime } from '../../utils/format.js';
 
 const FILTERS = [
   { id: 'pending', label: 'Pending' },
@@ -11,16 +11,16 @@ const FILTERS = [
 
 export default function AdminPayments() {
   const [filter, setFilter] = useState('pending');
-  const [bookings, setBookings] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
-    bookingService
-      .listAll(filter)
-      .then(setBookings)
+    adminService
+      .listPayments(filter)
+      .then(setPayments)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [filter]);
@@ -29,11 +29,12 @@ export default function AdminPayments() {
     load();
   }, [load]);
 
-  const approve = async (id) => {
-    setBusyId(id);
+  const approve = async (p) => {
+    if (!window.confirm(`Approve and add ${p.credits} credit(s) to ${p.user?.email}?`)) return;
+    setBusyId(p.id);
     setError('');
     try {
-      await bookingService.approve(id);
+      await adminService.approvePayment(p.id);
       load();
     } catch (e) {
       setError(e.message);
@@ -42,13 +43,16 @@ export default function AdminPayments() {
     }
   };
 
-  const reject = async (id) => {
-    const note = window.prompt('Reason for rejection (shown to customer):', 'Payment could not be verified.');
+  const reject = async (p) => {
+    const note = window.prompt(
+      'Reason for rejection (shown to customer):',
+      'Payment could not be verified.'
+    );
     if (note === null) return;
-    setBusyId(id);
+    setBusyId(p.id);
     setError('');
     try {
-      await bookingService.reject(id, note);
+      await adminService.rejectPayment(p.id, note);
       load();
     } catch (e) {
       setError(e.message);
@@ -78,89 +82,63 @@ export default function AdminPayments() {
 
       {loading ? (
         <p className="text-slate-500">Loading…</p>
-      ) : bookings.length === 0 ? (
-        <p className="text-slate-600">No bookings in this view.</p>
+      ) : payments.length === 0 ? (
+        <p className="text-slate-600">No payment requests in this view.</p>
       ) : (
         <div className="space-y-4">
-          {bookings.map((b) => {
-            const couple =
-              b.brideName && b.groomName ? `${b.brideName} & ${b.groomName}` : b.eventTitle || '—';
-            const shot = resolveMediaUrl(b.paymentScreenshot);
-            return (
-              <div key={b.id} className="card">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">{couple}</p>
-                    <p className="text-sm text-slate-500">
-                      {b.customer?.name} · {b.customer?.email}
-                      {b.customer?.phone ? ` · ${b.customer.phone}` : ''}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {b.packageName} · {formatCurrency(b.amount)}
-                      {b.eventDate && <> · {formatDateTime(b.eventDate)}</>}
-                    </p>
-                    {b.venue && <p className="text-sm text-slate-500">Venue: {b.venue}</p>}
-                    <p className="mt-1 text-xs text-slate-400">
-                      Paid via {b.paymentMethod || 'n/a'}
-                      {b.paymentReference ? ` · Ref: ${b.paymentReference}` : ''} · Submitted{' '}
-                      {formatDateTime(b.createdAt)}
-                    </p>
-                  </div>
-                  {shot && (
-                    <a href={shot} target="_blank" rel="noreferrer" className="shrink-0">
-                      <img
-                        src={shot}
-                        alt="Payment proof"
-                        className="h-24 w-24 rounded-lg border border-slate-200 object-cover"
-                      />
-                    </a>
-                  )}
+          {payments.map((p) => (
+            <div key={p.id} className="card">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900">
+                    {p.credits} credit{p.credits > 1 ? 's' : ''} · {formatCurrency(p.amount)}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {p.user?.name} · {p.user?.email}
+                    {p.user?.phone ? ` · ${p.user.phone}` : ''}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Submitted {formatDateTime(p.createdAt)}
+                    {p.reference ? ` · Ref: ${p.reference}` : ''} · Balance now:{' '}
+                    {p.user?.creditBalance ?? 0}
+                  </p>
                 </div>
-
-                {b.status === 'pending' ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
+                {p.status === 'pending' ? (
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       className="btn-primary"
-                      disabled={busyId === b.id}
-                      onClick={() => approve(b.id)}
+                      disabled={busyId === p.id}
+                      onClick={() => approve(p)}
                     >
-                      {busyId === b.id ? 'Working…' : 'Approve & create event'}
+                      {busyId === p.id ? 'Working…' : 'Approve & add credits'}
                     </button>
                     <button
                       type="button"
                       className="btn-outline"
-                      disabled={busyId === b.id}
-                      onClick={() => reject(b.id)}
+                      disabled={busyId === p.id}
+                      onClick={() => reject(p)}
                     >
                       Reject
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="flex flex-col items-end gap-1">
                     <span
                       className={`badge ${
-                        b.status === 'approved'
+                        p.status === 'approved'
                           ? 'bg-green-100 text-green-700'
                           : 'bg-red-100 text-red-700'
                       }`}
                     >
-                      {b.status}
+                      {p.status}
                     </span>
-                    {b.event && (
-                      <a
-                        href={`/events/${b.event.slug || b.event.id}/live`}
-                        className="text-sm text-brand-600 hover:underline"
-                      >
-                        View event
-                      </a>
-                    )}
-                    {b.adminNote && <span className="text-sm text-slate-500">— {b.adminNote}</span>}
+                    {p.reviewNote && <span className="text-xs text-slate-500">— {p.reviewNote}</span>}
                   </div>
                 )}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

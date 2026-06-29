@@ -4,6 +4,7 @@ import { Booking } from '../models/Booking.js';
 import { Package } from '../models/Package.js';
 import { CreditOrder } from '../models/CreditOrder.js';
 import { CreditTransaction } from '../models/CreditTransaction.js';
+import { Payment, PAYMENT_STATUSES } from '../models/Payment.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeCredits, changeBalance } from '../utils/credits.js';
 
@@ -119,6 +120,82 @@ export const adjustCustomerCredits = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: updated });
 });
 
+/* ───────────────────────── Credit payment requests ───────────────────────── */
+
+/**
+ * @route GET /api/admin/payments?status=pending
+ * @desc  List manual UPI credit-purchase requests
+ * @access Private/Admin
+ */
+export const listPayments = asyncHandler(async (req, res) => {
+  const filter = {};
+  if (req.query.status && PAYMENT_STATUSES.includes(req.query.status)) {
+    filter.status = req.query.status;
+  }
+  const payments = await Payment.find(filter)
+    .populate('user', 'name email phone creditBalance')
+    .sort({ createdAt: -1 })
+    .limit(200);
+  res.status(200).json({ success: true, data: payments });
+});
+
+/**
+ * @route POST /api/admin/payments/:id/approve
+ * @desc  Approve a payment request and add the credits to the customer
+ * @access Private/Admin
+ */
+export const approvePayment = asyncHandler(async (req, res) => {
+  // Atomically flip pending -> approved so credits can only ever be added once.
+  const payment = await Payment.findOneAndUpdate(
+    { _id: req.params.id, status: 'pending' },
+    {
+      status: 'approved',
+      reviewedBy: req.user._id,
+      reviewedAt: new Date(),
+      reviewNote: req.body.adminNote || '',
+    },
+    { new: true }
+  );
+  if (!payment) {
+    res.status(404);
+    throw new Error('Pending payment request not found (it may already be reviewed)');
+  }
+
+  await changeBalance({
+    userId: payment.user,
+    amount: payment.credits,
+    reason: 'purchase',
+    note: `UPI payment approved (${payment.credits} credits)`,
+    createdBy: req.user._id,
+  });
+
+  const populated = await payment.populate('user', 'name email creditBalance');
+  res.status(200).json({ success: true, data: populated });
+});
+
+/**
+ * @route POST /api/admin/payments/:id/reject
+ * @access Private/Admin
+ */
+export const rejectPayment = asyncHandler(async (req, res) => {
+  const payment = await Payment.findOneAndUpdate(
+    { _id: req.params.id, status: 'pending' },
+    {
+      status: 'rejected',
+      reviewedBy: req.user._id,
+      reviewedAt: new Date(),
+      reviewNote: req.body.adminNote || 'Payment could not be verified.',
+    },
+    { new: true }
+  );
+  if (!payment) {
+    res.status(404);
+    throw new Error('Pending payment request not found (it may already be reviewed)');
+  }
+  const populated = await payment.populate('user', 'name email creditBalance');
+  res.status(200).json({ success: true, data: populated });
+});
+
 /**
  * @route DELETE /api/admin/customers/:id
  * @access Private/Admin
@@ -151,8 +228,10 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
     pendingBookings,
     approvedBookings,
     pendingCreditOrders,
+    pendingPayments,
     revenueAgg,
     creditRevenueAgg,
+    paymentRevenueAgg,
     creditsAgg,
   ] = await Promise.all([
     User.countDocuments({ role: { $in: ['customer', 'user', 'organizer'] } }),
@@ -166,11 +245,16 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
     Booking.countDocuments({ status: 'pending' }),
     Booking.countDocuments({ status: 'approved' }),
     CreditOrder.countDocuments({ status: 'pending' }),
+    Payment.countDocuments({ status: 'pending' }),
     Booking.aggregate([
       { $match: { status: 'approved' } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     CreditOrder.aggregate([
+      { $match: { status: 'approved' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    Payment.aggregate([
       { $match: { status: 'approved' } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
@@ -187,7 +271,9 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
   ]);
 
   const bookingRevenue = revenueAgg[0]?.total || 0;
-  const creditRevenue = creditRevenueAgg[0]?.total || 0;
+  const creditOrderRevenue = creditRevenueAgg[0]?.total || 0;
+  const paymentRevenue = paymentRevenueAgg[0]?.total || 0;
+  const creditRevenue = creditOrderRevenue + paymentRevenue;
 
   res.status(200).json({
     success: true,
@@ -203,6 +289,7 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
       pendingBookings,
       approvedBookings,
       pendingCreditOrders,
+      pendingPayments,
       bookingRevenue,
       creditRevenue,
       revenue: bookingRevenue + creditRevenue,

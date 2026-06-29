@@ -5,6 +5,9 @@ import {
   updateCustomer,
   deleteCustomer,
   adjustCustomerCredits,
+  listPayments,
+  approvePayment,
+  rejectPayment,
   getAnalytics,
   createSubAdmin,
   listSubAdmins,
@@ -27,6 +30,11 @@ router.get('/analytics', getAnalytics);
 router.route('/customers').get(listCustomers).post(createCustomer);
 router.route('/customers/:id').patch(updateCustomer).delete(deleteCustomer);
 router.post('/customers/:id/credits', adjustCustomerCredits);
+
+// Credit payment requests (manual UPI)
+router.get('/payments', listPayments);
+router.post('/payments/:id/approve', approvePayment);
+router.post('/payments/:id/reject', rejectPayment);
 
 // Resellers (sub admins)
 router.route('/subadmins').get(listSubAdmins).post(createSubAdmin);

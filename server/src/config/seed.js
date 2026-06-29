@@ -2,6 +2,7 @@ import { env } from './env.js';
 import { User } from '../models/User.js';
 import { Settings } from '../models/Settings.js';
 import { Package } from '../models/Package.js';
+import { Payment } from '../models/Payment.js';
 
 /* eslint-disable no-console */
 
@@ -15,6 +16,30 @@ export async function runSeed() {
   await seedSuperAdmin();
   await Settings.getSingleton();
   await seedDefaultPackages();
+  await cleanupLegacyPayments();
+}
+
+/**
+ * The original Payment model used a gateway flow with a unique
+ * `merchantTransactionId`. The current manual-UPI model drops that field, so
+ * the stale unique index (and the throwaway gateway-era docs) must be removed —
+ * otherwise multiple new requests would collide on a null `merchantTransactionId`.
+ */
+async function cleanupLegacyPayments() {
+  try {
+    await Payment.collection.dropIndex('merchantTransactionId_1');
+    console.log('[seed] Dropped legacy Payment index merchantTransactionId_1.');
+  } catch {
+    // Index doesn't exist (fresh DB or already cleaned) — nothing to do.
+  }
+  try {
+    const { deletedCount } = await Payment.deleteMany({
+      merchantTransactionId: { $exists: true },
+    });
+    if (deletedCount) console.log(`[seed] Removed ${deletedCount} legacy gateway payment(s).`);
+  } catch {
+    // Best-effort cleanup.
+  }
 }
 
 async function seedSuperAdmin() {

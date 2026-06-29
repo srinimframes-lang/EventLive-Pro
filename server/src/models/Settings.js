@@ -34,6 +34,7 @@ const settingsSchema = new Schema(
       phonepeNumber: { type: String, default: '', trim: true },
       paytmNumber: { type: String, default: '', trim: true },
       upiId: { type: String, default: '', trim: true },
+      upiName: { type: String, default: '', trim: true }, // account/holder name shown under the QR
       upiQr: { type: String, default: '' }, // uploaded QR image URL
       bank: {
         accountName: { type: String, default: '', trim: true },

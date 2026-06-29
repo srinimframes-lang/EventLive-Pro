@@ -1,21 +1,17 @@
 import api from './api.js';
 
 export const paymentService = {
-  /** Product catalogue, pricing, link costs and (if logged in) balance. */
+  /** Product catalogue, pricing, UPI details and (if logged in) balance. */
   async products() {
     const { data } = await api.get('/api/payments/products');
     return data.data;
   },
-  /** Start a credit purchase; returns the gateway redirect URL. */
-  async create(productId) {
-    const { data } = await api.post('/api/payments/create', { productId });
+  /** Submit a manual UPI payment request (pending admin approval). */
+  async request(productId, reference) {
+    const { data } = await api.post('/api/payments/request', { productId, reference });
     return data.data;
   },
-  /** Check (and finalize) a payment after returning from the gateway. */
-  async status(mtid) {
-    const { data } = await api.get(`/api/payments/status/${mtid}`);
-    return data.data;
-  },
+  /** The customer's own payment requests with their status. */
   async mine() {
     const { data } = await api.get('/api/payments/mine');
     return data.data;

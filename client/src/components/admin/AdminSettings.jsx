@@ -159,6 +159,10 @@ export default function AdminSettings() {
             <label className="label">UPI ID</label>
             <input name="upiId" className="input" value={p.upiId || ''} onChange={pay} />
           </div>
+          <div>
+            <label className="label">UPI account name (shown under QR)</label>
+            <input name="upiName" className="input" value={p.upiName || ''} onChange={pay} />
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

@@ -45,7 +45,7 @@ export const updateSettings = asyncHandler(async (req, res) => {
 
   if (b.payment) {
     const p = b.payment;
-    const payFields = ['gpayNumber', 'phonepeNumber', 'paytmNumber', 'upiId', 'upiQr'];
+    const payFields = ['gpayNumber', 'phonepeNumber', 'paytmNumber', 'upiId', 'upiName', 'upiQr'];
     for (const key of payFields) {
       if (p[key] !== undefined) settings.payment[key] = p[key];
     }

@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import {
   getProducts,
-  createPayment,
-  getPaymentStatus,
-  phonepeCallback,
+  createPaymentRequest,
   listMyPayments,
 } from '../controllers/payment.controller.js';
 import { protect, optionalAuth } from '../middleware/auth.middleware.js';
@@ -11,11 +9,7 @@ import { protect, optionalAuth } from '../middleware/auth.middleware.js';
 const router = Router();
 
 router.get('/products', optionalAuth, getProducts);
-router.post('/create', protect, createPayment);
+router.post('/request', protect, createPaymentRequest);
 router.get('/mine', protect, listMyPayments);
-router.get('/status/:mtid', protect, getPaymentStatus);
-
-// Server-to-server callback from PhonePe (verified via checksum, no auth).
-router.post('/phonepe/callback', phonepeCallback);
 
 export default router;

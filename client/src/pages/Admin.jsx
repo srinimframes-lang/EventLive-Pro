@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import AdminOverview from '../components/admin/AdminOverview.jsx';
 import AdminCustomers from '../components/admin/AdminCustomers.jsx';
+import AdminPayments from '../components/admin/AdminPayments.jsx';
 import AdminEvents from '../components/admin/AdminEvents.jsx';
 import AdminSettings from '../components/admin/AdminSettings.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'customers', label: 'Customers' },
+  { id: 'payments', label: 'Payments' },
   { id: 'events', label: 'Events' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -39,6 +41,7 @@ export default function Admin() {
       <div className="mt-6">
         {tab === 'dashboard' && <AdminOverview />}
         {tab === 'customers' && <AdminCustomers />}
+        {tab === 'payments' && <AdminPayments />}
         {tab === 'events' && <AdminEvents />}
         {tab === 'settings' && <AdminSettings />}
       </div>

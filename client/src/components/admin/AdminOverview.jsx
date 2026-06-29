@@ -19,6 +19,11 @@ export default function AdminOverview() {
     { label: 'Live now', value: stats.liveEvents ?? 0 },
     { label: 'Completed Events', value: stats.completedEvents ?? 0 },
     {
+      label: 'Pending payments',
+      value: stats.pendingPayments ?? 0,
+      highlight: (stats.pendingPayments ?? 0) > 0,
+    },
+    {
       label: 'Pending approvals',
       value: stats.pendingCustomers ?? 0,
       highlight: (stats.pendingCustomers ?? 0) > 0,

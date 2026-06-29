@@ -27,6 +27,22 @@ export const adminService = {
     return data.data;
   },
 
+  // ── Credit payment requests (manual UPI) ────────────────
+  async listPayments(status) {
+    const { data } = await api.get('/api/admin/payments', {
+      params: status ? { status } : {},
+    });
+    return data.data;
+  },
+  async approvePayment(id, adminNote) {
+    const { data } = await api.post(`/api/admin/payments/${id}/approve`, { adminNote });
+    return data.data;
+  },
+  async rejectPayment(id, adminNote) {
+    const { data } = await api.post(`/api/admin/payments/${id}/reject`, { adminNote });
+    return data.data;
+  },
+
   // ── Sub admins (resellers) ──────────────────────────────
   async listSubAdmins() {
     const { data } = await api.get('/api/admin/subadmins');
