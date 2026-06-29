@@ -9,9 +9,14 @@ export default function Book() {
   const { isAuthenticated, isAdmin } = useAuth();
   const { settings } = useSettings();
   const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    packageService.list().then(setPackages).catch(() => setPackages([]));
+    packageService
+      .list()
+      .then(setPackages)
+      .catch(() => setPackages([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const wa = whatsappLink(
@@ -61,7 +66,8 @@ export default function Book() {
         ))}
       </div>
 
-      {packages.length === 0 && (
+      {loading && <p className="mt-10 text-center text-slate-500">Loading packages…</p>}
+      {!loading && packages.length === 0 && (
         <p className="mt-10 text-center text-slate-500">Packages will appear here soon.</p>
       )}
 
