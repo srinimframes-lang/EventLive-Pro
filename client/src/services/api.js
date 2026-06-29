@@ -1,12 +1,8 @@
 import axios from 'axios';
+import { API_ORIGIN } from '../config.js';
 
-// Resolve the backend ORIGIN. Every request path already includes the `/api`
-// prefix, so we normalise away any trailing slash or trailing `/api` here to
-// avoid duplicated segments (e.g. `/api/api/...`). An empty value means
-// "same origin" — which in dev is forwarded to the backend by the Vite proxy.
-const RAW_API_URL = (import.meta.env.VITE_API_URL || '').trim();
-const API_ORIGIN = RAW_API_URL.replace(/\/+$/, '').replace(/\/api$/i, '');
-
+// Every request path already includes the `/api` prefix; API_ORIGIN is the bare
+// backend origin (see config.js). Empty means "same origin" (dev via Vite proxy).
 const api = axios.create({
   baseURL: API_ORIGIN,
   withCredentials: true,

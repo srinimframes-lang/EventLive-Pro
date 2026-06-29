@@ -1,3 +1,5 @@
+import { MEDIA_ORIGIN } from '../config.js';
+
 /**
  * Formats a number as currency (INR by default).
  */
@@ -96,14 +98,6 @@ export function buildWatchUrl(event) {
   const idOrSlug = event.slug || event.id;
   return `${window.location.origin}/events/${idOrSlug}/live`;
 }
-
-// Backend origin (VITE_API_URL with any trailing slash / `/api` suffix removed).
-// In production this is the Render API; in dev it is empty so relative
-// `/uploads/...` paths flow through the Vite proxy to the backend.
-const MEDIA_ORIGIN = (import.meta.env.VITE_API_URL || '')
-  .trim()
-  .replace(/\/+$/, '')
-  .replace(/\/api$/i, '');
 
 /**
  * Resolves a media URL for display. Uploaded files are stored as relative

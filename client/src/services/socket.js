@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { API_ORIGIN } from '../config.js';
 
 /**
  * Creates a Socket.IO client connection to the realtime gateway.
@@ -12,11 +13,7 @@ export function createSocket() {
   // VITE_API_URL (trailing slash / `/api` stripped). Empty -> same origin,
   // which the Vite dev proxy forwards to the backend.
   const explicit = (import.meta.env.VITE_SOCKET_URL || '').trim();
-  const apiOrigin = (import.meta.env.VITE_API_URL || '')
-    .trim()
-    .replace(/\/+$/, '')
-    .replace(/\/api$/i, '');
-  const url = explicit || apiOrigin || undefined;
+  const url = explicit || API_ORIGIN || undefined;
   const token = localStorage.getItem('token') || undefined;
 
   return io(url, {
