@@ -29,10 +29,8 @@ export default function EventDetail() {
     };
   }, [idOrSlug]);
 
-  const canManage =
-    event &&
-    user &&
-    (user.role === 'admin' || event.organizer?.id === user.id || event.organizer?._id === user.id);
+  // Only the Super Admin can manage events/live pages.
+  const canManage = Boolean(event) && user?.role === 'admin';
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this event? This cannot be undone.')) return;

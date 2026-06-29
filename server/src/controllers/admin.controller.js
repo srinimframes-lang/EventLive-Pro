@@ -33,6 +33,7 @@ export const createCustomer = asyncHandler(async (req, res) => {
     password,
     phone: phone || '',
     role: 'customer',
+    approved: true, // admin-created accounts are pre-approved
     createdBy: req.user._id,
   });
 
@@ -62,10 +63,11 @@ export const updateCustomer = asyncHandler(async (req, res) => {
     throw new Error('Customer not found');
   }
 
-  const { name, phone, isActive, password } = req.body;
+  const { name, phone, isActive, approved, password } = req.body;
   if (name !== undefined) customer.name = name;
   if (phone !== undefined) customer.phone = phone;
   if (isActive !== undefined) customer.isActive = isActive;
+  if (approved !== undefined) customer.approved = approved;
   if (password) {
     if (String(password).length < 6) {
       res.status(400);
@@ -98,26 +100,39 @@ export const deleteCustomer = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const getAnalytics = asyncHandler(async (_req, res) => {
-  const [customers, events, liveEvents, packages, pendingBookings, approvedBookings, revenueAgg] =
-    await Promise.all([
-      User.countDocuments({ role: { $ne: 'admin' } }),
-      Event.countDocuments(),
-      Event.countDocuments({ isLive: true }),
-      Package.countDocuments({ isActive: true }),
-      Booking.countDocuments({ status: 'pending' }),
-      Booking.countDocuments({ status: 'approved' }),
-      Booking.aggregate([
-        { $match: { status: 'approved' } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
-    ]);
+  const [
+    customers,
+    pendingCustomers,
+    events,
+    liveEvents,
+    completedEvents,
+    packages,
+    pendingBookings,
+    approvedBookings,
+    revenueAgg,
+  ] = await Promise.all([
+    User.countDocuments({ role: { $ne: 'admin' } }),
+    User.countDocuments({ role: { $ne: 'admin' }, approved: false }),
+    Event.countDocuments(),
+    Event.countDocuments({ isLive: true }),
+    Event.countDocuments({ status: 'ended' }),
+    Package.countDocuments({ isActive: true }),
+    Booking.countDocuments({ status: 'pending' }),
+    Booking.countDocuments({ status: 'approved' }),
+    Booking.aggregate([
+      { $match: { status: 'approved' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+  ]);
 
   res.status(200).json({
     success: true,
     data: {
       customers,
+      pendingCustomers,
       events,
       liveEvents,
+      completedEvents,
       packages,
       pendingBookings,
       approvedBookings,

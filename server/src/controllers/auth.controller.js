@@ -15,6 +15,49 @@ function sendAuthResponse(res, statusCode, user) {
 }
 
 /**
+ * @route   POST /api/auth/register
+ * @desc    Self-register as a customer. Account starts unapproved — the Super
+ *          Admin must approve it before the customer can book.
+ * @access  Public
+ */
+export async function register(req, res, next) {
+  try {
+    const { name, email, password, phone } = req.body;
+
+    if (!name || !email || !password) {
+      res.status(400);
+      throw new Error('Please provide name, email and password');
+    }
+    if (String(password).length < 6) {
+      res.status(400);
+      throw new Error('Password must be at least 6 characters');
+    }
+
+    const normalized = String(email).toLowerCase().trim();
+    const exists = await User.findOne({ email: normalized });
+    if (exists) {
+      res.status(409);
+      throw new Error('An account with that email already exists');
+    }
+
+    const user = await User.create({
+      name,
+      email: normalized,
+      password,
+      phone: phone || '',
+      role: 'customer',
+      approved: false,
+      isActive: true,
+    });
+
+    user.password = undefined;
+    sendAuthResponse(res, 201, user);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * @route   POST /api/auth/login
  * @desc    Authenticate a user and return a JWT
  * @access  Public

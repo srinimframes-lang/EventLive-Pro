@@ -24,16 +24,17 @@ const EDITABLE_FIELDS = [
   'youtubeVideoId',
   'hlsUrl',
   'webrtcUrl',
+  'chatEnabled',
 ];
 
 /**
- * Throws a 403 if the current user neither owns the event nor is an admin.
+ * Throws a 403 unless the current user is the Super Admin. Only the admin may
+ * create, edit or delete events / live pages — customers never can.
  */
-function assertCanModify(event, user, res) {
-  const isOwner = event.organizer.toString() === user._id.toString();
-  if (!isOwner && user.role !== 'admin') {
+function assertCanModify(_event, user, res) {
+  if (user.role !== 'admin') {
     res.status(403);
-    throw new Error('You do not have permission to modify this event');
+    throw new Error('Only the administrator can manage events');
   }
 }
 

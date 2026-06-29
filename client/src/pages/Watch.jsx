@@ -48,11 +48,7 @@ export default function Watch() {
     return { ...config, isLive: room.liveStatus.isLive };
   }, [config, room.liveStatus]);
 
-  const canAnswer = useMemo(() => {
-    if (!event || !user) return false;
-    const organizerId = event.organizer?.id || event.organizer?._id;
-    return user.role === 'admin' || organizerId === user.id;
-  }, [event, user]);
+  const canAnswer = useMemo(() => user?.role === 'admin', [user]);
 
   const coupleTitle = useMemo(() => {
     if (!event) return '';
@@ -71,6 +67,8 @@ export default function Watch() {
   if (!event) return <p className="py-20 text-center text-slate-500">Loading…</p>;
 
   const watchUrl = buildWatchUrl(event);
+  const chatOn = event.chatEnabled !== false;
+  const activeTab = chatOn ? tab : 'qa';
 
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
@@ -161,15 +159,17 @@ export default function Watch() {
         <div className="lg:col-span-1">
           <div className="card flex h-[60vh] flex-col p-0 sm:h-[70vh]">
             <div className="flex border-b border-slate-200">
-              <TabButton active={tab === 'chat'} onClick={() => setTab('chat')}>
-                Chat
-              </TabButton>
-              <TabButton active={tab === 'qa'} onClick={() => setTab('qa')}>
+              {chatOn && (
+                <TabButton active={activeTab === 'chat'} onClick={() => setTab('chat')}>
+                  Chat
+                </TabButton>
+              )}
+              <TabButton active={activeTab === 'qa'} onClick={() => setTab('qa')}>
                 Q&amp;A {room.questions.length > 0 && `(${room.questions.length})`}
               </TabButton>
             </div>
             <div className="min-h-0 flex-1">
-              {tab === 'chat' ? (
+              {activeTab === 'chat' ? (
                 <LiveChat
                   messages={room.messages}
                   onSend={room.sendMessage}

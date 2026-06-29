@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
 import Book from './pages/Book.jsx';
 import BookingNew from './pages/BookingNew.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -33,8 +34,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
-            {/* Public registration is disabled. */}
-            <Route path="/register" element={<Navigate to="/login" replace />} />
+            <Route path="/register" element={<Register />} />
 
             {/* Booking (public info + customer flow) */}
             <Route path="/book" element={<Book />} />
@@ -64,17 +64,17 @@ export default function App() {
             <Route
               path="/events/:id/edit"
               element={
-                <ProtectedRoute>
+                <AdminRoute>
                   <EventForm />
-                </ProtectedRoute>
+                </AdminRoute>
               }
             />
             <Route
               path="/events/:id/studio"
               element={
-                <ProtectedRoute>
+                <AdminRoute>
                   <Studio />
-                </ProtectedRoute>
+                </AdminRoute>
               }
             />
             <Route path="/events/:idOrSlug" element={<EventDetail />} />

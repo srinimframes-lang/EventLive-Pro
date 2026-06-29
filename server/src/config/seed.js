@@ -23,16 +23,17 @@ async function seedSuperAdmin() {
 
   if (existing) {
     // Make sure the configured account always retains admin access.
-    if (existing.role !== 'admin' || !existing.isActive) {
+    if (existing.role !== 'admin' || !existing.isActive || !existing.approved) {
       existing.role = 'admin';
       existing.isActive = true;
+      existing.approved = true;
       await existing.save();
     }
     console.log(`[seed] Super admin present: ${email}`);
     return;
   }
 
-  await User.create({ name, email, password, role: 'admin', isActive: true });
+  await User.create({ name, email, password, role: 'admin', isActive: true, approved: true });
   console.log(
     `[seed] Created super admin ${email}. ` +
       (process.env.SUPER_ADMIN_PASSWORD

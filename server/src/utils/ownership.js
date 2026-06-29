@@ -1,18 +1,17 @@
 /**
- * Returns true if the user owns the event (is its organizer) or is an admin.
+ * Returns true only for the Super Admin. In the commercial model, customers
+ * never manage events / live pages, gallery, chat or streams.
  */
-export function canManageEvent(event, user) {
-  if (!event || !user) return false;
-  if (user.role === 'admin') return true;
-  return event.organizer.toString() === user._id.toString();
+export function canManageEvent(_event, user) {
+  return Boolean(user) && user.role === 'admin';
 }
 
 /**
- * Throws a 403 unless the user can manage the event.
+ * Throws a 403 unless the user is the administrator.
  */
 export function assertCanManageEvent(event, user, res) {
   if (!canManageEvent(event, user)) {
     res.status(403);
-    throw new Error('You do not have permission to manage this event');
+    throw new Error('Only the administrator can manage this event');
   }
 }

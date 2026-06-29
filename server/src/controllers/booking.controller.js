@@ -11,6 +11,12 @@ import { persistUpload } from '../utils/storage.js';
  * @access Private (customer)
  */
 export const createBooking = asyncHandler(async (req, res) => {
+  // Self-registered customers must be approved by the admin before booking.
+  if (req.user.role !== 'admin' && req.user.approved === false) {
+    res.status(403);
+    throw new Error('Your account is pending admin approval. Please wait before booking.');
+  }
+
   const b = req.body || {};
 
   let pkg = null;

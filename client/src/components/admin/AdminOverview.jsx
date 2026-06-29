@@ -14,13 +14,14 @@ export default function AdminOverview({ onGoToPayments }) {
   if (!stats) return <p className="text-slate-500">Loading…</p>;
 
   const cards = [
-    { label: 'Customers', value: stats.customers },
-    { label: 'Events', value: stats.events },
+    { label: 'Total Customers', value: stats.customers },
+    { label: 'Total Events', value: stats.events },
+    { label: 'Pending Payments', value: stats.pendingBookings, highlight: stats.pendingBookings > 0 },
+    { label: 'Completed Events', value: stats.completedEvents ?? 0 },
     { label: 'Live now', value: stats.liveEvents },
+    { label: 'Pending approvals', value: stats.pendingCustomers ?? 0, highlight: (stats.pendingCustomers ?? 0) > 0 },
     { label: 'Active packages', value: stats.packages },
-    { label: 'Pending payments', value: stats.pendingBookings, highlight: stats.pendingBookings > 0 },
-    { label: 'Approved bookings', value: stats.approvedBookings },
-    { label: 'Revenue (approved)', value: formatCurrency(stats.revenue), wide: true },
+    { label: 'Revenue', value: formatCurrency(stats.revenue) },
   ];
 
   return (

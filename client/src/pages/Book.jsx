@@ -75,14 +75,19 @@ export default function Book() {
         <div className="mt-12 card flex flex-col items-center gap-4 bg-gradient-to-br from-brand-50 to-gold-50 text-center">
           <h2 className="font-display text-2xl font-bold text-slate-900">New customer?</h2>
           <p className="max-w-xl text-slate-600">
-            We create your account for you. Message us on WhatsApp with your wedding date and chosen
-            package, and we&apos;ll set everything up.
+            Create an account to get started. Once our team approves it, you can choose a package and
+            book your wedding live stream.
           </p>
-          {wa && (
-            <a href={wa} target="_blank" rel="noreferrer" className="btn-gold px-6 py-3">
-              Message us on WhatsApp
-            </a>
-          )}
+          <div className="flex flex-wrap justify-center gap-3">
+            <Link to="/register" className="btn-primary px-6 py-3">
+              Create account
+            </Link>
+            {wa && (
+              <a href={wa} target="_blank" rel="noreferrer" className="btn-gold px-6 py-3">
+                Message us on WhatsApp
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>

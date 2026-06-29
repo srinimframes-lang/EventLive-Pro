@@ -14,7 +14,11 @@ export default function AdminCustomers() {
     setLoading(true);
     adminService
       .listCustomers()
-      .then(setCustomers)
+      .then((data) =>
+        setCustomers(
+          [...data].sort((a, b) => (a.approved === b.approved ? 0 : a.approved ? 1 : -1))
+        )
+      )
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -42,6 +46,15 @@ export default function AdminCustomers() {
   const toggleActive = async (c) => {
     try {
       await adminService.updateCustomer(c.id, { isActive: !c.isActive });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const toggleApproved = async (c) => {
+    try {
+      await adminService.updateCustomer(c.id, { approved: !c.approved });
       load();
     } catch (err) {
       setError(err.message);
@@ -132,8 +145,13 @@ export default function AdminCustomers() {
               {customers.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
-                    <p className="font-medium text-slate-800">
-                      {c.name}{' '}
+                    <p className="flex flex-wrap items-center gap-1.5 font-medium text-slate-800">
+                      {c.name}
+                      {c.approved ? (
+                        <span className="badge bg-green-100 text-green-700">Approved</span>
+                      ) : (
+                        <span className="badge bg-amber-100 text-amber-700">Pending</span>
+                      )}
                       {!c.isActive && (
                         <span className="badge bg-red-100 text-red-700">Deactivated</span>
                       )}
@@ -144,6 +162,13 @@ export default function AdminCustomers() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={c.approved ? 'btn-outline' : 'btn-primary'}
+                      onClick={() => toggleApproved(c)}
+                    >
+                      {c.approved ? 'Unapprove' : 'Approve'}
+                    </button>
                     <button type="button" className="btn-outline" onClick={() => toggleActive(c)}>
                       {c.isActive ? 'Deactivate' : 'Activate'}
                     </button>

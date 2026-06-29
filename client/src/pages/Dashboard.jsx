@@ -17,6 +17,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const justSubmitted = location.state?.bookingSubmitted;
+  const justRegistered = location.state?.justRegistered;
+  const pendingApproval = user?.role !== 'admin' && user?.approved === false;
 
   useEffect(() => {
     let active = true;
@@ -39,10 +41,19 @@ export default function Dashboard() {
           </h1>
           <p className="mt-1 text-slate-600">Manage your wedding bookings and live events.</p>
         </div>
-        <Link to="/book" className="btn-primary">
-          + New booking
-        </Link>
+        {!pendingApproval && (
+          <Link to="/book" className="btn-primary">
+            + New booking
+          </Link>
+        )}
       </div>
+
+      {(justRegistered || pendingApproval) && (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>Account pending approval.</strong> Thanks for registering! Our team will review and
+          approve your account shortly. You can browse packages now and book once you&apos;re approved.
+        </div>
+      )}
 
       {justSubmitted && (
         <div className="mt-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
@@ -97,15 +108,6 @@ export default function Dashboard() {
 
                   {b.status === 'approved' && b.event && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Link to={`/events/${b.event.id}/studio`} className="btn-outline">
-                        Manage stream
-                      </Link>
-                      <Link
-                        to={`/events/${b.event.slug || b.event.id}/edit`}
-                        className="btn-outline"
-                      >
-                        Edit details
-                      </Link>
                       <Link
                         to={`/events/${b.event.slug || b.event.id}/live`}
                         className="btn-primary"

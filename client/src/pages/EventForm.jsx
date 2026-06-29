@@ -18,6 +18,7 @@ const EMPTY = {
   location: 'Online',
   venue: '',
   youtubeUrl: '',
+  chatEnabled: true,
   capacity: 0,
   tags: '',
   brideName: '',
@@ -61,6 +62,7 @@ export default function EventForm() {
           youtubeUrl: event.youtubeVideoId
             ? `https://youtu.be/${event.youtubeVideoId}`
             : event.streamUrl || '',
+          chatEnabled: event.chatEnabled ?? true,
           capacity: event.capacity || 0,
           tags: (event.tags || []).join(', '),
           brideName: event.brideName || '',
@@ -149,6 +151,7 @@ export default function EventForm() {
       streamUrl: form.isOnline ? form.youtubeUrl : '',
       youtubeVideoId,
       streamProvider: youtubeVideoId ? 'youtube' : 'none',
+      chatEnabled: form.chatEnabled,
     };
 
     try {
@@ -306,6 +309,11 @@ export default function EventForm() {
                 value={form.location} onChange={handleChange} />
             </Field>
           )}
+
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input type="checkbox" name="chatEnabled" checked={form.chatEnabled} onChange={handleChange} />
+            Enable live chat on the watch page
+          </label>
         </Section>
 
         {/* ── Photography branding ───────────────────────────── */}

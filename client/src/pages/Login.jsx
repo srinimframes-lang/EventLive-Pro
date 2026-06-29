@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
-import { whatsappLink } from '../utils/format.js';
 
 export default function Login() {
   const { login } = useAuth();
@@ -32,11 +31,6 @@ export default function Login() {
       setSubmitting(false);
     }
   };
-
-  const wa = whatsappLink(
-    settings.whatsappNumber,
-    `Hi ${settings.companyName}, I'd like to create an account to book a wedding live stream.`
-  );
 
   return (
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
@@ -84,15 +78,12 @@ export default function Login() {
         </button>
       </form>
 
-      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
-        <p className="font-medium text-slate-700">Don&apos;t have an account yet?</p>
-        <p className="mt-1">Accounts are created by our team — get in touch to get started.</p>
-        {wa && (
-          <a href={wa} target="_blank" rel="noreferrer" className="btn-gold mt-3 w-full">
-            Request an account on WhatsApp
-          </a>
-        )}
-      </div>
+      <p className="mt-4 text-center text-sm text-slate-600">
+        Don&apos;t have an account?{' '}
+        <Link to="/register" className="font-semibold text-brand-600 hover:underline">
+          Create one
+        </Link>
+      </p>
     </div>
   );
 }

@@ -42,6 +42,12 @@ const userSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    // Self-registered customers start unapproved and cannot book until the
+    // Super Admin approves them. Admin-created accounts are pre-approved.
+    approved: {
+      type: Boolean,
+      default: false,
+    },
     // Optional phone for customer contact.
     phone: {
       type: String,

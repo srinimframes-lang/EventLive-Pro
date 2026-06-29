@@ -143,6 +143,8 @@ const eventSchema = new Schema(
     youtubeVideoId: { type: String, trim: true, default: '' },
     hlsUrl: { type: String, trim: true, default: '' },
     webrtcUrl: { type: String, trim: true, default: '' },
+    // Whether the live chat panel is shown on the public watch page.
+    chatEnabled: { type: Boolean, default: true },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
     isLive: { type: Boolean, default: false, index: true },
