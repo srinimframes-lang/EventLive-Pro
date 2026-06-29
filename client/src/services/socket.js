@@ -8,7 +8,15 @@ import { io } from 'socket.io-client';
  * @returns {import('socket.io-client').Socket}
  */
 export function createSocket() {
-  const url = import.meta.env.VITE_SOCKET_URL || undefined;
+  // Prefer an explicit socket URL, otherwise reuse the backend origin from
+  // VITE_API_URL (trailing slash / `/api` stripped). Empty -> same origin,
+  // which the Vite dev proxy forwards to the backend.
+  const explicit = (import.meta.env.VITE_SOCKET_URL || '').trim();
+  const apiOrigin = (import.meta.env.VITE_API_URL || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/api$/i, '');
+  const url = explicit || apiOrigin || undefined;
   const token = localStorage.getItem('token') || undefined;
 
   return io(url, {
