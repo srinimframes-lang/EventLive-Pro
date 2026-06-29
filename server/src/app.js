@@ -12,6 +12,10 @@ import { UPLOADS_DIR } from './middleware/upload.middleware.js';
 
 const app = express();
 
+// Render (and most PaaS hosts) sit behind a reverse proxy. Trust the first
+// proxy hop so req.ip / rate-limiting / secure cookies behave correctly.
+app.set('trust proxy', 1);
+
 // Security & core middleware. Allow images/assets to be embedded cross-origin
 // (the uploaded gallery photos & logos are served from this origin).
 app.use(
@@ -19,9 +23,18 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
+
+// CORS allow-list: accept any configured client origin (normalised, no trailing
+// slash) plus requests with no Origin header (curl, health checks, same-origin).
+const allowedOrigins = new Set(env.clientUrls);
 app.use(
   cors({
-    origin: env.clientUrl,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      const normalised = origin.replace(/\/+$/, '');
+      if (allowedOrigins.has(normalised)) return callback(null, true);
+      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   })
 );

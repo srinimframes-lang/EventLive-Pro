@@ -18,10 +18,19 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+// Accept one or more comma-separated client origins (production URL, custom
+// domain, local dev, etc.) and normalise away trailing slashes so the CORS
+// allow-list matches the browser's Origin header exactly.
+const clientUrls = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((u) => u.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 5000,
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  clientUrl: clientUrls[0],
+  clientUrls,
   mongoUri: process.env.MONGODB_URI,
   jwt: {
     secret: process.env.JWT_SECRET,
@@ -31,5 +40,17 @@ export const env = {
   // Base RTMP ingest URL that broadcasters point OBS at. The per-event stream
   // key is appended to this (e.g. rtmp://localhost:1935/live/<streamKey>).
   rtmpIngestUrl: process.env.RTMP_INGEST_URL || 'rtmp://localhost:1935/live',
+  // Optional Cloudinary credentials for durable image storage. When present,
+  // uploads go to Cloudinary (surviving redeploys); otherwise local disk is
+  // used as a fallback. Set CLOUDINARY_URL or the three discrete vars on Render.
+  cloudinary: {
+    url: process.env.CLOUDINARY_URL || '',
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    get enabled() {
+      return Boolean(this.url || (this.cloudName && this.apiKey && this.apiSecret));
+    },
+  },
   isProd: process.env.NODE_ENV === 'production',
 };

@@ -69,3 +69,26 @@ export function buildWatchUrl(event) {
   const idOrSlug = event.slug || event.id;
   return `${window.location.origin}/events/${idOrSlug}/live`;
 }
+
+// Backend origin (VITE_API_URL with any trailing slash / `/api` suffix removed).
+// In production this is the Render API; in dev it is empty so relative
+// `/uploads/...` paths flow through the Vite proxy to the backend.
+const MEDIA_ORIGIN = (import.meta.env.VITE_API_URL || '')
+  .trim()
+  .replace(/\/+$/, '')
+  .replace(/\/api$/i, '');
+
+/**
+ * Resolves a media URL for display. Uploaded files are stored as relative
+ * `/uploads/...` paths that live on the backend, not the frontend origin —
+ * so we prefix the backend origin. Absolute URLs (Cloudinary, Unsplash, etc.)
+ * and data/blob URLs are returned unchanged.
+ */
+export function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  if (url.startsWith('/uploads')) return `${MEDIA_ORIGIN}${url}`;
+  return url;
+}

@@ -5,7 +5,7 @@ import {
   EVENT_CATEGORIES,
   EVENT_STATUSES,
 } from '../services/event.service.js';
-import { toDateTimeLocal, extractYouTubeId } from '../utils/format.js';
+import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
 
 const EMPTY = {
   title: '',
@@ -246,7 +246,7 @@ export default function EventForm() {
             <div className="flex flex-wrap items-center gap-4">
               {form.coverImage ? (
                 <img
-                  src={form.coverImage}
+                  src={resolveMediaUrl(form.coverImage)}
                   alt="Couple"
                   className="h-20 w-28 rounded-lg border border-slate-200 object-cover"
                 />
@@ -320,7 +320,7 @@ export default function EventForm() {
             <div className="flex flex-wrap items-center gap-4">
               {form.photographerLogo ? (
                 <img
-                  src={form.photographerLogo}
+                  src={resolveMediaUrl(form.photographerLogo)}
                   alt="Photography logo"
                   className="h-16 w-16 rounded-lg border border-slate-200 object-contain p-1"
                 />

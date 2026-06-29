@@ -1,9 +1,7 @@
-import fs from 'fs';
-import path from 'path';
 import { Event } from '../models/Event.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { assertCanManageEvent } from '../utils/ownership.js';
-import { UPLOADS_DIR, uploadedFileUrl } from '../middleware/upload.middleware.js';
+import { persistUpload, removeUpload } from '../utils/storage.js';
 
 async function findEventOr404(id, res) {
   const event = await Event.findById(id);
@@ -12,14 +10,6 @@ async function findEventOr404(id, res) {
     throw new Error('Event not found');
   }
   return event;
-}
-
-/** Best-effort removal of a locally-stored upload (ignores anything external). */
-function removeLocalUpload(url) {
-  if (!url || !url.startsWith('/uploads/')) return;
-  const filename = path.basename(url);
-  const filePath = path.join(UPLOADS_DIR, filename);
-  fs.promises.unlink(filePath).catch(() => {});
 }
 
 /**
@@ -41,8 +31,9 @@ export const uploadGallery = asyncHandler(async (req, res) => {
     ? req.body.captions
     : [req.body.captions].filter(Boolean);
 
-  files.forEach((file, i) => {
-    event.gallery.push({ url: uploadedFileUrl(file), caption: captions[i] || '' });
+  const urls = await Promise.all(files.map((file) => persistUpload(file)));
+  urls.forEach((url, i) => {
+    event.gallery.push({ url, caption: captions[i] || '' });
   });
   await event.save();
 
@@ -64,7 +55,7 @@ export const deleteGalleryPhoto = asyncHandler(async (req, res) => {
     throw new Error('Photo not found');
   }
 
-  removeLocalUpload(photo.url);
+  await removeUpload(photo.url);
   photo.deleteOne();
   await event.save();
 
@@ -85,8 +76,8 @@ export const uploadLogo = asyncHandler(async (req, res) => {
     throw new Error('No logo image was uploaded');
   }
 
-  if (event.photographerLogo) removeLocalUpload(event.photographerLogo);
-  event.photographerLogo = uploadedFileUrl(req.file);
+  if (event.photographerLogo) await removeUpload(event.photographerLogo);
+  event.photographerLogo = await persistUpload(req.file);
   await event.save();
 
   res.status(201).json({ success: true, data: { photographerLogo: event.photographerLogo } });
@@ -106,8 +97,8 @@ export const uploadCover = asyncHandler(async (req, res) => {
     throw new Error('No image was uploaded');
   }
 
-  if (event.coverImage) removeLocalUpload(event.coverImage);
-  event.coverImage = uploadedFileUrl(req.file);
+  if (event.coverImage) await removeUpload(event.coverImage);
+  event.coverImage = await persistUpload(req.file);
   await event.save();
 
   res.status(201).json({ success: true, data: { coverImage: event.coverImage } });

@@ -4,7 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
-import { formatDateTime } from '../utils/format.js';
+import { formatDateTime, resolveMediaUrl } from '../utils/format.js';
 
 export default function EventDetail() {
   const { idOrSlug } = useParams();
@@ -114,7 +114,7 @@ export default function EventDetail() {
 
       {event.coverImage && (
         <img
-          src={event.coverImage}
+          src={resolveMediaUrl(event.coverImage)}
           alt={coupleTitle || event.title}
           className="mt-6 aspect-[16/9] w-full rounded-2xl object-cover shadow-sm"
         />
@@ -140,7 +140,7 @@ export default function EventDetail() {
         <div className="mt-6 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
           {event.photographerLogo && (
             <img
-              src={event.photographerLogo}
+              src={resolveMediaUrl(event.photographerLogo)}
               alt={event.photographerName}
               className="h-12 w-12 rounded-lg object-contain"
             />

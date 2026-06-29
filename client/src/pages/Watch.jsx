@@ -4,7 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
-import { buildWatchUrl, formatDateTime } from '../utils/format.js';
+import { buildWatchUrl, formatDateTime, resolveMediaUrl } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
@@ -85,7 +85,7 @@ export default function Watch() {
           <div className="flex items-center gap-2 text-sm text-slate-500">
             {event.photographerLogo && (
               <img
-                src={event.photographerLogo}
+                src={resolveMediaUrl(event.photographerLogo)}
                 alt={event.photographerName}
                 className="h-8 w-8 rounded-md object-contain"
               />
@@ -102,7 +102,7 @@ export default function Watch() {
         <div className="relative mt-3 overflow-hidden rounded-2xl text-center text-white shadow-lg">
           {event.coverImage && (
             <img
-              src={event.coverImage}
+              src={resolveMediaUrl(event.coverImage)}
               alt={coupleTitle}
               className="absolute inset-0 h-full w-full object-cover"
             />

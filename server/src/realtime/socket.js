@@ -42,7 +42,7 @@ function clean(str, max) {
  */
 export function initSocket(httpServer) {
   const io = new Server(httpServer, {
-    cors: { origin: env.clientUrl, credentials: true },
+    cors: { origin: env.clientUrls, credentials: true },
   });
 
   // Optional auth: a valid token attaches the user; otherwise stay anonymous.

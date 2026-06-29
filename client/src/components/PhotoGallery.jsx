@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { resolveMediaUrl } from '../utils/format.js';
 
 /**
  * Responsive photo gallery with a simple lightbox.
@@ -38,7 +39,7 @@ export default function PhotoGallery({ photos = [], onDelete }) {
                 className="block h-full w-full"
               >
                 <img
-                  src={photo.url}
+                  src={resolveMediaUrl(photo.url)}
                   alt={photo.caption || 'Event photo'}
                   loading="lazy"
                   className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
@@ -81,7 +82,7 @@ export default function PhotoGallery({ photos = [], onDelete }) {
           </button>
           <figure className="max-h-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
             <img
-              src={active.url}
+              src={resolveMediaUrl(active.url)}
               alt={active.caption || 'Event photo'}
               className="mx-auto max-h-[80vh] w-auto rounded-lg"
             />
