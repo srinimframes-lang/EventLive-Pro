@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Event, EVENT_STATUSES, EVENT_CATEGORIES } from '../models/Event.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { changeCredits } from '../utils/credits.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -28,13 +29,17 @@ const EDITABLE_FIELDS = [
 ];
 
 /**
- * Throws a 403 unless the current user is the Super Admin. Only the admin may
- * create, edit or delete events / live pages — customers never can.
+ * Throws a 403 unless the user may manage this event: the Super Admin can
+ * manage any event; a reseller (sub admin) can manage only events they created.
+ * Customers can never manage events.
  */
-function assertCanModify(_event, user, res) {
-  if (user.role !== 'admin') {
+function assertCanModify(event, user, res) {
+  const isAdmin = user.role === 'admin';
+  const isOwnerReseller =
+    user.role === 'subadmin' && event.organizer?.toString() === user._id.toString();
+  if (!isAdmin && !isOwnerReseller) {
     res.status(403);
-    throw new Error('Only the administrator can manage events');
+    throw new Error('You do not have permission to manage this event');
   }
 }
 
@@ -116,10 +121,11 @@ export const getEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createEvent = asyncHandler(async (req, res) => {
-  // In the commercial model, customers cannot create events directly — events
-  // are created automatically when the Super Admin approves their paid booking.
-  // Only the admin may create events ad-hoc.
-  if (req.user.role !== 'admin') {
+  const role = req.user.role;
+
+  // Only the Super Admin or a reseller (sub admin) may create events.
+  // Customers receive events automatically when their paid booking is approved.
+  if (role !== 'admin' && role !== 'subadmin') {
     res.status(403);
     throw new Error(
       'Events are created after your booking payment is approved. Please submit a booking.'
@@ -130,12 +136,57 @@ export const createEvent = asyncHandler(async (req, res) => {
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
-  payload.organizer = req.body.organizer || req.user._id;
+  // Admins may create on behalf of another organizer; resellers own their events.
+  payload.organizer = role === 'admin' ? req.body.organizer || req.user._id : req.user._id;
+  payload.createdByRole = role;
 
+  // ── Reseller credit gate ────────────────────────────────────────────
+  if (role === 'subadmin') {
+    const creditType = req.body.creditType === 'server' ? 'server' : 'youtube';
+    const updated = await changeCredits({
+      userId: req.user._id,
+      type: creditType,
+      amount: -1,
+      reason: 'event_deduct',
+      createdBy: req.user._id,
+      note: `Event creation (${creditType})`,
+    });
+    if (!updated) {
+      res.status(402); // Payment Required
+      throw new Error(
+        `You have no ${creditType === 'server' ? 'private server' : 'YouTube'} credits left. Please purchase more credits to create an event.`
+      );
+    }
+    payload.creditType = creditType;
+
+    // Create the event; refund the credit if persistence fails.
+    let event;
+    try {
+      event = await Event.create(payload);
+    } catch (err) {
+      await changeCredits({
+        userId: req.user._id,
+        type: creditType,
+        amount: 1,
+        reason: 'refund',
+        createdBy: req.user._id,
+        note: 'Refund: event creation failed',
+      });
+      throw err;
+    }
+    const populated = await event.populate('organizer', 'name email');
+    return res.status(201).json({
+      success: true,
+      data: populated,
+      credits: updated.credits,
+    });
+  }
+
+  // ── Admin (no credit consumed) ──────────────────────────────────────
+  payload.creditType = 'none';
   const event = await Event.create(payload);
   const populated = await event.populate('organizer', 'name email');
-
-  res.status(201).json({ success: true, data: populated });
+  return res.status(201).json({ success: true, data: populated });
 });
 
 /**

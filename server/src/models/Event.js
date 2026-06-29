@@ -145,6 +145,10 @@ const eventSchema = new Schema(
     webrtcUrl: { type: String, trim: true, default: '' },
     // Whether the live chat panel is shown on the public watch page.
     chatEnabled: { type: Boolean, default: true },
+    // Reseller bookkeeping: which credit type was consumed to create this event
+    // and the role of the creator ('admin' events consume no credits).
+    creditType: { type: String, enum: ['youtube', 'server', 'none'], default: 'none' },
+    createdByRole: { type: String, default: '' },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
     isLive: { type: Boolean, default: false, index: true },

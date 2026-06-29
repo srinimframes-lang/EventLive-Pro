@@ -22,9 +22,13 @@ export default function Login() {
     setSubmitting(true);
     try {
       const loggedIn = await login(form);
-      const dest =
-        requestedFrom || (loggedIn?.role === 'admin' ? '/admin' : '/dashboard');
-      navigate(dest, { replace: true });
+      const home =
+        loggedIn?.role === 'admin'
+          ? '/admin'
+          : loggedIn?.role === 'subadmin'
+            ? '/reseller'
+            : '/dashboard';
+      navigate(requestedFrom || home, { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {

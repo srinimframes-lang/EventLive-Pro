@@ -22,6 +22,12 @@ const settingsSchema = new Schema(
     contactEmail: { type: String, default: '', trim: true },
     address: { type: String, default: '', trim: true },
 
+    // ── Reseller credit pricing (₹ per credit) ────────────────
+    creditPricing: {
+      youtube: { type: Number, default: 100, min: 0 }, // 1 YouTube event
+      server: { type: Number, default: 500, min: 0 }, // 1 private server event
+    },
+
     // ── Payment collection details ────────────────────────────
     payment: {
       gpayNumber: { type: String, default: '', trim: true },

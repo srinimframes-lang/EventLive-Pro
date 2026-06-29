@@ -28,10 +28,17 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      // 'admin' = super admin (MaaEvents9). 'customer' = admin-created client.
-      // Legacy 'user'/'organizer' kept for backward compatibility (treated as customer).
-      enum: ['user', 'organizer', 'customer', 'admin'],
+      // 'admin'    = super admin (MaaEvents9, full control).
+      // 'subadmin' = reseller; buys credits and creates events (1 credit each).
+      // 'customer' = self/admin-created client who books packages.
+      // Legacy 'user'/'organizer' kept for backward compatibility.
+      enum: ['user', 'organizer', 'customer', 'subadmin', 'admin'],
       default: 'customer',
+    },
+    // Reseller (sub admin) credit balances. 1 credit = 1 event.
+    credits: {
+      youtube: { type: Number, default: 0, min: 0 }, // YouTube event credits
+      server: { type: Number, default: 0, min: 0 }, // private server event credits
     },
     avatarUrl: {
       type: String,

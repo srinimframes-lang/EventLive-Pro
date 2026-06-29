@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   eventService,
   EVENT_CATEGORIES,
   EVENT_STATUSES,
 } from '../services/event.service.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
 
 const EMPTY = {
@@ -32,8 +33,14 @@ export default function EventForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
+  const { user, isSubAdmin, refreshUser } = useAuth();
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
+
+  // Resellers choose which credit to spend when creating a new event.
+  const [creditType, setCreditType] = useState('youtube');
+  const credits = user?.credits || { youtube: 0, server: 0 };
+  const showCreditPicker = isSubAdmin && !isEdit;
 
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(isEdit);
@@ -154,10 +161,14 @@ export default function EventForm() {
       chatEnabled: form.chatEnabled,
     };
 
+    // Resellers spend one credit per new event.
+    if (showCreditPicker) payload.creditType = creditType;
+
     try {
       const saved = isEdit
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
+      if (isSubAdmin) await refreshUser();
       navigate(`/events/${saved.slug || saved.id}`, { replace: true });
     } catch (err) {
       setError(err.message);
@@ -179,7 +190,75 @@ export default function EventForm() {
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-6">
         {error && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+            {/credit/i.test(error) && (
+              <>
+                {' '}
+                <Link to="/reseller#buy" className="font-semibold underline">
+                  Buy credits
+                </Link>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── Reseller credit selection ──────────────────────── */}
+        {showCreditPicker && (
+          <Section
+            title="Use a credit"
+            subtitle="Creating this event will deduct one credit from your balance."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label
+                className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
+                  creditType === 'youtube' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'
+                }`}
+              >
+                <span>
+                  <input
+                    type="radio"
+                    name="creditType"
+                    className="mr-2"
+                    checked={creditType === 'youtube'}
+                    onChange={() => setCreditType('youtube')}
+                  />
+                  YouTube event
+                </span>
+                <span className="text-sm font-semibold text-slate-600">
+                  {credits.youtube || 0} left
+                </span>
+              </label>
+              <label
+                className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
+                  creditType === 'server' ? 'border-gold-500 bg-gold-50' : 'border-slate-200'
+                }`}
+              >
+                <span>
+                  <input
+                    type="radio"
+                    name="creditType"
+                    className="mr-2"
+                    checked={creditType === 'server'}
+                    onChange={() => setCreditType('server')}
+                  />
+                  Private server event
+                </span>
+                <span className="text-sm font-semibold text-slate-600">
+                  {credits.server || 0} left
+                </span>
+              </label>
+            </div>
+            {(credits[creditType] || 0) < 1 && (
+              <p className="text-sm text-amber-700">
+                You have no {creditType === 'server' ? 'server' : 'YouTube'} credits.{' '}
+                <Link to="/reseller#buy" className="font-semibold underline">
+                  Buy credits
+                </Link>{' '}
+                to create this event.
+              </p>
+            )}
+          </Section>
         )}
 
         {/* ── Basics ─────────────────────────────────────────── */}

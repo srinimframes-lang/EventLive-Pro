@@ -15,6 +15,11 @@ export default function AdminSettings() {
   }, [settings]);
 
   const top = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const price = (e) =>
+    setForm((f) => ({
+      ...f,
+      creditPricing: { ...(f.creditPricing || {}), [e.target.name]: e.target.value },
+    }));
   const pay = (e) =>
     setForm((f) => ({ ...f, payment: { ...f.payment, [e.target.name]: e.target.value } }));
   const bank = (e) =>
@@ -36,6 +41,10 @@ export default function AdminSettings() {
         contactPhone: form.contactPhone,
         contactEmail: form.contactEmail,
         address: form.address,
+        creditPricing: {
+          youtube: Number(form.creditPricing?.youtube) || 0,
+          server: Number(form.creditPricing?.server) || 0,
+        },
         payment: form.payment,
       });
       await refresh();
@@ -69,6 +78,7 @@ export default function AdminSettings() {
 
   const p = form.payment || {};
   const b = p.bank || {};
+  const cp = form.creditPricing || {};
 
   return (
     <form onSubmit={save} className="space-y-6">
@@ -135,6 +145,38 @@ export default function AdminSettings() {
           <div>
             <label className="label">Address</label>
             <input name="address" className="input" value={form.address || ''} onChange={top} />
+          </div>
+        </div>
+      </div>
+
+      {/* Reseller credit pricing */}
+      <div className="card space-y-4">
+        <h2 className="text-lg font-bold text-slate-900">Reseller credit pricing</h2>
+        <p className="-mt-2 text-xs text-slate-500">
+          Price per credit charged to sub admins. 1 credit = 1 event.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">YouTube event (₹ per credit)</label>
+            <input
+              name="youtube"
+              type="number"
+              min={0}
+              className="input"
+              value={cp.youtube ?? 100}
+              onChange={price}
+            />
+          </div>
+          <div>
+            <label className="label">Private server event (₹ per credit)</label>
+            <input
+              name="server"
+              type="number"
+              min={0}
+              className="input"
+              value={cp.server ?? 500}
+              onChange={price}
+            />
           </div>
         </div>
       </div>

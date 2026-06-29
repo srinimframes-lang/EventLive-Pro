@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import AdminOverview from '../components/admin/AdminOverview.jsx';
 import AdminCustomers from '../components/admin/AdminCustomers.jsx';
+import AdminSubAdmins from '../components/admin/AdminSubAdmins.jsx';
+import AdminCreditOrders from '../components/admin/AdminCreditOrders.jsx';
 import AdminPayments from '../components/admin/AdminPayments.jsx';
 import AdminEvents from '../components/admin/AdminEvents.jsx';
 import AdminPackages from '../components/admin/AdminPackages.jsx';
@@ -8,6 +10,8 @@ import AdminSettings from '../components/admin/AdminSettings.jsx';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'subadmins', label: 'Sub Admins' },
+  { id: 'credits', label: 'Credit Orders' },
   { id: 'payments', label: 'Payments' },
   { id: 'customers', label: 'Customers' },
   { id: 'events', label: 'Events' },
@@ -41,7 +45,14 @@ export default function Admin() {
       </div>
 
       <div className="mt-6">
-        {tab === 'overview' && <AdminOverview onGoToPayments={() => setTab('payments')} />}
+        {tab === 'overview' && (
+          <AdminOverview
+            onGoToPayments={() => setTab('payments')}
+            onGoToCredits={() => setTab('credits')}
+          />
+        )}
+        {tab === 'subadmins' && <AdminSubAdmins />}
+        {tab === 'credits' && <AdminCreditOrders />}
         {tab === 'payments' && <AdminPayments />}
         {tab === 'customers' && <AdminCustomers />}
         {tab === 'events' && <AdminEvents />}

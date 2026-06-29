@@ -4,6 +4,8 @@ import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
+import StaffRoute from './components/StaffRoute.jsx';
+import ResellerRoute from './components/ResellerRoute.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
@@ -11,6 +13,7 @@ import Book from './pages/Book.jsx';
 import BookingNew from './pages/BookingNew.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Admin from './pages/Admin.jsx';
+import Reseller from './pages/Reseller.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
 import EventForm from './pages/EventForm.jsx';
@@ -52,29 +55,29 @@ export default function App() {
             <Route path="/events/:idOrSlug/live" element={<Watch />} />
             <Route path="/live/:idOrSlug" element={<Watch />} />
 
-            {/* Event management (owner/admin) */}
+            {/* Event management (admin or reseller who owns the event) */}
             <Route
               path="/events/new"
               element={
-                <AdminRoute>
+                <StaffRoute>
                   <EventForm />
-                </AdminRoute>
+                </StaffRoute>
               }
             />
             <Route
               path="/events/:id/edit"
               element={
-                <AdminRoute>
+                <StaffRoute>
                   <EventForm />
-                </AdminRoute>
+                </StaffRoute>
               }
             />
             <Route
               path="/events/:id/studio"
               element={
-                <AdminRoute>
+                <StaffRoute>
                   <Studio />
-                </AdminRoute>
+                </StaffRoute>
               }
             />
             <Route path="/events/:idOrSlug" element={<EventDetail />} />
@@ -94,6 +97,14 @@ export default function App() {
                 <AdminRoute>
                   <Admin />
                 </AdminRoute>
+              }
+            />
+            <Route
+              path="/reseller"
+              element={
+                <ResellerRoute>
+                  <Reseller />
+                </ResellerRoute>
               }
             />
 

@@ -5,7 +5,7 @@ import { useSettings } from '../context/SettingsContext.jsx';
 import { resolveMediaUrl } from '../utils/format.js';
 
 export default function Navbar() {
-  const { isAuthenticated, isAdmin, user, logout } = useAuth();
+  const { isAuthenticated, isAdmin, isSubAdmin, user, logout } = useAuth();
   const { settings } = useSettings();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -18,7 +18,8 @@ export default function Navbar() {
     navigate('/');
   };
 
-  const homeFor = isAdmin ? '/admin' : '/dashboard';
+  const homeFor = isAdmin ? '/admin' : isSubAdmin ? '/reseller' : '/dashboard';
+  const homeLabel = isAdmin ? 'Admin' : isSubAdmin ? 'Reseller' : 'Dashboard';
   const logoUrl = resolveMediaUrl(settings.companyLogo);
 
   const NavLinks = ({ stacked }) => (
@@ -32,7 +33,7 @@ export default function Navbar() {
       {isAuthenticated ? (
         <>
           <Link to={homeFor} onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
-            {isAdmin ? 'Admin' : 'Dashboard'}
+            {homeLabel}
           </Link>
           {stacked && user?.name && (
             <span className="px-2 py-1 text-sm text-slate-500">Signed in as {user.name}</span>

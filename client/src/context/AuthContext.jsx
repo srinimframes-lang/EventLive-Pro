@@ -44,17 +44,30 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Re-fetch the current user (e.g. after credits change).
+  const refreshUser = useCallback(async () => {
+    try {
+      const data = await authService.me();
+      setUser(data.user);
+      return data.user;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
       loading,
       isAuthenticated: Boolean(user),
       isAdmin: user?.role === 'admin',
+      isSubAdmin: user?.role === 'subadmin',
       login,
       register,
       logout,
+      refreshUser,
     }),
-    [user, loading, login, register, logout]
+    [user, loading, login, register, logout, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

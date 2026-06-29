@@ -34,6 +34,15 @@ export const updateSettings = asyncHandler(async (req, res) => {
     if (b[key] !== undefined) settings[key] = b[key];
   }
 
+  if (b.creditPricing) {
+    if (b.creditPricing.youtube !== undefined) {
+      settings.creditPricing.youtube = Math.max(0, Number(b.creditPricing.youtube) || 0);
+    }
+    if (b.creditPricing.server !== undefined) {
+      settings.creditPricing.server = Math.max(0, Number(b.creditPricing.server) || 0);
+    }
+  }
+
   if (b.payment) {
     const p = b.payment;
     const payFields = ['gpayNumber', 'phonepeNumber', 'paytmNumber', 'upiId', 'upiQr'];

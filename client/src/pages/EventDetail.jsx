@@ -29,8 +29,13 @@ export default function EventDetail() {
     };
   }, [idOrSlug]);
 
-  // Only the Super Admin can manage events/live pages.
-  const canManage = Boolean(event) && user?.role === 'admin';
+  // The Super Admin manages any event; a reseller manages events they created.
+  const canManage =
+    Boolean(event) &&
+    user &&
+    (user.role === 'admin' ||
+      (user.role === 'subadmin' &&
+        (event.organizer?.id === user.id || event.organizer?._id === user.id)));
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this event? This cannot be undone.')) return;

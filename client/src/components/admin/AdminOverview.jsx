@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { adminService } from '../../services/admin.service.js';
 import { formatCurrency } from '../../utils/format.js';
 
-export default function AdminOverview({ onGoToPayments }) {
+export default function AdminOverview({ onGoToPayments, onGoToCredits }) {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState('');
 
@@ -13,14 +13,20 @@ export default function AdminOverview({ onGoToPayments }) {
   if (error) return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
   if (!stats) return <p className="text-slate-500">Loading…</p>;
 
+  const credits = stats.creditsOutstanding || { youtube: 0, server: 0 };
+
   const cards = [
     { label: 'Total Customers', value: stats.customers },
+    { label: 'Sub Admins', value: stats.subAdmins ?? 0 },
     { label: 'Total Events', value: stats.events },
-    { label: 'Pending Payments', value: stats.pendingBookings, highlight: stats.pendingBookings > 0 },
     { label: 'Completed Events', value: stats.completedEvents ?? 0 },
+    { label: 'Pending Payments', value: stats.pendingBookings, highlight: stats.pendingBookings > 0 },
+    {
+      label: 'Pending Credit Orders',
+      value: stats.pendingCreditOrders ?? 0,
+      highlight: (stats.pendingCreditOrders ?? 0) > 0,
+    },
     { label: 'Live now', value: stats.liveEvents },
-    { label: 'Pending approvals', value: stats.pendingCustomers ?? 0, highlight: (stats.pendingCustomers ?? 0) > 0 },
-    { label: 'Active packages', value: stats.packages },
     { label: 'Revenue', value: formatCurrency(stats.revenue) },
   ];
 
@@ -38,6 +44,28 @@ export default function AdminOverview({ onGoToPayments }) {
         ))}
       </div>
 
+      {/* Revenue + credits breakdown */}
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="card">
+          <p className="text-sm text-slate-500">Booking revenue</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">
+            {formatCurrency(stats.bookingRevenue ?? 0)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="text-sm text-slate-500">Credit revenue</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">
+            {formatCurrency(stats.creditRevenue ?? 0)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="text-sm text-slate-500">Credits outstanding</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">
+            {credits.youtube} YT · {credits.server} SRV
+          </p>
+        </div>
+      </div>
+
       {stats.pendingBookings > 0 && (
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-sm text-amber-800">
@@ -45,6 +73,17 @@ export default function AdminOverview({ onGoToPayments }) {
           </p>
           <button type="button" className="btn-primary" onClick={onGoToPayments}>
             Review payments
+          </button>
+        </div>
+      )}
+
+      {(stats.pendingCreditOrders ?? 0) > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-800">
+            {stats.pendingCreditOrders} credit top-up order(s) awaiting verification.
+          </p>
+          <button type="button" className="btn-primary" onClick={onGoToCredits}>
+            Review credit orders
           </button>
         </div>
       )}
