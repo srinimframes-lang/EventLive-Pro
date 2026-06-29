@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import PhotoGallery from '../components/PhotoGallery.jsx';
 import { formatDateTime } from '../utils/format.js';
 
 export default function EventDetail() {
@@ -57,26 +58,35 @@ export default function EventDetail() {
     );
   if (!event) return null;
 
+  const coupleTitle =
+    event.brideName && event.groomName
+      ? `${event.groomName} & ${event.brideName}`
+      : event.brideName || event.groomName || '';
+  const watchPath = `/events/${event.slug || event.id}/live`;
+
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
+    <div className="mx-auto max-w-3xl px-4 py-8 sm:py-10">
       <Link to="/events" className="text-sm text-brand-600 hover:underline">
         ← Back to events
       </Link>
 
       <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold capitalize text-brand-700">
               {event.category}
             </span>
             <StatusBadge status={event.status} />
           </div>
-          <h1 className="mt-3 text-3xl font-bold text-slate-900">{event.title}</h1>
+          <h1 className="mt-3 text-2xl font-bold text-slate-900 sm:text-3xl">{event.title}</h1>
+          {coupleTitle && (
+            <p className="mt-1 text-lg font-medium text-brand-700">{coupleTitle}</p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Link
-            to={`/events/${event.slug || event.id}/live`}
+            to={watchPath}
             className={event.isLive ? 'btn bg-red-600 text-white hover:bg-red-700' : 'btn-primary'}
           >
             {event.isLive ? '● Watch live' : 'Watch'}
@@ -111,15 +121,26 @@ export default function EventDetail() {
         <Detail label="Attendees" value={event.attendeesCount ?? 0} />
       </div>
 
-      {event.streamUrl && event.isOnline && (
-        <a
-          href={event.streamUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-primary mt-4 inline-flex"
-        >
-          Open stream
-        </a>
+      {event.isOnline && (
+        <Link to={watchPath} className="btn-primary mt-4 inline-flex w-full justify-center sm:w-auto">
+          {event.isLive ? '● Open live stream' : 'Open stream'}
+        </Link>
+      )}
+
+      {event.photographerName && (
+        <div className="mt-6 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+          {event.photographerLogo && (
+            <img
+              src={event.photographerLogo}
+              alt={event.photographerName}
+              className="h-12 w-12 rounded-lg object-contain"
+            />
+          )}
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Photography</p>
+            <p className="font-semibold text-slate-800">{event.photographerName}</p>
+          </div>
+        </div>
       )}
 
       <div className="card mt-6">
@@ -135,6 +156,16 @@ export default function EventDetail() {
           </div>
         )}
       </div>
+
+      {event.gallery?.length > 0 && (
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">Photo gallery</h2>
+            <span className="text-sm text-slate-500">{event.gallery.length} photos</span>
+          </div>
+          <PhotoGallery photos={event.gallery} />
+        </div>
+      )}
     </div>
   );
 }
