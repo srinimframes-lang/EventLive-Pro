@@ -8,6 +8,7 @@ import StaffRoute from './components/StaffRoute.jsx';
 import ResellerRoute from './components/ResellerRoute.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
+import AdminLogin from './pages/AdminLogin.jsx';
 import Register from './pages/Register.jsx';
 import Book from './pages/Book.jsx';
 import BookingNew from './pages/BookingNew.jsx';
@@ -37,6 +38,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/register" element={<Register />} />
 
             {/* Booking (public info + customer flow) */}
