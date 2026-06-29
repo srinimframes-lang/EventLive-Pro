@@ -141,18 +141,29 @@ export default function BuyCreditsPanel() {
                   QR not set
                 </div>
               )}
-              {upiName && <p className="mt-3 font-semibold text-slate-900">{upiName}</p>}
-              {upiId && (
-                <p className="text-sm text-slate-600">
-                  UPI ID: <span className="font-medium text-slate-800">{upiId}</span>
-                </p>
-              )}
-              {product && (
-                <p className="mt-2 text-sm text-slate-500">
-                  Pay <strong>{formatCurrency(product.price)}</strong> for {product.credits} credit
-                  {product.credits > 1 ? 's' : ''}
-                </p>
-              )}
+              <dl className="mt-3 w-full space-y-1.5 text-sm">
+                {upiName && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500">Account holder</dt>
+                    <dd className="font-semibold text-slate-900">{upiName}</dd>
+                  </div>
+                )}
+                {upiId && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500">UPI ID</dt>
+                    <dd className="font-medium text-slate-800">{upiId}</dd>
+                  </div>
+                )}
+                {product && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500">Amount</dt>
+                    <dd className="font-bold text-brand-700">
+                      {formatCurrency(product.price)} · {product.credits} credit
+                      {product.credits > 1 ? 's' : ''}
+                    </dd>
+                  </div>
+                )}
+              </dl>
 
               <div className="mt-4 w-full">
                 <label className="label text-left">UPI reference / UTR (optional)</label>

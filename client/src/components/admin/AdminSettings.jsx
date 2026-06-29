@@ -139,9 +139,65 @@ export default function AdminSettings() {
         </div>
       </div>
 
-      {/* Payment */}
+      {/* UPI payment — shown to customers on the Buy Credits page */}
       <div className="card space-y-4">
-        <h2 className="text-lg font-bold text-slate-900">Payment details</h2>
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">UPI payment (shown to customers)</h2>
+          <p className="text-xs text-slate-500">
+            These details appear on the customer&apos;s Buy Credits page. Nothing is hardcoded.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <div className="flex flex-col items-center">
+            {resolveMediaUrl(p.upiQr) ? (
+              <img
+                src={resolveMediaUrl(p.upiQr)}
+                alt="UPI QR code"
+                className="h-32 w-32 rounded-lg border border-slate-200 object-contain p-1"
+              />
+            ) : (
+              <div className="grid h-32 w-32 place-items-center rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400">
+                No QR uploaded
+              </div>
+            )}
+            <label className="label mt-2">QR code image</label>
+            <input
+              type="file"
+              accept="image/*"
+              className="input"
+              onChange={(e) => uploadQr(e.target.files?.[0])}
+            />
+          </div>
+
+          <div className="grid flex-1 gap-4">
+            <div>
+              <label className="label">UPI ID</label>
+              <input
+                name="upiId"
+                className="input"
+                placeholder="yourname@bank"
+                value={p.upiId || ''}
+                onChange={pay}
+              />
+            </div>
+            <div>
+              <label className="label">Account holder name</label>
+              <input
+                name="upiName"
+                className="input"
+                placeholder="As shown in your UPI app"
+                value={p.upiName || ''}
+                onChange={pay}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Optional extras */}
+      <div className="card space-y-4">
+        <h2 className="text-lg font-bold text-slate-900">Other payment options (optional)</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">Google Pay number</label>
@@ -154,33 +210,6 @@ export default function AdminSettings() {
           <div>
             <label className="label">Paytm number</label>
             <input name="paytmNumber" className="input" value={p.paytmNumber || ''} onChange={pay} />
-          </div>
-          <div>
-            <label className="label">UPI ID</label>
-            <input name="upiId" className="input" value={p.upiId || ''} onChange={pay} />
-          </div>
-          <div>
-            <label className="label">UPI account name (shown under QR)</label>
-            <input name="upiName" className="input" value={p.upiName || ''} onChange={pay} />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {resolveMediaUrl(p.upiQr) && (
-            <img
-              src={resolveMediaUrl(p.upiQr)}
-              alt="QR"
-              className="h-20 w-20 rounded-lg border border-slate-200 object-contain"
-            />
-          )}
-          <div>
-            <label className="label">UPI QR code image</label>
-            <input
-              type="file"
-              accept="image/*"
-              className="input"
-              onChange={(e) => uploadQr(e.target.files?.[0])}
-            />
           </div>
         </div>
 
