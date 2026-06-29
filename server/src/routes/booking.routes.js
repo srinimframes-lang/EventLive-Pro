@@ -8,12 +8,11 @@ import {
   rejectBooking,
 } from '../controllers/booking.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
-import { upload } from '../middleware/upload.middleware.js';
 
 const router = Router();
 
 // Customer
-router.post('/', protect, upload.single('screenshot'), createBooking);
+router.post('/', protect, createBooking);
 router.get('/mine', protect, listMyBookings);
 
 // Admin

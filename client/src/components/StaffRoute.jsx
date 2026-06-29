@@ -2,11 +2,12 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 /**
- * Allows the Super Admin or a reseller (sub admin) — used for event
- * create/edit/studio pages. Customers are redirected to their dashboard.
+ * Allows any authenticated account to reach the event create/edit/studio pages.
+ * The server enforces credit balance on creation and ownership on edits, so a
+ * customer with enough credits can create and manage their own live links.
  */
 export default function StaffRoute({ children }) {
-  const { isAuthenticated, isAdmin, isSubAdmin, loading } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -17,10 +18,6 @@ export default function StaffRoute({ children }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  if (!isAdmin && !isSubAdmin) {
-    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

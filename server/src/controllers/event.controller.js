@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { Event, EVENT_STATUSES, EVENT_CATEGORIES } from '../models/Event.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { changeCredits } from '../utils/credits.js';
+import { changeBalance } from '../utils/credits.js';
+import { linkCost } from '../config/credits.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -30,14 +31,12 @@ const EDITABLE_FIELDS = [
 
 /**
  * Throws a 403 unless the user may manage this event: the Super Admin can
- * manage any event; a reseller (sub admin) can manage only events they created.
- * Customers can never manage events.
+ * manage any event; anyone else can manage only events they created.
  */
 function assertCanModify(event, user, res) {
   const isAdmin = user.role === 'admin';
-  const isOwnerReseller =
-    user.role === 'subadmin' && event.organizer?.toString() === user._id.toString();
-  if (!isAdmin && !isOwnerReseller) {
+  const isOwner = event.organizer?.toString() === user._id.toString();
+  if (!isAdmin && !isOwner) {
     res.status(403);
     throw new Error('You do not have permission to manage this event');
   }
@@ -123,70 +122,62 @@ export const getEvent = asyncHandler(async (req, res) => {
 export const createEvent = asyncHandler(async (req, res) => {
   const role = req.user.role;
 
-  // Only the Super Admin or a reseller (sub admin) may create events.
-  // Customers receive events automatically when their paid booking is approved.
-  if (role !== 'admin' && role !== 'subadmin') {
-    res.status(403);
-    throw new Error(
-      'Events are created after your booking payment is approved. Please submit a booking.'
-    );
-  }
-
   const payload = {};
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
-  // Admins may create on behalf of another organizer; resellers own their events.
-  payload.organizer = role === 'admin' ? req.body.organizer || req.user._id : req.user._id;
   payload.createdByRole = role;
 
-  // ── Reseller credit gate ────────────────────────────────────────────
-  if (role === 'subadmin') {
-    const creditType = req.body.creditType === 'server' ? 'server' : 'youtube';
-    const updated = await changeCredits({
-      userId: req.user._id,
-      type: creditType,
-      amount: -1,
-      reason: 'event_deduct',
-      createdBy: req.user._id,
-      note: `Event creation (${creditType})`,
-    });
-    if (!updated) {
-      res.status(402); // Payment Required
-      throw new Error(
-        `You have no ${creditType === 'server' ? 'private server' : 'YouTube'} credits left. Please purchase more credits to create an event.`
-      );
-    }
-    payload.creditType = creditType;
-
-    // Create the event; refund the credit if persistence fails.
-    let event;
-    try {
-      event = await Event.create(payload);
-    } catch (err) {
-      await changeCredits({
-        userId: req.user._id,
-        type: creditType,
-        amount: 1,
-        reason: 'refund',
-        createdBy: req.user._id,
-        note: 'Refund: event creation failed',
-      });
-      throw err;
-    }
+  // ── Admin: unlimited, no credits consumed ───────────────────────────
+  if (role === 'admin') {
+    payload.organizer = req.body.organizer || req.user._id;
+    payload.creditType = 'none';
+    const event = await Event.create(payload);
     const populated = await event.populate('organizer', 'name email');
-    return res.status(201).json({
-      success: true,
-      data: populated,
-      credits: updated.credits,
-    });
+    return res.status(201).json({ success: true, data: populated });
   }
 
-  // ── Admin (no credit consumed) ──────────────────────────────────────
-  payload.creditType = 'none';
-  const event = await Event.create(payload);
+  // ── Everyone else: pay with credits (YouTube = 1, Server = 5) ────────
+  const linkType = req.body.linkType === 'server' ? 'server' : 'youtube';
+  const cost = linkCost(linkType);
+  payload.organizer = req.user._id;
+  payload.creditType = linkType;
+
+  const updated = await changeBalance({
+    userId: req.user._id,
+    amount: -cost,
+    reason: 'event_deduct',
+    createdBy: req.user._id,
+    note: `Create ${linkType} live link`,
+  });
+  if (!updated) {
+    res.status(402); // Payment Required
+    throw new Error(
+      `You need ${cost} credit${cost > 1 ? 's' : ''} to create a ${linkType === 'server' ? 'Server' : 'YouTube'} live link. Please buy more credits.`
+    );
+  }
+
+  // Create the event; refund the credits if persistence fails.
+  let event;
+  try {
+    event = await Event.create(payload);
+  } catch (err) {
+    await changeBalance({
+      userId: req.user._id,
+      amount: cost,
+      reason: 'refund',
+      createdBy: req.user._id,
+      note: 'Refund: link creation failed',
+    });
+    throw err;
+  }
+
   const populated = await event.populate('organizer', 'name email');
-  return res.status(201).json({ success: true, data: populated });
+  return res.status(201).json({
+    success: true,
+    data: populated,
+    creditBalance: updated.creditBalance,
+  });
 });
 
 /**

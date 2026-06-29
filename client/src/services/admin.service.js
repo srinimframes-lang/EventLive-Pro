@@ -21,6 +21,11 @@ export const adminService = {
     const { data } = await api.delete(`/api/admin/customers/${id}`);
     return data;
   },
+  /** Add (positive) or remove (negative) credits for a customer. */
+  async adjustCustomerCredits(id, amount, note) {
+    const { data } = await api.post(`/api/admin/customers/${id}/credits`, { amount, note });
+    return data.data;
+  },
 
   // ── Sub admins (resellers) ──────────────────────────────
   async listSubAdmins() {

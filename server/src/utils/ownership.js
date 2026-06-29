@@ -1,14 +1,12 @@
 /**
- * Returns true for the Super Admin (any event) or a reseller (sub admin) who
- * created the event. Customers never manage events / gallery / chat / streams.
+ * Returns true for the Super Admin (any event) or the user who created the
+ * event (its organizer). Credits are charged at creation time, so the owner
+ * may fully manage their own live link (embed, gallery, chat, stream).
  */
 export function canManageEvent(event, user) {
   if (!event || !user) return false;
   if (user.role === 'admin') return true;
-  if (user.role === 'subadmin') {
-    return event.organizer?.toString() === user._id.toString();
-  }
-  return false;
+  return event.organizer?.toString() === user._id.toString();
 }
 
 /**

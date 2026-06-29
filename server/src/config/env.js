@@ -59,5 +59,21 @@ export const env = {
       return Boolean(this.url || (this.cloudName && this.apiKey && this.apiSecret));
     },
   },
+  // PhonePe payment gateway. Leave blank to run in mock mode (the credit flow
+  // works end-to-end for testing); add the merchant keys on Render to go live.
+  phonepe: {
+    merchantId: process.env.PHONEPE_MERCHANT_ID || '',
+    saltKey: process.env.PHONEPE_SALT_KEY || '',
+    saltIndex: process.env.PHONEPE_SALT_INDEX || '1',
+    // Sandbox: https://api-preprod.phonepe.com/apis/pg-sandbox
+    // Production: https://api.phonepe.com/apis/hermes
+    host: (process.env.PHONEPE_HOST || 'https://api-preprod.phonepe.com/apis/pg-sandbox').replace(
+      /\/+$/,
+      ''
+    ),
+    get enabled() {
+      return Boolean(this.merchantId && this.saltKey);
+    },
+  },
   isProd: process.env.NODE_ENV === 'production',
 };

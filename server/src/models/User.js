@@ -35,10 +35,17 @@ const userSchema = new Schema(
       enum: ['user', 'organizer', 'customer', 'subadmin', 'admin'],
       default: 'customer',
     },
-    // Reseller (sub admin) credit balances. 1 credit = 1 event.
+    // Unified credit wallet. Credits are purchased via the payment gateway and
+    // deducted when a live link is created (YouTube = 1, Server = 5).
+    creditBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Legacy reseller two-wallet field (kept for backward compatibility).
     credits: {
-      youtube: { type: Number, default: 0, min: 0 }, // YouTube event credits
-      server: { type: Number, default: 0, min: 0 }, // private server event credits
+      youtube: { type: Number, default: 0, min: 0 },
+      server: { type: Number, default: 0, min: 0 },
     },
     avatarUrl: {
       type: String,

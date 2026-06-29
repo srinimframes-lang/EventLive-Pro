@@ -4,7 +4,6 @@ import { Settings } from '../models/Settings.js';
 import { CreditOrder } from '../models/CreditOrder.js';
 import { CreditTransaction } from '../models/CreditTransaction.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { persistUpload } from '../utils/storage.js';
 
 function getPricing(settings) {
   return {
@@ -65,9 +64,6 @@ export const createCreditOrder = asyncHandler(async (req, res) => {
   const unitPrice = pricing[type];
   const amount = unitPrice * quantity;
 
-  let paymentScreenshot = '';
-  if (req.file) paymentScreenshot = await persistUpload(req.file);
-
   const order = await CreditOrder.create({
     subAdmin: req.user._id,
     type,
@@ -76,7 +72,6 @@ export const createCreditOrder = asyncHandler(async (req, res) => {
     amount,
     paymentMethod: req.body.paymentMethod || '',
     paymentReference: req.body.paymentReference || '',
-    paymentScreenshot,
     channel: 'manual',
     status: 'pending',
   });

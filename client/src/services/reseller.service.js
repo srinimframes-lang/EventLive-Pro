@@ -18,16 +18,9 @@ export const resellerService = {
     const { data } = await api.get('/api/reseller/credit-orders');
     return data.data;
   },
-  /** Submit a credit top-up order with payment proof (multipart). */
-  async buyCredits({ screenshot, ...fields }) {
-    const fd = new FormData();
-    Object.entries(fields).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') fd.append(k, v);
-    });
-    if (screenshot) fd.append('screenshot', screenshot);
-    const { data } = await api.post('/api/reseller/credit-orders', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+  /** Submit a credit top-up order (no screenshot — payments use the gateway). */
+  async buyCredits(fields) {
+    const { data } = await api.post('/api/reseller/credit-orders', fields);
     return data.data;
   },
 };

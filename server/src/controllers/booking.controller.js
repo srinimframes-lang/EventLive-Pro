@@ -3,7 +3,6 @@ import { Booking } from '../models/Booking.js';
 import { Package } from '../models/Package.js';
 import { Event } from '../models/Event.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { persistUpload } from '../utils/storage.js';
 
 /**
  * @route POST /api/bookings
@@ -28,9 +27,6 @@ export const createBooking = asyncHandler(async (req, res) => {
     throw new Error('Please select a valid package');
   }
 
-  let paymentScreenshot = '';
-  if (req.file) paymentScreenshot = await persistUpload(req.file);
-
   const booking = await Booking.create({
     customer: req.user._id,
     package: pkg._id,
@@ -44,7 +40,6 @@ export const createBooking = asyncHandler(async (req, res) => {
     notes: b.notes || '',
     paymentMethod: b.paymentMethod || '',
     paymentReference: b.paymentReference || '',
-    paymentScreenshot,
     status: 'pending',
   });
 

@@ -61,6 +61,21 @@ export default function AdminCustomers() {
     }
   };
 
+  const adjustCredits = async (c, sign) => {
+    const raw = window.prompt(
+      `${sign > 0 ? 'Add' : 'Remove'} how many credits for ${c.email}? (current: ${c.creditBalance ?? 0})`
+    );
+    if (raw === null) return;
+    const amount = Math.abs(parseInt(raw, 10)) * sign;
+    if (!Number.isFinite(amount) || amount === 0) return;
+    try {
+      await adminService.adjustCustomerCredits(c.id, amount);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const resetPassword = async (c) => {
     const pw = window.prompt(`New password for ${c.email} (min 6 chars):`);
     if (!pw) return;
@@ -155,6 +170,9 @@ export default function AdminCustomers() {
                       {!c.isActive && (
                         <span className="badge bg-red-100 text-red-700">Deactivated</span>
                       )}
+                      <span className="badge bg-brand-100 text-brand-700">
+                        {c.creditBalance ?? 0} credits
+                      </span>
                     </p>
                     <p className="text-sm text-slate-500">
                       {c.email}
@@ -162,6 +180,12 @@ export default function AdminCustomers() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button type="button" className="btn-outline" onClick={() => adjustCredits(c, 1)}>
+                      + Credits
+                    </button>
+                    <button type="button" className="btn-outline" onClick={() => adjustCredits(c, -1)}>
+                      − Credits
+                    </button>
                     <button
                       type="button"
                       className={c.approved ? 'btn-outline' : 'btn-primary'}

@@ -1,16 +1,9 @@
 import api from './api.js';
 
 export const bookingService = {
-  /** Customer submits a booking with payment screenshot (multipart). */
-  async create({ screenshot, ...fields }) {
-    const fd = new FormData();
-    Object.entries(fields).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') fd.append(k, v);
-    });
-    if (screenshot) fd.append('screenshot', screenshot);
-    const { data } = await api.post('/api/bookings', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+  /** Customer submits a booking enquiry (payments are handled via credits). */
+  async create(fields) {
+    const { data } = await api.post('/api/bookings', fields);
     return data.data;
   },
   async mine() {

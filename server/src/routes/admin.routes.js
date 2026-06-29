@@ -4,6 +4,7 @@ import {
   listCustomers,
   updateCustomer,
   deleteCustomer,
+  adjustCustomerCredits,
   getAnalytics,
   createSubAdmin,
   listSubAdmins,
@@ -25,6 +26,7 @@ router.get('/analytics', getAnalytics);
 
 router.route('/customers').get(listCustomers).post(createCustomer);
 router.route('/customers/:id').patch(updateCustomer).delete(deleteCustomer);
+router.post('/customers/:id/credits', adjustCustomerCredits);
 
 // Resellers (sub admins)
 router.route('/subadmins').get(listSubAdmins).post(createSubAdmin);

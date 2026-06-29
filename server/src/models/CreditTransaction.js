@@ -2,13 +2,14 @@ import mongoose from 'mongoose';
 
 const { Schema, model } = mongoose;
 
-export const CREDIT_TYPES = ['youtube', 'server'];
+// 'credit' = unified single-wallet entry; 'youtube'/'server' = legacy reseller.
+export const CREDIT_TYPES = ['credit', 'youtube', 'server'];
 export const CREDIT_REASONS = [
   'manual_add', // Super Admin granted credits
   'manual_remove', // Super Admin removed credits
-  'purchase', // approved online/credit order
-  'event_deduct', // 1 credit consumed when creating an event
-  'refund', // credit returned (e.g. failed event creation)
+  'purchase', // credits added after a successful gateway payment
+  'event_deduct', // credits consumed when creating a live link
+  'refund', // credits returned (e.g. failed link creation)
 ];
 
 /**

@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useSettings } from '../context/SettingsContext.jsx';
 import { packageService } from '../services/package.service.js';
 import { bookingService } from '../services/booking.service.js';
-import PaymentDetails from '../components/PaymentDetails.jsx';
 import { formatCurrency } from '../utils/format.js';
 
 export default function BookingNew() {
-  const { settings } = useSettings();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -19,11 +16,8 @@ export default function BookingNew() {
     groomName: '',
     eventDate: '',
     venue: '',
-    paymentMethod: '',
-    paymentReference: '',
     notes: '',
   });
-  const [screenshot, setScreenshot] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -38,21 +32,15 @@ export default function BookingNew() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selected = useMemo(
-    () => packages.find((p) => p.id === form.package),
-    [packages, form.package]
-  );
-
   const change = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!form.package) return setError('Please select a package.');
-    if (!screenshot) return setError('Please upload your payment screenshot.');
     setSubmitting(true);
     try {
-      await bookingService.create({ ...form, screenshot });
+      await bookingService.create(form);
       navigate('/dashboard', { state: { bookingSubmitted: true } });
     } catch (err) {
       setError(err.message);
@@ -63,10 +51,10 @@ export default function BookingNew() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
-      <h1 className="font-display text-3xl font-bold text-slate-900">New booking</h1>
+      <h1 className="font-display text-3xl font-bold text-slate-900">New booking enquiry</h1>
       <p className="mt-1 text-slate-600">
-        Tell us about your wedding, pay the package amount, and upload the receipt. Our team will
-        verify your payment and activate your event.
+        Tell us about your wedding. To go live yourself, buy credits and create a link from your{' '}
+        dashboard — payments are handled securely online.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-6">
@@ -150,57 +138,8 @@ export default function BookingNew() {
           </div>
         </div>
 
-        {/* Payment */}
-        <div className="card space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-slate-900">3. Make the payment</h2>
-            {selected && (
-              <span className="badge bg-brand-100 text-brand-700">
-                Amount: {formatCurrency(selected.price, selected.currency)}
-              </span>
-            )}
-          </div>
-          <PaymentDetails payment={settings.payment} />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="label">Paid via</label>
-              <select name="paymentMethod" className="input" value={form.paymentMethod} onChange={change}>
-                <option value="">Select…</option>
-                <option value="gpay">Google Pay</option>
-                <option value="phonepe">PhonePe</option>
-                <option value="paytm">Paytm</option>
-                <option value="upi">UPI ID</option>
-                <option value="bank">Bank transfer</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Transaction / reference ID</label>
-              <input
-                name="paymentReference"
-                className="input"
-                value={form.paymentReference}
-                onChange={change}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="label">Payment screenshot *</label>
-            <input
-              type="file"
-              accept="image/*"
-              className="input"
-              onChange={(e) => setScreenshot(e.target.files?.[0] || null)}
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Upload a clear screenshot of your successful payment.
-            </p>
-          </div>
-        </div>
-
         <button type="submit" className="btn-primary w-full py-3 text-base" disabled={submitting}>
-          {submitting ? 'Submitting…' : 'Submit booking for approval'}
+          {submitting ? 'Submitting…' : 'Submit enquiry'}
         </button>
       </form>
     </div>

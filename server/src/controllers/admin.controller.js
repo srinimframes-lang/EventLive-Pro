@@ -5,7 +5,7 @@ import { Package } from '../models/Package.js';
 import { CreditOrder } from '../models/CreditOrder.js';
 import { CreditTransaction } from '../models/CreditTransaction.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { changeCredits } from '../utils/credits.js';
+import { changeCredits, changeBalance } from '../utils/credits.js';
 
 /**
  * @route POST /api/admin/customers
@@ -83,6 +83,40 @@ export const updateCustomer = asyncHandler(async (req, res) => {
   await customer.save();
   customer.password = undefined;
   res.status(200).json({ success: true, data: customer });
+});
+
+/**
+ * @route POST /api/admin/customers/:id/credits
+ * @desc  Manually add (positive) or remove (negative) credits for a user
+ * @body  { amount: number, note?: string }
+ * @access Private/Admin
+ */
+export const adjustCustomerCredits = asyncHandler(async (req, res) => {
+  const delta = Number(req.body.amount);
+  if (!Number.isFinite(delta) || delta === 0) {
+    res.status(400);
+    throw new Error('Amount must be a non-zero number');
+  }
+  const user = await User.findById(req.params.id);
+  if (!user || user.role === 'admin') {
+    res.status(404);
+    throw new Error('Customer not found');
+  }
+
+  const updated = await changeBalance({
+    userId: user._id,
+    amount: delta,
+    reason: delta > 0 ? 'manual_add' : 'manual_remove',
+    note: req.body.note || (delta > 0 ? 'Manual credit' : 'Manual debit'),
+    createdBy: req.user._id,
+  });
+  if (!updated) {
+    res.status(400);
+    throw new Error('Insufficient balance to remove that many credits');
+  }
+
+  updated.password = undefined;
+  res.status(200).json({ success: true, data: updated });
 });
 
 /**

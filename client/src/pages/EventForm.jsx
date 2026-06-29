@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   eventService,
   EVENT_CATEGORIES,
@@ -7,6 +7,8 @@ import {
 } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
+
+const LINK_COSTS = { youtube: 1, server: 5 };
 
 const EMPTY = {
   title: '',
@@ -33,14 +35,19 @@ export default function EventForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
-  const { user, isSubAdmin, refreshUser } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { user, isAdmin, refreshUser } = useAuth();
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
 
-  // Resellers choose which credit to spend when creating a new event.
-  const [creditType, setCreditType] = useState('youtube');
-  const credits = user?.credits || { youtube: 0, server: 0 };
-  const showCreditPicker = isSubAdmin && !isEdit;
+  // Non-admins spend credits to create a link (YouTube = 1, Server = 5).
+  const [linkType, setLinkType] = useState(
+    searchParams.get('type') === 'server' ? 'server' : 'youtube'
+  );
+  const balance = user?.creditBalance ?? 0;
+  const cost = LINK_COSTS[linkType] || 1;
+  const showCreditPicker = !isAdmin && !isEdit;
+  const insufficient = showCreditPicker && balance < cost;
 
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(isEdit);
@@ -161,14 +168,14 @@ export default function EventForm() {
       chatEnabled: form.chatEnabled,
     };
 
-    // Resellers spend one credit per new event.
-    if (showCreditPicker) payload.creditType = creditType;
+    // Non-admins spend credits per new link.
+    if (showCreditPicker) payload.linkType = linkType;
 
     try {
       const saved = isEdit
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
-      if (isSubAdmin) await refreshUser();
+      if (!isAdmin) await refreshUser();
       navigate(`/events/${saved.slug || saved.id}`, { replace: true });
     } catch (err) {
       setError(err.message);
@@ -195,7 +202,7 @@ export default function EventForm() {
             {/credit/i.test(error) && (
               <>
                 {' '}
-                <Link to="/reseller#buy" className="font-semibold underline">
+                <Link to="/dashboard#buy-credits" className="font-semibold underline">
                   Buy credits
                 </Link>
               </>
@@ -203,59 +210,56 @@ export default function EventForm() {
           </div>
         )}
 
-        {/* ── Reseller credit selection ──────────────────────── */}
+        {/* ── Credit selection (non-admins) ──────────────────── */}
         {showCreditPicker && (
           <Section
-            title="Use a credit"
-            subtitle="Creating this event will deduct one credit from your balance."
+            title="Link type"
+            subtitle={`Your balance: ${balance} credit${balance === 1 ? '' : 's'}. Credits are deducted when the link is created.`}
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <label
                 className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
-                  creditType === 'youtube' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'
+                  linkType === 'youtube' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'
                 }`}
               >
                 <span>
                   <input
                     type="radio"
-                    name="creditType"
+                    name="linkType"
                     className="mr-2"
-                    checked={creditType === 'youtube'}
-                    onChange={() => setCreditType('youtube')}
+                    checked={linkType === 'youtube'}
+                    onChange={() => setLinkType('youtube')}
                   />
-                  YouTube event
+                  YouTube Live Link
                 </span>
-                <span className="text-sm font-semibold text-slate-600">
-                  {credits.youtube || 0} left
-                </span>
+                <span className="text-sm font-semibold text-slate-600">1 credit</span>
               </label>
               <label
                 className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
-                  creditType === 'server' ? 'border-gold-500 bg-gold-50' : 'border-slate-200'
+                  linkType === 'server' ? 'border-gold-500 bg-gold-50' : 'border-slate-200'
                 }`}
               >
                 <span>
                   <input
                     type="radio"
-                    name="creditType"
+                    name="linkType"
                     className="mr-2"
-                    checked={creditType === 'server'}
-                    onChange={() => setCreditType('server')}
+                    checked={linkType === 'server'}
+                    onChange={() => setLinkType('server')}
                   />
-                  Private server event
+                  Server Live Link
                 </span>
-                <span className="text-sm font-semibold text-slate-600">
-                  {credits.server || 0} left
-                </span>
+                <span className="text-sm font-semibold text-slate-600">5 credits</span>
               </label>
             </div>
-            {(credits[creditType] || 0) < 1 && (
+            {insufficient && (
               <p className="text-sm text-amber-700">
-                You have no {creditType === 'server' ? 'server' : 'YouTube'} credits.{' '}
-                <Link to="/reseller#buy" className="font-semibold underline">
+                You need {cost - balance} more credit{cost - balance === 1 ? '' : 's'} for a{' '}
+                {linkType === 'server' ? 'Server' : 'YouTube'} link.{' '}
+                <Link to="/dashboard#buy-credits" className="font-semibold underline">
                   Buy credits
-                </Link>{' '}
-                to create this event.
+                </Link>
+                .
               </p>
             )}
           </Section>
@@ -452,8 +456,18 @@ export default function EventForm() {
         </Section>
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-          <button type="submit" className="btn-primary w-full sm:w-auto" disabled={submitting}>
-            {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create event'}
+          <button
+            type="submit"
+            className="btn-primary w-full sm:w-auto"
+            disabled={submitting || insufficient}
+          >
+            {submitting
+              ? 'Saving…'
+              : isEdit
+                ? 'Save changes'
+                : showCreditPicker
+                  ? `Create link (${cost} credit${cost > 1 ? 's' : ''})`
+                  : 'Create event'}
           </button>
           <button type="button" className="btn-ghost w-full sm:w-auto" onClick={() => navigate(-1)}>
             Cancel
