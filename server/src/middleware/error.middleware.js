@@ -38,6 +38,15 @@ export function errorHandler(err, req, res, next) {
     message = `An account with that ${field} already exists`;
   }
 
+  // Multer (file upload) errors
+  if (err.name === 'MulterError') {
+    statusCode = 400;
+    message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Image is too large (max 8 MB)'
+        : `Upload error: ${err.message}`;
+  }
+
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
     statusCode = 401;

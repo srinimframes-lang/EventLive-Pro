@@ -8,11 +8,17 @@ import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
 import apiRoutes from './routes/index.js';
 import { notFound, errorHandler } from './middleware/error.middleware.js';
+import { UPLOADS_DIR } from './middleware/upload.middleware.js';
 
 const app = express();
 
-// Security & core middleware
-app.use(helmet());
+// Security & core middleware. Allow images/assets to be embedded cross-origin
+// (the uploaded gallery photos & logos are served from this origin).
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(
   cors({
     origin: env.clientUrl,
@@ -22,6 +28,15 @@ app.use(
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Serve uploaded media (gallery photos, photography logos).
+app.use(
+  '/uploads',
+  express.static(UPLOADS_DIR, {
+    maxAge: '7d',
+    fallthrough: true,
+  })
+);
 
 if (!env.isProd) {
   app.use(morgan('dev'));

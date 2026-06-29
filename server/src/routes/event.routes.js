@@ -15,7 +15,13 @@ import {
   getChatHistory,
   listQuestions,
 } from '../controllers/stream.controller.js';
+import {
+  uploadGallery,
+  deleteGalleryPhoto,
+  uploadLogo,
+} from '../controllers/media.controller.js';
 import { protect, optionalAuth } from '../middleware/auth.middleware.js';
+import { upload } from '../middleware/upload.middleware.js';
 
 const router = Router();
 
@@ -32,6 +38,11 @@ router.post('/:id/stream/key/regenerate', protect, regenerateStreamKey);
 router.post('/:id/stream/live', protect, setLiveStatus);
 router.get('/:id/chat', getChatHistory);
 router.get('/:id/questions', listQuestions);
+
+// ── Media: gallery photos & photography logo ──────────────────────────
+router.post('/:id/gallery', protect, upload.array('photos', 20), uploadGallery);
+router.delete('/:id/gallery/:photoId', protect, deleteGalleryPhoto);
+router.post('/:id/logo', protect, upload.single('logo'), uploadLogo);
 
 router
   .route('/:id')

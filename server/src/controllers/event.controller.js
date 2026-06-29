@@ -15,6 +15,10 @@ const EDITABLE_FIELDS = [
   'coverImage',
   'capacity',
   'tags',
+  'brideName',
+  'groomName',
+  'photographerName',
+  'photographerLogo',
 ];
 
 /**

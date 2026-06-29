@@ -93,6 +93,28 @@ const eventSchema = new Schema(
       default: '',
     },
 
+    // ── Wedding / couple details ──────────────────────────────
+    brideName: { type: String, trim: true, default: '', maxlength: 80 },
+    groomName: { type: String, trim: true, default: '', maxlength: 80 },
+
+    // ── Photography branding ──────────────────────────────────
+    photographerName: { type: String, trim: true, default: '', maxlength: 120 },
+    photographerLogo: { type: String, trim: true, default: '' },
+
+    // ── Photo gallery ─────────────────────────────────────────
+    gallery: {
+      type: [
+        new Schema(
+          {
+            url: { type: String, required: true, trim: true },
+            caption: { type: String, trim: true, default: '', maxlength: 200 },
+          },
+          { timestamps: { createdAt: true, updatedAt: false } }
+        ),
+      ],
+      default: [],
+    },
+
     // ── Live streaming (Phase 3) ──────────────────────────────
     streamProvider: {
       type: String,
