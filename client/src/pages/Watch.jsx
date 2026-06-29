@@ -4,10 +4,13 @@ import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
+import { buildWatchUrl } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
+import PhotoGallery from '../components/PhotoGallery.jsx';
+import ShareButtons from '../components/ShareButtons.jsx';
 
 export default function Watch() {
   const { idOrSlug } = useParams();
@@ -39,7 +42,6 @@ export default function Watch() {
   const guestName = user?.name || 'Guest';
   const room = useLiveRoom(eventId, { guestName });
 
-  // Merge live status pushed over the socket into the player config.
   const mergedConfig = useMemo(() => {
     if (!config) return null;
     if (!room.liveStatus) return config;
@@ -52,6 +54,12 @@ export default function Watch() {
     return user.role === 'admin' || organizerId === user.id;
   }, [event, user]);
 
+  const coupleTitle = useMemo(() => {
+    if (!event) return '';
+    if (event.brideName && event.groomName) return `${event.groomName} & ${event.brideName}`;
+    return event.brideName || event.groomName || '';
+  }, [event]);
+
   if (error)
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
@@ -62,34 +70,70 @@ export default function Watch() {
 
   if (!event) return <p className="py-20 text-center text-slate-500">Loading…</p>;
 
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      <Link to={`/events/${event.slug || event.id}`} className="text-sm text-brand-600 hover:underline">
-        ← Event details
-      </Link>
+  const watchUrl = buildWatchUrl(event);
 
-      <div className="mt-3 grid gap-6 lg:grid-cols-3">
+  return (
+    <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          to={`/events/${event.slug || event.id}`}
+          className="text-sm text-brand-600 hover:underline"
+        >
+          ← Event details
+        </Link>
+        {event.photographerName && (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            {event.photographerLogo && (
+              <img
+                src={event.photographerLogo}
+                alt={event.photographerName}
+                className="h-8 w-8 rounded-md object-contain"
+              />
+            )}
+            <span>
+              Captured by <span className="font-semibold text-slate-700">{event.photographerName}</span>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Couple banner */}
+      {coupleTitle && (
+        <div className="mt-3 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-800 px-4 py-5 text-center text-white sm:py-6">
+          <p className="text-xs uppercase tracking-[0.3em] text-brand-100">
+            {event.category === 'concert' ? 'Live' : 'Wedding Live'}
+          </p>
+          <h1 className="mt-1 text-2xl font-extrabold sm:text-4xl">{coupleTitle}</h1>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-6 lg:grid-cols-3">
         {/* Player + meta */}
         <div className="lg:col-span-2">
           <LivePlayer config={mergedConfig} />
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-bold text-slate-900">{event.title}</h1>
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{event.title}</h2>
             <ViewerCount count={room.viewers} isLive={mergedConfig?.isLive} />
           </div>
 
-          {canAnswer && (
-            <Link to={`/events/${event.id}/studio`} className="btn-ghost mt-3 inline-flex">
-              Open streaming studio
-            </Link>
-          )}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <ShareButtons url={watchUrl} title={coupleTitle || event.title} />
+            {canAnswer && (
+              <Link to={`/events/${event.id}/studio`} className="btn-ghost">
+                Open streaming studio
+              </Link>
+            )}
+          </div>
 
-          <p className="mt-3 whitespace-pre-wrap text-slate-600">{event.description}</p>
+          {event.description && (
+            <p className="mt-4 whitespace-pre-wrap text-slate-600">{event.description}</p>
+          )}
         </div>
 
         {/* Realtime sidebar */}
         <div className="lg:col-span-1">
-          <div className="card flex h-[70vh] flex-col p-0">
+          <div className="card flex h-[60vh] flex-col p-0 sm:h-[70vh]">
             <div className="flex border-b border-slate-200">
               <TabButton active={tab === 'chat'} onClick={() => setTab('chat')}>
                 Chat
@@ -119,6 +163,15 @@ export default function Watch() {
           </div>
         </div>
       </div>
+
+      {/* Photo gallery */}
+      <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Photo gallery</h2>
+          <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>
+        </div>
+        <PhotoGallery photos={event.gallery || []} />
+      </section>
     </div>
   );
 }
