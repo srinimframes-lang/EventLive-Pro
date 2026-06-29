@@ -19,6 +19,10 @@ const EDITABLE_FIELDS = [
   'groomName',
   'photographerName',
   'photographerLogo',
+  'streamProvider',
+  'youtubeVideoId',
+  'hlsUrl',
+  'webrtcUrl',
 ];
 
 /**
