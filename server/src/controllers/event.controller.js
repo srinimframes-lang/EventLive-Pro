@@ -115,11 +115,21 @@ export const getEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createEvent = asyncHandler(async (req, res) => {
+  // In the commercial model, customers cannot create events directly — events
+  // are created automatically when the Super Admin approves their paid booking.
+  // Only the admin may create events ad-hoc.
+  if (req.user.role !== 'admin') {
+    res.status(403);
+    throw new Error(
+      'Events are created after your booking payment is approved. Please submit a booking.'
+    );
+  }
+
   const payload = {};
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
-  payload.organizer = req.user._id;
+  payload.organizer = req.body.organizer || req.user._id;
 
   const event = await Event.create(payload);
   const populated = await event.populate('organizer', 'name email');

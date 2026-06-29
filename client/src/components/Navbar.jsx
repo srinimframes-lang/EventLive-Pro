@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useSettings } from '../context/SettingsContext.jsx';
+import { resolveMediaUrl } from '../utils/format.js';
 
 export default function Navbar() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, isAdmin, user, logout } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -15,42 +18,62 @@ export default function Navbar() {
     navigate('/');
   };
 
+  const homeFor = isAdmin ? '/admin' : '/dashboard';
+  const logoUrl = resolveMediaUrl(settings.companyLogo);
+
+  const NavLinks = ({ stacked }) => (
+    <>
+      <Link to="/book" onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
+        Book Now
+      </Link>
+      <Link to="/events" onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
+        Watch Live
+      </Link>
+      {isAuthenticated ? (
+        <>
+          <Link to={homeFor} onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
+            {isAdmin ? 'Admin' : 'Dashboard'}
+          </Link>
+          {stacked && user?.name && (
+            <span className="px-2 py-1 text-sm text-slate-500">Signed in as {user.name}</span>
+          )}
+          <button type="button" className="btn-primary" onClick={handleLogout}>
+            Log out
+          </button>
+        </>
+      ) : (
+        <Link to="/login" onClick={close} className="btn-primary">
+          Customer Login
+        </Link>
+      )}
+    </>
+  );
+
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <Link to="/" onClick={close} className="flex items-center gap-2 text-lg font-extrabold text-brand-700">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-white">E</span>
-          EventLive&nbsp;Pro
+        <Link to="/" onClick={close} className="flex items-center gap-2.5">
+          {logoUrl ? (
+            <img src={logoUrl} alt={settings.companyName} className="h-9 w-9 rounded-lg object-cover" />
+          ) : (
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-600 text-lg font-bold text-white">
+              {(settings.companyName || 'M').charAt(0)}
+            </span>
+          )}
+          <span className="flex flex-col leading-tight">
+            <span className="font-display text-base font-bold text-brand-700 sm:text-lg">
+              {settings.companyName}
+            </span>
+            {settings.tagline && (
+              <span className="hidden text-[11px] text-slate-500 sm:block">{settings.tagline}</span>
+            )}
+          </span>
         </Link>
 
-        {/* Desktop nav */}
-        <div className="hidden items-center gap-2 sm:flex">
-          <Link to="/events" className="btn-ghost">
-            Events
-          </Link>
-          {isAuthenticated ? (
-            <>
-              <Link to="/dashboard" className="btn-ghost">
-                Dashboard
-              </Link>
-              <span className="hidden text-sm text-slate-500 md:inline">{user?.name}</span>
-              <button type="button" className="btn-primary" onClick={handleLogout}>
-                Log out
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to="/login" className="btn-ghost">
-                Log in
-              </Link>
-              <Link to="/register" className="btn-primary">
-                Get started
-              </Link>
-            </>
-          )}
+        <div className="hidden items-center gap-1.5 sm:flex">
+          <NavLinks />
         </div>
 
-        {/* Mobile menu toggle */}
         <button
           type="button"
           className="btn-ghost px-2 sm:hidden"
@@ -68,35 +91,10 @@ export default function Navbar() {
         </button>
       </nav>
 
-      {/* Mobile dropdown */}
       {open && (
         <div className="border-t border-slate-200 bg-white px-4 py-3 sm:hidden">
           <div className="flex flex-col gap-2">
-            <Link to="/events" onClick={close} className="btn-ghost justify-start">
-              Events
-            </Link>
-            {isAuthenticated ? (
-              <>
-                <Link to="/dashboard" onClick={close} className="btn-ghost justify-start">
-                  Dashboard
-                </Link>
-                {user?.name && (
-                  <span className="px-2 py-1 text-sm text-slate-500">Signed in as {user.name}</span>
-                )}
-                <button type="button" className="btn-primary" onClick={handleLogout}>
-                  Log out
-                </button>
-              </>
-            ) : (
-              <>
-                <Link to="/login" onClick={close} className="btn-ghost justify-start">
-                  Log in
-                </Link>
-                <Link to="/register" onClick={close} className="btn-primary">
-                  Get started
-                </Link>
-              </>
-            )}
+            <NavLinks stacked />
           </div>
         </div>
       )}

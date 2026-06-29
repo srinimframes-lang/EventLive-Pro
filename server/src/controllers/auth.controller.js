@@ -15,33 +15,6 @@ function sendAuthResponse(res, statusCode, user) {
 }
 
 /**
- * @route   POST /apiauth.service.js
- * @desc    Register a new user
- * @access  Public
- */
-export async function register(req, res, next) {
-  try {
-    const { name, email, password } = req.body;
-
-    if (!name || !email || !password) {
-      res.status(400);
-      throw new Error('Please provide name, email and password');
-    }
-
-    const exists = await User.findOne({ email });
-    if (exists) {
-      res.status(409);
-      throw new Error('An account with that email already exists');
-    }
-
-    const user = await User.create({ name, email, password });
-    sendAuthResponse(res, 201, user);
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
  * @route   POST /api/auth/login
  * @desc    Authenticate a user and return a JWT
  * @access  Public
@@ -55,10 +28,17 @@ export async function login(req, res, next) {
       throw new Error('Please provide email and password');
     }
 
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: String(email).toLowerCase().trim() }).select(
+      '+password'
+    );
     if (!user || !(await user.comparePassword(password))) {
       res.status(401);
       throw new Error('Invalid email or password');
+    }
+
+    if (user.isActive === false) {
+      res.status(403);
+      throw new Error('This account has been deactivated. Please contact support.');
     }
 
     user.password = undefined;

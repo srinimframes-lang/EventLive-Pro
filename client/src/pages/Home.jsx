@@ -1,49 +1,146 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useSettings } from '../context/SettingsContext.jsx';
+import { packageService } from '../services/package.service.js';
+import { formatCurrency, whatsappLink } from '../utils/format.js';
 
-const features = [
-  { title: 'Create events', desc: 'Spin up an event page in minutes with schedules, speakers and tickets.' },
-  { title: 'Stream live', desc: 'Broadcast HD video to your audience with low-latency live streaming.' },
-  { title: 'Engage & analyse', desc: 'Real-time chat, Q&A and analytics to understand your audience.' },
+const steps = [
+  { n: '01', title: 'Choose a package', desc: 'Pick the wedding streaming package that fits your celebration.' },
+  { n: '02', title: 'Confirm payment', desc: 'Pay via UPI, GPay, PhonePe, Paytm or bank transfer and upload the receipt.' },
+  { n: '03', title: 'We go live', desc: 'Our team streams your big day in HD to a private watch link for your guests.' },
 ];
 
 export default function Home() {
+  const { settings } = useSettings();
+  const [packages, setPackages] = useState([]);
+
+  useEffect(() => {
+    packageService
+      .list()
+      .then(setPackages)
+      .catch(() => setPackages([]));
+  }, []);
+
+  const wa = whatsappLink(settings.whatsappNumber, `Hi ${settings.companyName}, I'd like to book a wedding live stream.`);
+
   return (
-    <div className="mx-auto max-w-6xl px-4">
-      <section className="grid items-center gap-10 py-16 md:grid-cols-2 md:py-24">
-        <div>
-          <span className="inline-block rounded-full bg-brand-100 px-3 py-1 text-xs font-semibold text-brand-700">
-            MERN • JWT • Tailwind
+    <div>
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 text-white">
+        <div className="absolute inset-0 opacity-20 [background:radial-gradient(circle_at_20%_20%,#fff,transparent_40%),radial-gradient(circle_at_80%_0,#f5ebd5,transparent_35%)]" />
+        <div className="relative mx-auto max-w-6xl px-4 py-20 sm:py-28">
+          <span className="badge bg-white/15 text-gold-200 ring-1 ring-white/20">
+            {settings.tagline || 'Premium Wedding Live Streaming'}
           </span>
-          <h1 className="mt-4 text-4xl font-extrabold leading-tight text-slate-900 sm:text-5xl">
-            Host & stream <span className="text-brand-600">live events</span> that people remember.
+          <h1 className="mt-5 max-w-3xl font-display text-4xl font-bold leading-tight sm:text-6xl">
+            Share your wedding day with everyone you love — live & in HD.
           </h1>
-          <p className="mt-4 text-lg text-slate-600">
-            EventLive Pro is your all-in-one platform to plan, manage and broadcast events to a global audience.
+          <p className="mt-5 max-w-2xl text-lg text-brand-100">
+            {settings.companyName} streams your ceremony to a private link so family and friends
+            anywhere in the world can celebrate with you in real time.
           </p>
-          <div className="mt-8 flex gap-3">
-            <Link to="/register" className="btn-primary px-6 py-3 text-base">
-              Get started free
+          <div className="mt-9 flex flex-wrap gap-3">
+            <Link to="/book" className="btn-gold px-7 py-3 text-base">
+              Book Now
             </Link>
-            <Link to="/login" className="btn-ghost px-6 py-3 text-base">
-              I have an account
+            <Link to="/login" className="btn px-7 py-3 text-base bg-white text-brand-700 hover:bg-brand-50">
+              Customer Login
+            </Link>
+            <Link
+              to="/events"
+              className="btn px-7 py-3 text-base bg-white/10 text-white ring-1 ring-white/30 hover:bg-white/20"
+            >
+              Watch Live
             </Link>
           </div>
-        </div>
-        <div className="card bg-gradient-to-br from-brand-600 to-brand-800 text-white">
-          <p className="text-sm uppercase tracking-wider text-brand-100">Live now</p>
-          <p className="mt-2 text-2xl font-bold">Global Dev Summit 2026</p>
-          <p className="mt-1 text-brand-100">12,480 watching</p>
-          <div className="mt-6 aspect-video rounded-xl bg-black/30 ring-1 ring-white/20" />
         </div>
       </section>
 
-      <section className="grid gap-6 pb-20 md:grid-cols-3">
-        {features.map((f) => (
-          <div key={f.title} className="card">
-            <h3 className="text-lg font-bold text-slate-900">{f.title}</h3>
-            <p className="mt-2 text-slate-600">{f.desc}</p>
+      {/* How it works */}
+      <section className="mx-auto max-w-6xl px-4 py-16">
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">How it works</h2>
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
+          {steps.map((s) => (
+            <div key={s.n} className="card">
+              <span className="font-display text-3xl font-bold text-gold-500">{s.n}</span>
+              <h3 className="mt-3 text-lg font-bold text-slate-900">{s.title}</h3>
+              <p className="mt-2 text-slate-600">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Packages */}
+      {packages.length > 0 && (
+        <section className="bg-white py-16">
+          <div className="mx-auto max-w-6xl px-4">
+            <h2 className="text-center font-display text-3xl font-bold text-slate-900">
+              Our packages
+            </h2>
+            <p className="mt-2 text-center text-slate-600">
+              Transparent pricing for every kind of celebration.
+            </p>
+            <div className="mt-10 grid gap-6 md:grid-cols-3">
+              {packages.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`card flex flex-col ${i === 1 ? 'ring-2 ring-gold-400' : ''}`}
+                >
+                  {i === 1 && (
+                    <span className="badge mb-2 self-start bg-gold-100 text-gold-700">Most popular</span>
+                  )}
+                  <h3 className="font-display text-2xl font-bold text-slate-900">{p.name}</h3>
+                  <p className="mt-2 text-3xl font-extrabold text-brand-700">
+                    {formatCurrency(p.price, p.currency)}
+                  </p>
+                  {p.durationLabel && (
+                    <p className="mt-1 text-sm text-slate-500">{p.durationLabel}</p>
+                  )}
+                  {p.description && <p className="mt-3 text-sm text-slate-600">{p.description}</p>}
+                  <ul className="mt-4 space-y-2 text-sm text-slate-700">
+                    {(p.features || []).map((f) => (
+                      <li key={f} className="flex items-start gap-2">
+                        <span className="mt-0.5 text-gold-500">✓</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/book" className="btn-primary mt-6 w-full">
+                    Book {p.name}
+                  </Link>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+        </section>
+      )}
+
+      {/* CTA / contact */}
+      <section className="mx-auto max-w-6xl px-4 py-16">
+        <div className="card flex flex-col items-center gap-4 bg-gradient-to-br from-brand-50 to-gold-50 text-center">
+          <h2 className="font-display text-3xl font-bold text-slate-900">Ready to book your date?</h2>
+          <p className="max-w-xl text-slate-600">
+            Reach out and our team will set up your account and guide you through the simple booking
+            process.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {wa && (
+              <a href={wa} target="_blank" rel="noreferrer" className="btn-gold px-6 py-3">
+                Chat on WhatsApp
+              </a>
+            )}
+            <Link to="/book" className="btn-primary px-6 py-3">
+              See packages
+            </Link>
+          </div>
+          {(settings.contactPhone || settings.contactEmail) && (
+            <p className="text-sm text-slate-500">
+              {settings.contactPhone && <span>Call: {settings.contactPhone}</span>}
+              {settings.contactPhone && settings.contactEmail && <span> · </span>}
+              {settings.contactEmail && <span>Email: {settings.contactEmail}</span>}
+            </p>
+          )}
+        </div>
       </section>
     </div>
   );

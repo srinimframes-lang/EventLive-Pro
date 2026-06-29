@@ -1,10 +1,16 @@
 import { Router } from 'express';
-import { register, login, logout, getMe } from '../controllers/auth.controller.js';
+import { login, logout, getMe } from '../controllers/auth.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
-router.post('/register', register);
+// Public registration is disabled — accounts are created by the Super Admin.
+router.post('/register', (_req, res) => {
+  res.status(403).json({
+    success: false,
+    message: 'Public registration is disabled. Please contact us to get an account.',
+  });
+});
 router.post('/login', login);
 router.post('/logout', logout);
 router.get('/me', protect, getMe);

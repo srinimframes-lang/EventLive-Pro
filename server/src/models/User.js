@@ -28,12 +28,31 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      enum: ['user', 'organizer', 'admin'],
-      default: 'user',
+      // 'admin' = super admin (MaaEvents9). 'customer' = admin-created client.
+      // Legacy 'user'/'organizer' kept for backward compatibility (treated as customer).
+      enum: ['user', 'organizer', 'customer', 'admin'],
+      default: 'customer',
     },
     avatarUrl: {
       type: String,
       default: '',
+    },
+    // Whether the account can log in (admins can deactivate customers).
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    // Optional phone for customer contact.
+    phone: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    // Which admin created this account (null for the seeded super admin).
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
   },
   { timestamps: true }

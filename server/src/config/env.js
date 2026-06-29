@@ -40,6 +40,13 @@ export const env = {
   // Base RTMP ingest URL that broadcasters point OBS at. The per-event stream
   // key is appended to this (e.g. rtmp://localhost:1935/live/<streamKey>).
   rtmpIngestUrl: process.env.RTMP_INGEST_URL || 'rtmp://localhost:1935/live',
+  // Super Admin bootstrap. On first boot the server ensures this account exists
+  // (role=admin). Set these on Render; change the password after first login.
+  superAdmin: {
+    name: process.env.SUPER_ADMIN_NAME || 'MaaEvents9 Admin',
+    email: (process.env.SUPER_ADMIN_EMAIL || 'admin@maaevents9.com').toLowerCase().trim(),
+    password: process.env.SUPER_ADMIN_PASSWORD || 'MaaEvents9@Admin',
+  },
   // Optional Cloudinary credentials for durable image storage. When present,
   // uploads go to Cloudinary (surviving redeploys); otherwise local disk is
   // used as a fallback. Set CLOUDINARY_URL or the three discrete vars on Render.

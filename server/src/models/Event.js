@@ -52,6 +52,18 @@ const eventSchema = new Schema(
       required: true,
       index: true,
     },
+    // Commercial booking that produced this event (admin-approved payment).
+    booking: {
+      type: Schema.Types.ObjectId,
+      ref: 'Booking',
+      default: null,
+      index: true,
+    },
+    package: {
+      type: Schema.Types.ObjectId,
+      ref: 'Package',
+      default: null,
+    },
     category: {
       type: String,
       enum: EVENT_CATEGORIES,

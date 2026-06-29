@@ -1,11 +1,15 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
+import Footer from './components/Footer.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import AdminRoute from './components/AdminRoute.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
-import Register from './pages/Register.jsx';
+import Book from './pages/Book.jsx';
+import BookingNew from './pages/BookingNew.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Admin from './pages/Admin.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
 import EventForm from './pages/EventForm.jsx';
@@ -26,52 +30,78 @@ export default function App() {
       <Navbar />
       <main className="flex-1">
         <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/events" element={<Events />} />
-          <Route
-            path="/events/new"
-            element={
-              <ProtectedRoute>
-                <EventForm />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/events/:id/edit"
-            element={
-              <ProtectedRoute>
-                <EventForm />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/events/:idOrSlug/live" element={<Watch />} />
-          <Route
-            path="/events/:id/studio"
-            element={
-              <ProtectedRoute>
-                <Studio />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/events/:idOrSlug" element={<EventDetail />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            {/* Public registration is disabled. */}
+            <Route path="/register" element={<Navigate to="/login" replace />} />
+
+            {/* Booking (public info + customer flow) */}
+            <Route path="/book" element={<Book />} />
+            <Route
+              path="/book/new"
+              element={
+                <ProtectedRoute>
+                  <BookingNew />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Public watch */}
+            <Route path="/events" element={<Events />} />
+            <Route path="/events/:idOrSlug/live" element={<Watch />} />
+            <Route path="/live/:idOrSlug" element={<Watch />} />
+
+            {/* Event management (owner/admin) */}
+            <Route
+              path="/events/new"
+              element={
+                <AdminRoute>
+                  <EventForm />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/events/:id/edit"
+              element={
+                <ProtectedRoute>
+                  <EventForm />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/events/:id/studio"
+              element={
+                <ProtectedRoute>
+                  <Studio />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/events/:idOrSlug" element={<EventDetail />} />
+
+            {/* Dashboards */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <Admin />
+                </AdminRoute>
+              }
+            />
+
+            <Route path="*" element={<NotFound />} />
+          </Routes>
         </Suspense>
       </main>
-      <footer className="border-t border-slate-200 py-6 text-center text-sm text-slate-500">
-        © {new Date().getFullYear()} EventLive Pro. Built with the MERN stack.
-      </footer>
+      <Footer />
     </div>
   );
 }

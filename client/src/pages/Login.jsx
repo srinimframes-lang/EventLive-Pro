@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useSettings } from '../context/SettingsContext.jsx';
+import { whatsappLink } from '../utils/format.js';
 
 export default function Login() {
   const { login } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from?.pathname || '/dashboard';
+  const requestedFrom = location.state?.from?.pathname;
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
@@ -19,8 +22,10 @@ export default function Login() {
     setError('');
     setSubmitting(true);
     try {
-      await login(form);
-      navigate(from, { replace: true });
+      const loggedIn = await login(form);
+      const dest =
+        requestedFrom || (loggedIn?.role === 'admin' ? '/admin' : '/dashboard');
+      navigate(dest, { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -28,10 +33,17 @@ export default function Login() {
     }
   };
 
+  const wa = whatsappLink(
+    settings.whatsappNumber,
+    `Hi ${settings.companyName}, I'd like to create an account to book a wedding live stream.`
+  );
+
   return (
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
-      <h1 className="text-2xl font-bold text-slate-900">Welcome back</h1>
-      <p className="mt-1 text-slate-600">Log in to your EventLive Pro account.</p>
+      <h1 className="font-display text-3xl font-bold text-slate-900">Customer Login</h1>
+      <p className="mt-1 text-slate-600">
+        Log in with the credentials provided by {settings.companyName}.
+      </p>
 
       <form onSubmit={handleSubmit} className="card mt-6 space-y-4">
         {error && (
@@ -72,12 +84,15 @@ export default function Login() {
         </button>
       </form>
 
-      <p className="mt-4 text-center text-sm text-slate-600">
-        No account?{' '}
-        <Link to="/register" className="font-semibold text-brand-600 hover:underline">
-          Create one
-        </Link>
-      </p>
+      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
+        <p className="font-medium text-slate-700">Don&apos;t have an account yet?</p>
+        <p className="mt-1">Accounts are created by our team — get in touch to get started.</p>
+        {wa && (
+          <a href={wa} target="_blank" rel="noreferrer" className="btn-gold mt-3 w-full">
+            Request an account on WhatsApp
+          </a>
+        )}
+      </div>
     </div>
   );
 }

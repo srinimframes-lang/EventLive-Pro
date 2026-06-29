@@ -1,3 +1,30 @@
+/**
+ * Formats a number as currency (INR by default).
+ */
+export function formatCurrency(amount, currency = 'INR') {
+  const value = Number(amount) || 0;
+  try {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `₹${value.toLocaleString('en-IN')}`;
+  }
+}
+
+/**
+ * Builds a wa.me deep link for a phone number. Returns '' if no number.
+ */
+export function whatsappLink(number, text = '') {
+  if (!number) return '';
+  const digits = String(number).replace(/[^\d]/g, '');
+  if (!digits) return '';
+  const query = text ? `?text=${encodeURIComponent(text)}` : '';
+  return `https://wa.me/${digits}${query}`;
+}
+
 export function formatDateTime(value) {
   if (!value) return '';
   const date = new Date(value);

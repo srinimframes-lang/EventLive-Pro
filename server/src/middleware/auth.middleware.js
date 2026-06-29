@@ -30,6 +30,11 @@ export async function protect(req, res, next) {
       throw new Error('Not authorized, user no longer exists');
     }
 
+    if (user.isActive === false) {
+      res.status(403);
+      throw new Error('This account has been deactivated');
+    }
+
     req.user = user;
     return next();
   } catch (error) {

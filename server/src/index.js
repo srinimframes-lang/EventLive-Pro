@@ -3,9 +3,18 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { initSocket } from './realtime/socket.js';
+import { runSeed } from './config/seed.js';
 
 async function start() {
   await connectDB();
+
+  // Ensure baseline data (super admin, settings, packages) exists.
+  try {
+    await runSeed();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[server] Seed failed:', err.message);
+  }
 
   const server = http.createServer(app);
 

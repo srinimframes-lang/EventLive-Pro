@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import EventCard from '../components/EventCard.jsx';
 
 export default function Events() {
-  const { isAuthenticated } = useAuth();
+  const { isAdmin } = useAuth();
   const [state, setState] = useState({ data: [], total: 0, page: 1, pages: 1 });
   const [filters, setFilters] = useState({ search: '', category: '', page: 1 });
   const [loading, setLoading] = useState(true);
@@ -39,10 +39,10 @@ export default function Events() {
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Events</h1>
-          <p className="mt-1 text-slate-600">Discover and join upcoming live events.</p>
+          <h1 className="font-display text-3xl font-bold text-slate-900">Live Weddings</h1>
+          <p className="mt-1 text-slate-600">Watch celebrations streamed live and on demand.</p>
         </div>
-        {isAuthenticated && (
+        {isAdmin && (
           <Link to="/events/new" className="btn-primary">
             + Create event
           </Link>
@@ -79,8 +79,8 @@ export default function Events() {
         <p className="mt-10 text-center text-slate-500">Loading events…</p>
       ) : state.data.length === 0 ? (
         <div className="mt-10 rounded-2xl border border-dashed border-slate-300 p-12 text-center">
-          <p className="text-slate-600">No events found.</p>
-          {isAuthenticated && (
+          <p className="text-slate-600">No live weddings to show yet.</p>
+          {isAdmin && (
             <Link to="/events/new" className="btn-primary mt-4">
               Create the first one
             </Link>
