@@ -16,6 +16,7 @@ const EMPTY = {
   endTime: '',
   isOnline: true,
   location: 'Online',
+  venue: '',
   youtubeUrl: '',
   capacity: 0,
   tags: '',
@@ -23,6 +24,7 @@ const EMPTY = {
   groomName: '',
   photographerName: '',
   photographerLogo: '',
+  coverImage: '',
 };
 
 export default function EventForm() {
@@ -30,11 +32,13 @@ export default function EventForm() {
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const logoInputRef = useRef(null);
+  const coverInputRef = useRef(null);
 
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -53,6 +57,7 @@ export default function EventForm() {
           endTime: toDateTimeLocal(event.endTime),
           isOnline: event.isOnline ?? true,
           location: event.location || 'Online',
+          venue: event.venue || '',
           youtubeUrl: event.youtubeVideoId
             ? `https://youtu.be/${event.youtubeVideoId}`
             : event.streamUrl || '',
@@ -62,6 +67,7 @@ export default function EventForm() {
           groomName: event.groomName || '',
           photographerName: event.photographerName || '',
           photographerLogo: event.photographerLogo || '',
+          coverImage: event.coverImage || '',
         });
       })
       .catch((err) => active && setError(err.message))
@@ -96,6 +102,26 @@ export default function EventForm() {
     }
   };
 
+  const handleCoverUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!isEdit) {
+      setError('Save the event first, then upload a couple photo.');
+      return;
+    }
+    setUploadingCover(true);
+    setError('');
+    try {
+      const { coverImage } = await eventService.uploadCover(id, file);
+      setForm((f) => ({ ...f, coverImage }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -110,6 +136,7 @@ export default function EventForm() {
       status: form.status,
       isOnline: form.isOnline,
       location: form.isOnline ? 'Online' : form.location,
+      venue: form.venue,
       capacity: Number(form.capacity) || 0,
       startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
@@ -207,6 +234,45 @@ export default function EventForm() {
               <input id="groomName" name="groomName" className="input" maxLength={80}
                 placeholder="e.g. Aarav" value={form.groomName} onChange={handleChange} />
             </Field>
+          </div>
+
+          <Field label="Venue" htmlFor="venue" hint="The ceremony venue, shown on the watch page.">
+            <input id="venue" name="venue" className="input" maxLength={200}
+              placeholder="e.g. The Leela Palace, Udaipur" value={form.venue} onChange={handleChange} />
+          </Field>
+
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Couple photo</span>
+            <div className="flex flex-wrap items-center gap-4">
+              {form.coverImage ? (
+                <img
+                  src={form.coverImage}
+                  alt="Couple"
+                  className="h-20 w-28 rounded-lg border border-slate-200 object-cover"
+                />
+              ) : (
+                <div className="grid h-20 w-28 place-items-center rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400">
+                  No photo
+                </div>
+              )}
+              <div>
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverUpload}
+                  className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                  disabled={uploadingCover}
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  {isEdit
+                    ? uploadingCover
+                      ? 'Uploading…'
+                      : 'A hero photo of the couple. JPG/PNG, up to 8 MB.'
+                    : 'Save the event first to enable couple photo upload.'}
+                </p>
+              </div>
+            </div>
           </div>
         </Section>
 

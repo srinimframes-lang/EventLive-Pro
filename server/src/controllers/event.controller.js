@@ -10,6 +10,7 @@ const EDITABLE_FIELDS = [
   'startTime',
   'endTime',
   'location',
+  'venue',
   'isOnline',
   'streamUrl',
   'coverImage',

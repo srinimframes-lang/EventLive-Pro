@@ -50,6 +50,16 @@ export const eventService = {
     });
     return data.data; // { photographerLogo }
   },
+
+  /** Upload/replace the couple (cover) photo. */
+  async uploadCover(id, file) {
+    const fd = new FormData();
+    fd.append('cover', file);
+    const { data } = await api.post(`/api/events/${id}/cover`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data.data; // { coverImage }
+  },
 };
 
 export const EVENT_CATEGORIES = [

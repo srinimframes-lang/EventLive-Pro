@@ -19,6 +19,7 @@ import {
   uploadGallery,
   deleteGalleryPhoto,
   uploadLogo,
+  uploadCover,
 } from '../controllers/media.controller.js';
 import { protect, optionalAuth } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
@@ -43,6 +44,7 @@ router.get('/:id/questions', listQuestions);
 router.post('/:id/gallery', protect, upload.array('photos', 20), uploadGallery);
 router.delete('/:id/gallery/:photoId', protect, deleteGalleryPhoto);
 router.post('/:id/logo', protect, upload.single('logo'), uploadLogo);
+router.post('/:id/cover', protect, upload.single('cover'), uploadCover);
 
 router
   .route('/:id')

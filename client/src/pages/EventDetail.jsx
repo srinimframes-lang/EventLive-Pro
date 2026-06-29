@@ -112,10 +112,19 @@ export default function EventDetail() {
         </div>
       </div>
 
+      {event.coverImage && (
+        <img
+          src={event.coverImage}
+          alt={coupleTitle || event.title}
+          className="mt-6 aspect-[16/9] w-full rounded-2xl object-cover shadow-sm"
+        />
+      )}
+
       <div className="card mt-6 grid gap-4 sm:grid-cols-2">
         <Detail label="Starts" value={formatDateTime(event.startTime)} />
         <Detail label="Ends" value={formatDateTime(event.endTime)} />
         <Detail label="Location" value={event.isOnline ? 'Online' : event.location} />
+        {event.venue && <Detail label="Venue" value={event.venue} />}
         <Detail label="Capacity" value={event.capacity ? event.capacity : 'Unlimited'} />
         <Detail label="Organizer" value={event.organizer?.name || '—'} />
         <Detail label="Attendees" value={event.attendeesCount ?? 0} />

@@ -4,7 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
-import { buildWatchUrl } from '../utils/format.js';
+import { buildWatchUrl, formatDateTime } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
@@ -99,11 +99,37 @@ export default function Watch() {
 
       {/* Couple banner */}
       {coupleTitle && (
-        <div className="mt-3 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-800 px-4 py-5 text-center text-white sm:py-6">
-          <p className="text-xs uppercase tracking-[0.3em] text-brand-100">
-            {event.category === 'concert' ? 'Live' : 'Wedding Live'}
-          </p>
-          <h1 className="mt-1 text-2xl font-extrabold sm:text-4xl">{coupleTitle}</h1>
+        <div className="relative mt-3 overflow-hidden rounded-2xl text-center text-white shadow-lg">
+          {event.coverImage && (
+            <img
+              src={event.coverImage}
+              alt={coupleTitle}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
+          <div
+            className={`relative px-4 py-8 sm:py-12 ${
+              event.coverImage
+                ? 'bg-gradient-to-t from-black/80 via-black/40 to-black/30'
+                : 'bg-gradient-to-r from-brand-600 to-brand-800'
+            }`}
+          >
+            <p className="text-xs uppercase tracking-[0.3em] text-brand-100">
+              {event.category === 'concert' ? 'Live' : 'Wedding Live'}
+            </p>
+            <h1 className="mt-1 font-serif text-3xl font-extrabold drop-shadow sm:text-5xl">
+              {coupleTitle}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-brand-50/90">
+              {event.startTime && <span>{formatDateTime(event.startTime)}</span>}
+              {event.venue && (
+                <span className="flex items-center gap-1">
+                  <span aria-hidden>📍</span>
+                  {event.venue}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

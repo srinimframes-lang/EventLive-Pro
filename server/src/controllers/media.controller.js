@@ -91,3 +91,24 @@ export const uploadLogo = asyncHandler(async (req, res) => {
 
   res.status(201).json({ success: true, data: { photographerLogo: event.photographerLogo } });
 });
+
+/**
+ * @route POST /api/events/:id/cover
+ * @desc  Upload / replace the couple (cover) photo (owner/admin)
+ * @access Private
+ */
+export const uploadCover = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No image was uploaded');
+  }
+
+  if (event.coverImage) removeLocalUpload(event.coverImage);
+  event.coverImage = uploadedFileUrl(req.file);
+  await event.save();
+
+  res.status(201).json({ success: true, data: { coverImage: event.coverImage } });
+});

@@ -83,6 +83,13 @@ const eventSchema = new Schema(
       trim: true,
       default: 'Online',
     },
+    // Physical venue of the ceremony (shown even for online/streamed weddings).
+    venue: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: 200,
+    },
     isOnline: {
       type: Boolean,
       default: true,
