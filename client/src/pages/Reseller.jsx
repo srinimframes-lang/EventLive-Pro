@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { resellerService } from '../services/reseller.service.js';
 import BuyCreditsPanel from '../components/BuyCreditsPanel.jsx';
-import { formatDateTime } from '../utils/format.js';
+import { formatDateTime, watchPath } from '../utils/format.js';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
 
@@ -92,7 +92,7 @@ export default function Reseller() {
                   <Link to={`/events/${ev.slug || ev.id || ev._id}/edit`} className="btn-outline">
                     Edit
                   </Link>
-                  <Link to={`/events/${ev.slug || ev.id || ev._id}/live`} className="btn-primary">
+                  <Link to={watchPath(ev)} className="btn-primary">
                     Watch
                   </Link>
                 </div>

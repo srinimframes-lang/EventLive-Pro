@@ -100,9 +100,11 @@ export const listEvents = asyncHandler(async (req, res) => {
  */
 export const getEvent = asyncHandler(async (req, res) => {
   const { idOrSlug } = req.params;
-  const query = mongoose.isValidObjectId(idOrSlug)
-    ? { _id: idOrSlug }
-    : { slug: idOrSlug };
+  const raw = String(idOrSlug || '');
+  // Resolve by Mongo id, short code (case-insensitive), or legacy slug.
+  const query = mongoose.isValidObjectId(raw)
+    ? { _id: raw }
+    : { $or: [{ shortCode: raw.toUpperCase() }, { slug: raw.toLowerCase() }, { slug: raw }] };
 
   const event = await Event.findOne(query).populate('organizer', 'name email');
 

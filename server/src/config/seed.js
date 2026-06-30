@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { Settings } from '../models/Settings.js';
 import { Package } from '../models/Package.js';
 import { Payment } from '../models/Payment.js';
+import { Event } from '../models/Event.js';
 
 /* eslint-disable no-console */
 
@@ -17,6 +18,27 @@ export async function runSeed() {
   await Settings.getSingleton();
   await seedDefaultPackages();
   await cleanupLegacyPayments();
+  await backfillShortCodes();
+}
+
+/**
+ * Assigns a unique short code to any existing event that predates the
+ * shortCode field, so old events get clean /live/<code> URLs too.
+ */
+async function backfillShortCodes() {
+  const events = await Event.find({
+    $or: [{ shortCode: { $exists: false } }, { shortCode: null }, { shortCode: '' }],
+  }).select('title brideName groomName shortCode');
+
+  let updated = 0;
+  for (const ev of events) {
+    // eslint-disable-next-line no-await-in-loop
+    ev.shortCode = await Event.generateUniqueShortCode(ev);
+    // eslint-disable-next-line no-await-in-loop
+    await ev.save();
+    updated += 1;
+  }
+  if (updated) console.log(`[seed] Backfilled short codes for ${updated} event(s).`);
 }
 
 /**

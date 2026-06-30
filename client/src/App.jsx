@@ -56,6 +56,7 @@ export default function App() {
             <Route path="/events" element={<Events />} />
             <Route path="/events/:idOrSlug/live" element={<Watch />} />
             <Route path="/live/:idOrSlug" element={<Watch />} />
+            <Route path="/watch/:idOrSlug" element={<Watch />} />
 
             {/* Event management (admin or reseller who owns the event) */}
             <Route

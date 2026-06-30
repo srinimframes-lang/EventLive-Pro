@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { eventService } from '../services/event.service.js';
 import BuyCreditsPanel from '../components/BuyCreditsPanel.jsx';
-import { formatDateTime } from '../utils/format.js';
+import { formatDateTime, watchPath } from '../utils/format.js';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
@@ -30,7 +30,7 @@ export default function Dashboard() {
     load();
   }, [refreshUser, load]);
 
-  const liveLink = (ev) => `${window.location.origin}/live/${ev.slug || ev.id}`;
+  const liveLink = (ev) => `${window.location.origin}${watchPath(ev)}`;
   const copyLink = async (ev) => {
     try {
       await navigator.clipboard.writeText(liveLink(ev));
@@ -128,7 +128,7 @@ export default function Dashboard() {
                   <Link to={`/events/${ev.slug || ev.id}/edit`} className="btn-outline">
                     Edit
                   </Link>
-                  <Link to={`/events/${ev.slug || ev.id}/live`} className="btn-primary">
+                  <Link to={watchPath(ev)} className="btn-primary">
                     Watch
                   </Link>
                 </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { eventService } from '../../services/event.service.js';
-import { formatDateTime } from '../../utils/format.js';
+import { formatDateTime, watchPath } from '../../utils/format.js';
 
 export default function AdminEvents() {
   const [events, setEvents] = useState([]);
@@ -20,7 +20,7 @@ export default function AdminEvents() {
 
   useEffect(load, []);
 
-  const liveLink = (ev) => `${window.location.origin}/live/${ev.slug || ev.id}`;
+  const liveLink = (ev) => `${window.location.origin}${watchPath(ev)}`;
 
   const copyLink = async (ev) => {
     try {

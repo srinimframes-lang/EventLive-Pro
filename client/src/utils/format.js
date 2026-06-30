@@ -91,12 +91,21 @@ export function extractYouTubeId(input) {
 }
 
 /**
- * Builds a shareable absolute URL for the in-app watch page of an event.
+ * The canonical short public watch path for an event, e.g. "/live/AP24X9".
+ * Falls back to slug/id for older data that has no short code yet.
+ */
+export function watchPath(event) {
+  if (!event) return '';
+  const code = event.shortCode || event.slug || event.id;
+  return `/live/${code}`;
+}
+
+/**
+ * Builds a shareable absolute (short) URL for the in-app watch page.
  */
 export function buildWatchUrl(event) {
   if (typeof window === 'undefined' || !event) return '';
-  const idOrSlug = event.slug || event.id;
-  return `${window.location.origin}/events/${idOrSlug}/live`;
+  return `${window.location.origin}${watchPath(event)}`;
 }
 
 /**

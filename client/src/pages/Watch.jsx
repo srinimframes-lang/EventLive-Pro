@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -15,6 +15,7 @@ import ShareButtons from '../components/ShareButtons.jsx';
 export default function Watch() {
   const { idOrSlug } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [event, setEvent] = useState(null);
   const [config, setConfig] = useState(null);
@@ -28,6 +29,11 @@ export default function Watch() {
       .get(idOrSlug)
       .then(async (ev) => {
         if (!active) return;
+        // Redirect any long/legacy URL (id or slug) to the canonical short code.
+        if (ev.shortCode && String(idOrSlug).toUpperCase() !== ev.shortCode.toUpperCase()) {
+          navigate(`/live/${ev.shortCode}`, { replace: true });
+          return;
+        }
         setEvent(ev);
         const cfg = await streamService.getConfig(ev.id).catch(() => null);
         if (active) setConfig(cfg);
@@ -36,7 +42,7 @@ export default function Watch() {
     return () => {
       active = false;
     };
-  }, [idOrSlug]);
+  }, [idOrSlug, navigate]);
 
   const eventId = event?.id;
   const guestName = user?.name || 'Guest';

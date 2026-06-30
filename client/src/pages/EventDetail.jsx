@@ -4,7 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
-import { formatDateTime, resolveMediaUrl } from '../utils/format.js';
+import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 
 export default function EventDetail() {
   const { idOrSlug } = useParams();
@@ -65,7 +65,7 @@ export default function EventDetail() {
     event.brideName && event.groomName
       ? `${event.groomName} & ${event.brideName}`
       : event.brideName || event.groomName || '';
-  const watchPath = `/events/${event.slug || event.id}/live`;
+  const watchPath = buildWatchPath(event);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:py-10">

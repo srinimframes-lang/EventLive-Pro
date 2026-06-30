@@ -26,6 +26,34 @@ function slugify(text) {
     .replace(/-+/g, '-');
 }
 
+// Unambiguous alphabet for short codes (no I/O/0/1 to avoid confusion).
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function randomSegment(len) {
+  let out = '';
+  for (let i = 0; i < len; i += 1) {
+    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  }
+  return out;
+}
+
+/**
+ * A short, human-friendly prefix from the couple's (or title's) initials,
+ * e.g. "Aarav & Priya" -> "AP". Returns up to 2 uppercase letters.
+ */
+function codePrefix(doc) {
+  const source = `${doc.groomName || ''} ${doc.brideName || ''}`.trim() || doc.title || '';
+  const letters = source
+    .replace(/[^a-zA-Z]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+  return letters.slice(0, 2);
+}
+
 const eventSchema = new Schema(
   {
     title: {
@@ -38,6 +66,15 @@ const eventSchema = new Schema(
     slug: {
       type: String,
       unique: true,
+      index: true,
+    },
+    // Short, shareable public code used in /live/<shortCode> URLs (e.g. "AP24X9").
+    shortCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      uppercase: true,
+      trim: true,
       index: true,
     },
     description: {
@@ -182,6 +219,22 @@ const eventSchema = new Schema(
 // Text index to support search across title/description.
 eventSchema.index({ title: 'text', description: 'text' });
 
+/**
+ * Generates a unique short code for an event: an initials prefix plus a random
+ * segment (widening on repeated collisions). Used for /live/<shortCode> URLs.
+ */
+eventSchema.statics.generateUniqueShortCode = async function generateUniqueShortCode(doc) {
+  const prefix = codePrefix(doc);
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const segLen = 4 + Math.floor(attempt / 12); // 4, then 5, 6…
+    const candidate = `${prefix}${randomSegment(segLen)}`;
+    // eslint-disable-next-line no-await-in-loop
+    const clash = await this.exists({ shortCode: candidate, _id: { $ne: doc._id } });
+    if (!clash) return candidate;
+  }
+  return `${prefix}${randomSegment(10)}`;
+};
+
 // Build a unique slug from the title before validation/save.
 eventSchema.pre('validate', async function ensureSlug(next) {
   if (!this.isModified('title') && this.slug) return next();
@@ -198,6 +251,13 @@ eventSchema.pre('validate', async function ensureSlug(next) {
   }
 
   this.slug = candidate;
+  return next();
+});
+
+// Assign a unique short code once, on first save (kept stable thereafter).
+eventSchema.pre('validate', async function ensureShortCode(next) {
+  if (this.shortCode) return next();
+  this.shortCode = await this.constructor.generateUniqueShortCode(this);
   return next();
 });
 
