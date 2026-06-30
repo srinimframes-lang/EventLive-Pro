@@ -21,10 +21,19 @@ if (missing.length > 0) {
 // Accept one or more comma-separated client origins (production URL, custom
 // domain, local dev, etc.) and normalise away trailing slashes so the CORS
 // allow-list matches the browser's Origin header exactly.
-const clientUrls = (process.env.CLIENT_URL || 'http://localhost:5173')
+const configuredClientUrls = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')
   .map((u) => u.trim().replace(/\/+$/, ''))
   .filter(Boolean);
+
+// Production custom-domain origins are always allowed, so the live site keeps
+// working even if CLIENT_URL on the host is not updated. Dev config is untouched.
+const PRODUCTION_ORIGINS = [
+  'https://eventlivepro.com',
+  'https://www.eventlivepro.com',
+];
+
+const clientUrls = [...new Set([...configuredClientUrls, ...PRODUCTION_ORIGINS])];
 
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',

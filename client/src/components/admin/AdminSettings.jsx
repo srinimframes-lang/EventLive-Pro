@@ -191,6 +191,17 @@ export default function AdminSettings() {
                 onChange={pay}
               />
             </div>
+            <div>
+              <label className="label">Payment instructions (shown to customers)</label>
+              <textarea
+                name="instructions"
+                className="input"
+                rows={2}
+                placeholder="e.g. After paying, enter the transaction ID and tap I Have Paid. Credits are added after we verify."
+                value={p.instructions || ''}
+                onChange={pay}
+              />
+            </div>
           </div>
         </div>
       </div>

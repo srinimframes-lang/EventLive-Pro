@@ -233,6 +233,7 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
     creditRevenueAgg,
     paymentRevenueAgg,
     creditsAgg,
+    creditsSoldAgg,
   ] = await Promise.all([
     User.countDocuments({ role: { $in: ['customer', 'user', 'organizer'] } }),
     User.countDocuments({ role: { $in: ['customer', 'user', 'organizer'] }, approved: false }),
@@ -268,12 +269,18 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
         },
       },
     ]),
+    // Total credits sold = credits from all approved purchase requests.
+    Payment.aggregate([
+      { $match: { status: 'approved' } },
+      { $group: { _id: null, total: { $sum: '$credits' } } },
+    ]),
   ]);
 
   const bookingRevenue = revenueAgg[0]?.total || 0;
   const creditOrderRevenue = creditRevenueAgg[0]?.total || 0;
   const paymentRevenue = paymentRevenueAgg[0]?.total || 0;
   const creditRevenue = creditOrderRevenue + paymentRevenue;
+  const creditsSold = creditsSoldAgg[0]?.total || 0;
 
   res.status(200).json({
     success: true,
@@ -290,6 +297,9 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
       approvedBookings,
       pendingCreditOrders,
       pendingPayments,
+      liveLinks: events,
+      creditsSold,
+      activeStreams: liveEvents,
       bookingRevenue,
       creditRevenue,
       revenue: bookingRevenue + creditRevenue,

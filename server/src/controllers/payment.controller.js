@@ -27,6 +27,9 @@ export const getProducts = asyncHandler(async (req, res) => {
         upiId: p.upiId || '',
         upiName: p.upiName || '',
         upiQr: p.upiQr || '',
+        phonepeNumber: p.phonepeNumber || '',
+        gpayNumber: p.gpayNumber || '',
+        instructions: p.instructions || '',
       },
     },
   });

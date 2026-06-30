@@ -18,21 +18,29 @@ export const LINK_COSTS = {
   server: 5,
 };
 
-// Purchasable products shown to the customer. Each grants `credits` credits.
+// Purchasable credit packs shown to the customer. Each grants `credits` credits
+// (1 credit = ₹100). Credits are spent on live links: YouTube = 1, Server = 5.
 export const CREDIT_PRODUCTS = [
   {
-    id: 'youtube',
-    name: 'YouTube Live Link',
+    id: 'credits-1',
+    name: '1 credit',
     credits: 1,
     price: 100,
-    description: 'Enough credits to create one YouTube live link.',
+    description: 'Create one YouTube live link.',
   },
   {
-    id: 'server',
-    name: 'Server Live Link',
+    id: 'credits-5',
+    name: '5 credits',
     credits: 5,
     price: 500,
-    description: 'Enough credits to create one private server live link.',
+    description: 'One Server live link, or five YouTube links.',
+  },
+  {
+    id: 'credits-10',
+    name: '10 credits',
+    credits: 10,
+    price: 1000,
+    description: 'Best value — stream more for less.',
   },
 ];
 

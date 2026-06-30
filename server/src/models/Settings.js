@@ -36,6 +36,7 @@ const settingsSchema = new Schema(
       upiId: { type: String, default: '', trim: true },
       upiName: { type: String, default: '', trim: true }, // account/holder name shown under the QR
       upiQr: { type: String, default: '' }, // uploaded QR image URL
+      instructions: { type: String, default: '', trim: true, maxlength: 500 }, // shown on the payment page
       bank: {
         accountName: { type: String, default: '', trim: true },
         accountNumber: { type: String, default: '', trim: true },

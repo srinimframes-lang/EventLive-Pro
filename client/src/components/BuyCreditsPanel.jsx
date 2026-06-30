@@ -19,8 +19,15 @@ const STATUS_STYLES = {
 export default function BuyCreditsPanel() {
   const { settings } = useSettings();
   const [products, setProducts] = useState([]);
-  const [upi, setUpi] = useState({ upiId: '', upiName: '', upiQr: '' });
-  const [selected, setSelected] = useState('youtube');
+  const [upi, setUpi] = useState({
+    upiId: '',
+    upiName: '',
+    upiQr: '',
+    phonepeNumber: '',
+    gpayNumber: '',
+    instructions: '',
+  });
+  const [selected, setSelected] = useState('');
   const [reference, setReference] = useState('');
   const [requests, setRequests] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -38,8 +45,10 @@ export default function BuyCreditsPanel() {
     paymentService
       .products()
       .then((d) => {
-        setProducts(d.products || []);
-        if (d.upi) setUpi(d.upi);
+        const list = d.products || [];
+        setProducts(list);
+        setSelected((cur) => cur || list[0]?.id || '');
+        if (d.upi) setUpi((prev) => ({ ...prev, ...d.upi }));
       })
       .catch((e) => setError(e.message));
     loadMine();
@@ -49,6 +58,9 @@ export default function BuyCreditsPanel() {
   const pay = settings?.payment || {};
   const upiId = pay.upiId || upi.upiId;
   const upiName = pay.upiName || upi.upiName;
+  const phonepeNumber = pay.phonepeNumber || upi.phonepeNumber;
+  const gpayNumber = pay.gpayNumber || upi.gpayNumber;
+  const instructions = pay.instructions || upi.instructions;
   const qr = resolveMediaUrl(pay.upiQr || upi.upiQr);
 
   const product = products.find((p) => p.id === selected);
@@ -70,7 +82,7 @@ export default function BuyCreditsPanel() {
     }
   };
 
-  const noUpi = !upiId && !qr;
+  const noUpi = !upiId && !qr && !phonepeNumber && !gpayNumber;
 
   return (
     <div>
@@ -154,6 +166,18 @@ export default function BuyCreditsPanel() {
                     <dd className="font-medium text-slate-800">{upiId}</dd>
                   </div>
                 )}
+                {phonepeNumber && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500">PhonePe</dt>
+                    <dd className="font-medium text-slate-800">{phonepeNumber}</dd>
+                  </div>
+                )}
+                {gpayNumber && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500">Google Pay</dt>
+                    <dd className="font-medium text-slate-800">{gpayNumber}</dd>
+                  </div>
+                )}
                 {product && (
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-slate-500">Amount</dt>
@@ -165,14 +189,23 @@ export default function BuyCreditsPanel() {
                 )}
               </dl>
 
+              {instructions && (
+                <p className="mt-3 w-full rounded-lg bg-slate-50 px-3 py-2 text-left text-xs text-slate-600">
+                  {instructions}
+                </p>
+              )}
+
               <div className="mt-4 w-full">
-                <label className="label text-left">UPI reference / UTR (optional)</label>
+                <label className="label text-left">Transaction ID / Reference number</label>
                 <input
                   className="input"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  placeholder="Helps us verify faster"
+                  placeholder="UPI transaction ID or UTR"
                 />
+                <p className="mt-1 text-left text-xs text-slate-400">
+                  Enter the transaction ID from your payment app so we can verify it faster.
+                </p>
               </div>
 
               <button

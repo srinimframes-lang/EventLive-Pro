@@ -15,11 +15,17 @@ export default function AdminOverview() {
 
   const cards = [
     { label: 'Total Customers', value: stats.customers ?? 0 },
-    { label: 'Total Events', value: stats.events ?? 0 },
-    { label: 'Live now', value: stats.liveEvents ?? 0 },
-    { label: 'Completed Events', value: stats.completedEvents ?? 0 },
+    { label: 'Total Sub Admins', value: stats.subAdmins ?? 0 },
+    { label: 'Total Live Links', value: stats.liveLinks ?? stats.events ?? 0 },
+    { label: 'Revenue', value: formatCurrency(stats.revenue ?? 0) },
+    { label: 'Credits Sold', value: stats.creditsSold ?? 0 },
     {
-      label: 'Pending payments',
+      label: 'Active Streams',
+      value: stats.activeStreams ?? stats.liveEvents ?? 0,
+      highlight: (stats.activeStreams ?? stats.liveEvents ?? 0) > 0,
+    },
+    {
+      label: 'Pending Payments',
       value: stats.pendingPayments ?? 0,
       highlight: (stats.pendingPayments ?? 0) > 0,
     },
@@ -28,8 +34,6 @@ export default function AdminOverview() {
       value: stats.pendingCustomers ?? 0,
       highlight: (stats.pendingCustomers ?? 0) > 0,
     },
-    { label: 'Active packages', value: stats.packages ?? 0 },
-    { label: 'Revenue', value: formatCurrency(stats.revenue ?? 0) },
   ];
 
   return (
