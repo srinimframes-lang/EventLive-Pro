@@ -91,13 +91,41 @@ export function extractYouTubeId(input) {
 }
 
 /**
- * The canonical short public watch path for an event, e.g. "/live/AP24X9".
- * Falls back to slug/id for older data that has no short code yet.
+ * Slugifies free text for use in a URL (lowercase, hyphenated, ascii-only).
+ */
+function slugifyText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * A readable couple slug for the live URL, e.g. "aarav-weds-priya".
+ * Returns '' when no couple names are set.
+ */
+export function coupleSlug(event) {
+  if (!event) return '';
+  const groom = slugifyText(event.groomName);
+  const bride = slugifyText(event.brideName);
+  if (groom && bride) return `${groom}-weds-${bride}`;
+  return groom || bride || '';
+}
+
+/**
+ * The canonical short public watch path for an event, e.g.
+ * "/live/AP24X9/aarav-weds-priya". The couple slug is decorative only —
+ * lookups always use the unique short code. Falls back to slug/id for older
+ * data that has no short code yet.
  */
 export function watchPath(event) {
   if (!event) return '';
   const code = event.shortCode || event.slug || event.id;
-  return `/live/${code}`;
+  const couple = coupleSlug(event);
+  return couple ? `/live/${code}/${couple}` : `/live/${code}`;
 }
 
 /**

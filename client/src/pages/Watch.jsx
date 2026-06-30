@@ -4,7 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
-import { buildWatchUrl, formatDateTime, resolveMediaUrl } from '../utils/format.js';
+import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
@@ -29,9 +29,11 @@ export default function Watch() {
       .get(idOrSlug)
       .then(async (ev) => {
         if (!active) return;
-        // Redirect any long/legacy URL (id or slug) to the canonical short code.
-        if (ev.shortCode && String(idOrSlug).toUpperCase() !== ev.shortCode.toUpperCase()) {
-          navigate(`/live/${ev.shortCode}`, { replace: true });
+        // Redirect any long/legacy/short-only URL to the canonical, readable
+        // short URL: /live/<shortCode>/<couple-slug>. Lookup still uses the ID.
+        const canonical = watchPath(ev);
+        if (ev.shortCode && canonical && window.location.pathname !== canonical) {
+          navigate(canonical, { replace: true });
           return;
         }
         setEvent(ev);
@@ -61,6 +63,16 @@ export default function Watch() {
     if (event.brideName && event.groomName) return `${event.groomName} & ${event.brideName}`;
     return event.brideName || event.groomName || '';
   }, [event]);
+
+  // SEO: reflect the event in the document title while on the watch page.
+  useEffect(() => {
+    if (!event) return undefined;
+    const prev = document.title;
+    document.title = `${coupleTitle || event.title} · Live`;
+    return () => {
+      document.title = prev;
+    };
+  }, [event, coupleTitle]);
 
   if (error)
     return (
