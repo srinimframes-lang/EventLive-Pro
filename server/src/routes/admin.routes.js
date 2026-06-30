@@ -26,6 +26,8 @@ import {
   approveDomain,
   suspendDomain,
   removeDomain,
+  refreshDomainStatus,
+  getIntegrationStatus,
   updateCustomerBranding,
   uploadCustomerBrandingLogo,
 } from '../controllers/adminDomain.controller.js';
@@ -64,10 +66,12 @@ router.patch('/customers/:id/branding', updateCustomerBranding);
 router.post('/customers/:id/branding/logo', upload.single('logo'), uploadCustomerBrandingLogo);
 
 // White-label: custom domains
+router.get('/domains/integration', getIntegrationStatus);
 router.route('/domains').get(listDomains).post(createDomain);
 router.post('/domains/:id/verify', verifyDomain);
 router.post('/domains/:id/approve', approveDomain);
 router.post('/domains/:id/suspend', suspendDomain);
+router.post('/domains/:id/refresh', refreshDomainStatus);
 router.delete('/domains/:id', removeDomain);
 
 export default router;

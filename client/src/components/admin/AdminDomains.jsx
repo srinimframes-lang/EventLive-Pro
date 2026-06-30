@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { adminService } from '../../services/admin.service.js';
 
 const STATUS_STYLES = {
@@ -30,6 +30,7 @@ export default function AdminDomains() {
   const [brandingId, setBrandingId] = useState('');
   const [branding, setBranding] = useState({});
   const [savingBrand, setSavingBrand] = useState(false);
+  const [integration, setIntegration] = useState({ vercel: { enabled: false } });
 
   const flash = (m) => {
     setNotice(m);
@@ -39,9 +40,14 @@ export default function AdminDomains() {
   const load = async () => {
     setLoading(true);
     try {
-      const [d, c] = await Promise.all([adminService.listDomains(), adminService.listCustomers()]);
+      const [d, c, integ] = await Promise.all([
+        adminService.listDomains(),
+        adminService.listCustomers(),
+        adminService.domainIntegration().catch(() => ({ vercel: { enabled: false } })),
+      ]);
       setDomains(d || []);
       setCustomers(c || []);
+      setIntegration(integ || { vercel: { enabled: false } });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -112,6 +118,14 @@ export default function AdminDomains() {
     }
   };
 
+  const refresh = async (id) => {
+    const u = await act(adminService.refreshDomain, id);
+    if (u) {
+      replaceDomain(u);
+      flash('Status refreshed from Vercel');
+    }
+  };
+
   const remove = async (id) => {
     if (!window.confirm('Remove this domain permanently?')) return;
     const r = await act(adminService.removeDomain, id);
@@ -152,7 +166,21 @@ export default function AdminDomains() {
 
       {/* Add domain */}
       <div className="card">
-        <h2 className="text-lg font-bold text-slate-900">Custom domains</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold text-slate-900">Custom domains</h2>
+          <span
+            className={`badge ${
+              integration.vercel?.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+            }`}
+            title={
+              integration.vercel?.enabled
+                ? 'Approving a domain attaches it to Vercel and issues SSL automatically'
+                : 'Set VERCEL_TOKEN and VERCEL_PROJECT_ID to enable automatic attach + SSL'
+            }
+          >
+            {integration.vercel?.enabled ? 'Auto SSL: Vercel connected' : 'Auto SSL: manual mode'}
+          </span>
+        </div>
         <form onSubmit={createDomain} className="mt-3 flex flex-wrap items-end gap-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Customer</label>
@@ -198,39 +226,62 @@ export default function AdminDomains() {
                 <tr><td colSpan={6} className="py-4 text-slate-500">No domains yet.</td></tr>
               )}
               {domains.map((d) => (
-                <tr key={d.id} className="border-t border-slate-100 align-top">
-                  <td className="py-2 font-medium text-slate-900">{d.host}</td>
-                  <td className="py-2 text-slate-600">
-                    {d.customer?.name || customerName[d.customer?.id || d.customer] || '—'}
-                  </td>
-                  <td className="py-2">
-                    <span className={`badge ${STATUS_STYLES[d.status] || 'bg-slate-100 text-slate-600'}`}>
-                      {d.status}
-                    </span>
-                  </td>
-                  <td className="py-2 text-slate-600">{d.dnsVerified ? '✓' : '—'}</td>
-                  <td className="py-2 text-slate-600">{d.sslStatus}</td>
-                  <td className="py-2">
-                    <div className="flex flex-wrap gap-1">
-                      <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => verify(d.id)}>
-                        Verify
-                      </button>
-                      {d.status !== 'active' && (
-                        <button type="button" className="btn-ghost px-2 py-1 text-xs text-emerald-700" onClick={() => approve(d)}>
-                          Approve
+                <Fragment key={d.id}>
+                  <tr className="border-t border-slate-100 align-top">
+                    <td className="py-2 font-medium text-slate-900">{d.host}</td>
+                    <td className="py-2 text-slate-600">
+                      {d.customer?.name || customerName[d.customer?.id || d.customer] || '—'}
+                    </td>
+                    <td className="py-2">
+                      <span className={`badge ${STATUS_STYLES[d.status] || 'bg-slate-100 text-slate-600'}`}>
+                        {d.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-slate-600">{d.dnsVerified ? '✓' : '—'}</td>
+                    <td className="py-2 text-slate-600">
+                      {d.sslStatus}
+                      {d.hostingAttached ? ' · attached' : ''}
+                    </td>
+                    <td className="py-2">
+                      <div className="flex flex-wrap gap-1">
+                        <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => verify(d.id)}>
+                          Verify
                         </button>
-                      )}
-                      {d.status === 'active' && (
-                        <button type="button" className="btn-ghost px-2 py-1 text-xs text-amber-700" onClick={() => suspend(d.id)}>
-                          Suspend
+                        {integration.vercel?.enabled && (
+                          <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => refresh(d.id)}>
+                            Refresh
+                          </button>
+                        )}
+                        {d.status !== 'active' && (
+                          <button type="button" className="btn-ghost px-2 py-1 text-xs text-emerald-700" onClick={() => approve(d)}>
+                            Approve
+                          </button>
+                        )}
+                        {d.status === 'active' && (
+                          <button type="button" className="btn-ghost px-2 py-1 text-xs text-amber-700" onClick={() => suspend(d.id)}>
+                            Suspend
+                          </button>
+                        )}
+                        <button type="button" className="btn-ghost px-2 py-1 text-xs text-red-600" onClick={() => remove(d.id)}>
+                          Remove
                         </button>
-                      )}
-                      <button type="button" className="btn-ghost px-2 py-1 text-xs text-red-600" onClick={() => remove(d.id)}>
-                        Remove
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                      </div>
+                    </td>
+                  </tr>
+                  {Array.isArray(d.hostingRecords) && d.hostingRecords.length > 0 && (
+                    <tr className="bg-amber-50/60">
+                      <td colSpan={6} className="px-2 py-2 text-xs text-amber-800">
+                        <p className="font-medium">Vercel needs these DNS records to verify {d.host}:</p>
+                        {d.hostingRecords.map((r, i) => (
+                          <code key={i} className="mt-1 block break-all">
+                            {r.type} {r.domain} = {r.value}
+                            {r.reason ? `  (${r.reason})` : ''}
+                          </code>
+                        ))}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

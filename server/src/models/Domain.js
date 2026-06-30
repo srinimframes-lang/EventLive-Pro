@@ -49,6 +49,11 @@ const domainSchema = new Schema(
     },
     // Whether the domain has been attached to the hosting project (Vercel).
     hostingAttached: { type: Boolean, default: false },
+    // Whether Vercel has verified the domain on the project (config correct).
+    hostingVerified: { type: Boolean, default: false },
+    // Extra DNS records Vercel may require to verify the domain (rendered to the
+    // customer when present). [{ type, domain, value, reason }]
+    hostingRecords: { type: Array, default: [] },
     notes: { type: String, default: '', trim: true },
   },
   { timestamps: true }

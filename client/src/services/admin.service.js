@@ -86,6 +86,10 @@ export const adminService = {
   },
 
   // ── White-label: custom domains ─────────────────────────
+  async domainIntegration() {
+    const { data } = await api.get('/api/admin/domains/integration');
+    return data.data; // { vercel: { enabled, projectId, team } }
+  },
   async listDomains() {
     const { data } = await api.get('/api/admin/domains');
     return data.data;
@@ -104,6 +108,10 @@ export const adminService = {
   },
   async suspendDomain(id) {
     const { data } = await api.post(`/api/admin/domains/${id}/suspend`);
+    return data.data;
+  },
+  async refreshDomain(id) {
+    const { data } = await api.post(`/api/admin/domains/${id}/refresh`);
     return data.data;
   },
   async removeDomain(id) {

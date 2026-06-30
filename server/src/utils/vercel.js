@@ -24,6 +24,17 @@ async function vercelFetch(path, options = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
+/** Normalises Vercel's `verification` challenge array into a simple shape. */
+function mapVerification(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map((v) => ({
+    type: v.type || 'TXT',
+    domain: v.domain || '',
+    value: v.value || '',
+    reason: v.reason || '',
+  }));
+}
+
 /**
  * Attaches a domain to the configured Vercel project. Idempotent: a domain that
  * already exists returns ok. No-op (returns enabled:false) when the integration
@@ -37,7 +48,15 @@ export async function attachDomain(host) {
   });
   // 409 = already added → treat as success.
   const ok = r.ok || r.status === 409;
-  return { enabled: true, ok, status: r.status, data: r.data };
+  return {
+    enabled: true,
+    ok,
+    status: r.status,
+    verified: Boolean(r.data?.verified),
+    verification: mapVerification(r.data?.verification),
+    error: ok ? '' : r.data?.error?.message || `Vercel returned ${r.status}`,
+    data: r.data,
+  };
 }
 
 /** Removes a domain from the Vercel project (best-effort). */
@@ -52,7 +71,7 @@ export async function detachDomain(host) {
 
 /**
  * Reads a domain's config from Vercel to determine verification + SSL state.
- * Returns a normalised { verified, ssl } summary.
+ * Returns a normalised { verified, ssl, verification[] } summary.
  */
 export async function getDomainStatus(host) {
   if (!env.vercel.enabled) return { enabled: false };
@@ -65,8 +84,18 @@ export async function getDomainStatus(host) {
     { method: 'GET' }
   );
   const misconfigured = cfg.data?.misconfigured;
+  const attached = proj.ok;
   const verified = proj.ok ? Boolean(proj.data?.verified) : false;
-  // SSL is effectively issued by Vercel once DNS is correctly configured.
-  const ssl = misconfigured === false ? 'issued' : 'pending';
-  return { enabled: true, verified, ssl, misconfigured, raw: { cfg: cfg.data, proj: proj.data } };
+  // SSL is effectively issued by Vercel once DNS is correctly configured and the
+  // domain is verified on the project.
+  const ssl = verified && misconfigured === false ? 'issued' : 'pending';
+  return {
+    enabled: true,
+    attached,
+    verified,
+    ssl,
+    misconfigured,
+    verification: mapVerification(proj.data?.verification),
+    raw: { cfg: cfg.data, proj: proj.data },
+  };
 }

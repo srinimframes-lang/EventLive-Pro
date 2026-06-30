@@ -1,5 +1,6 @@
 import { Domain } from '../models/Domain.js';
 import { User } from '../models/User.js';
+import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { checkDnsTxt } from '../utils/dnsVerify.js';
 import { refreshDomainCache } from '../utils/domainCache.js';
@@ -14,6 +15,33 @@ function normaliseHost(raw) {
     .replace(/\/.*$/, '')
     .replace(/:.*$/, '');
 }
+
+/** Copies a Vercel status summary onto the domain document (does not save). */
+function applyVercelStatus(domain, vstat) {
+  if (!vstat || !vstat.enabled) return;
+  if (vstat.attached !== undefined) domain.hostingAttached = Boolean(vstat.attached);
+  domain.hostingVerified = Boolean(vstat.verified);
+  if (Array.isArray(vstat.verification)) domain.hostingRecords = vstat.verification;
+  domain.sslStatus = vstat.ssl === 'issued' ? 'issued' : 'pending';
+}
+
+/**
+ * @route GET /api/admin/domains/integration
+ * @desc  Whether the automatic Vercel domain integration is configured.
+ * @access Private/Admin
+ */
+export const getIntegrationStatus = asyncHandler(async (_req, res) => {
+  res.status(200).json({
+    success: true,
+    data: {
+      vercel: {
+        enabled: env.vercel.enabled,
+        projectId: env.vercel.projectId ? `${env.vercel.projectId.slice(0, 6)}…` : '',
+        team: Boolean(env.vercel.teamId),
+      },
+    },
+  });
+});
 
 /**
  * @route GET /api/admin/domains
@@ -68,9 +96,31 @@ export const verifyDomain = asyncHandler(async (req, res) => {
   domain.lastCheckedAt = new Date();
   if (ok && !domain.verifiedAt) domain.verifiedAt = new Date();
 
-  const vstat = await getDomainStatus(domain.host);
-  if (vstat.enabled) domain.sslStatus = vstat.ssl === 'issued' ? 'issued' : 'pending';
+  // Auto-attach to Vercel once ownership is proven so SSL provisioning can start
+  // even before the Super Admin activates the domain.
+  if (ok && env.vercel.enabled && !domain.hostingAttached) {
+    const attach = await attachDomain(domain.host);
+    if (attach.enabled && attach.ok) domain.hostingAttached = true;
+  }
+  applyVercelStatus(domain, await getDomainStatus(domain.host));
 
+  await domain.save();
+  res.status(200).json({ success: true, data: domain });
+});
+
+/**
+ * @route POST /api/admin/domains/:id/refresh
+ * @desc  Re-read the live Vercel verification/SSL status for a domain.
+ * @access Private/Admin
+ */
+export const refreshDomainStatus = asyncHandler(async (req, res) => {
+  const domain = await Domain.findById(req.params.id);
+  if (!domain) {
+    res.status(404);
+    throw new Error('Domain not found');
+  }
+  applyVercelStatus(domain, await getDomainStatus(domain.host));
+  domain.lastCheckedAt = new Date();
   await domain.save();
   res.status(200).json({ success: true, data: domain });
 });
@@ -103,8 +153,10 @@ export const approveDomain = asyncHandler(async (req, res) => {
   const attach = await attachDomain(domain.host);
   if (attach.enabled) {
     domain.hostingAttached = Boolean(attach.ok);
-    const vstat = await getDomainStatus(domain.host);
-    domain.sslStatus = vstat.enabled && vstat.ssl === 'issued' ? 'issued' : 'pending';
+    if (Array.isArray(attach.verification) && attach.verification.length) {
+      domain.hostingRecords = attach.verification;
+    }
+    applyVercelStatus(domain, await getDomainStatus(domain.host));
   } else {
     // Manual hosting: admin attaches the domain in Vercel's dashboard.
     domain.sslStatus = 'manual';
