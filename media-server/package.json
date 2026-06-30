@@ -1,0 +1,18 @@
+{
+  "name": "@eventlive/media-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "EventLive Pro private RTMP ingest + FFmpeg HLS (ABR) transcoding server.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "node-media-server": "^2.7.0"
+  }
+}

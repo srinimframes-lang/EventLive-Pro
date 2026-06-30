@@ -188,10 +188,15 @@ const eventSchema = new Schema(
     createdByRole: { type: String, default: '' },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
+    // Private-server controls (Phase 2). Additive — defaults keep prior behaviour.
+    streamDisabled: { type: Boolean, default: false }, // admin can block publishing
+    autoRecord: { type: Boolean, default: false }, // record the private-server stream
+    recordingUrl: { type: String, trim: true, default: '' }, // set by media server
     isLive: { type: Boolean, default: false, index: true },
     liveStartedAt: { type: Date },
     liveEndedAt: { type: Date },
     peakViewers: { type: Number, default: 0, min: 0 },
+    totalViews: { type: Number, default: 0, min: 0 }, // cumulative unique-ish joins
 
     coverImage: {
       type: String,

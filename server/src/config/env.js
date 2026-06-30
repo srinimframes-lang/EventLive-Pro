@@ -49,6 +49,11 @@ export const env = {
   // Base RTMP ingest URL that broadcasters point OBS at. The per-event stream
   // key is appended to this (e.g. rtmp://localhost:1935/live/<streamKey>).
   rtmpIngestUrl: process.env.RTMP_INGEST_URL || 'rtmp://localhost:1935/live',
+  // Public base where the private media server serves HLS playback. Playback
+  // URLs are derived as `${hlsPlaybackBase}/live/<shortCode>/master.m3u8`.
+  hlsPlaybackBase: (process.env.HLS_PLAYBACK_BASE || '').replace(/\/+$/, ''),
+  // Shared secret the media server presents to the stream webhooks.
+  mediaServerSecret: process.env.MEDIA_SERVER_SECRET || '',
   // Super Admin bootstrap. On first boot the server ensures this account exists
   // (role=admin). Set these on Render; change the password after first login.
   superAdmin: {

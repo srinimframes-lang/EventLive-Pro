@@ -16,6 +16,7 @@ export function useLiveRoom(eventId, { guestName } = {}) {
   const [messages, setMessages] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [liveStatus, setLiveStatus] = useState(null);
+  const [playerNonce, setPlayerNonce] = useState(0);
 
   // Load initial history once per event.
   useEffect(() => {
@@ -70,6 +71,7 @@ export function useLiveRoom(eventId, { guestName } = {}) {
       );
     });
     socket.on('stream:status', (status) => setLiveStatus(status));
+    socket.on('stream:restart', () => setPlayerNonce((n) => n + 1));
 
     return () => {
       socket.emit('room:leave');
@@ -105,6 +107,7 @@ export function useLiveRoom(eventId, { guestName } = {}) {
     messages,
     questions,
     liveStatus,
+    playerNonce,
     sendMessage,
     askQuestion,
     upvoteQuestion,

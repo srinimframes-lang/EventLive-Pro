@@ -21,7 +21,7 @@ export default function Studio() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ streamProvider: 'none', youtubeVideoId: '', hlsUrl: '', webrtcUrl: '' });
+  const [form, setForm] = useState({ streamProvider: 'none', youtubeVideoId: '', hlsUrl: '', webrtcUrl: '', autoRecord: false });
 
   const [gallery, setGallery] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -43,6 +43,7 @@ export default function Studio() {
           youtubeVideoId: cfg.youtubeVideoId || '',
           hlsUrl: cfg.hlsUrl || '',
           webrtcUrl: cfg.webrtcUrl || '',
+          autoRecord: Boolean(cfg.autoRecord),
         });
       })
       .catch((err) => active && setError(err.message));
@@ -73,7 +74,10 @@ export default function Studio() {
     setTimeout(() => setNotice(''), 2500);
   };
 
-  const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((f) => ({ ...f, [name]: type === 'checkbox' ? checked : value }));
+  };
 
   const saveConfig = async (e) => {
     e.preventDefault();
@@ -110,6 +114,30 @@ export default function Studio() {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const toggleDisabled = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const updated = await streamService.setDisabled(eventId, !config?.streamDisabled);
+      setConfig(updated);
+      flash(updated.streamDisabled ? 'Stream disabled' : 'Stream enabled');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restartStream = async () => {
+    setError('');
+    try {
+      await streamService.restart(eventId);
+      flash('Players asked to reconnect');
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -262,7 +290,25 @@ export default function Studio() {
               </Field>
             )}
 
-            {(form.streamProvider === 'hls' || form.streamProvider === 'rtmp') && (
+            {form.streamProvider === 'rtmp' && (
+              <>
+                <div className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700">
+                  Private server: stream from OBS to the RTMP details below. Playback
+                  is generated automatically — no .m3u8 needed.
+                </div>
+                {config?.playbackUrl && (
+                  <Field label="Playback URL (auto-generated)" htmlFor="playbackUrl">
+                    <input id="playbackUrl" className="input bg-slate-50" value={config.playbackUrl} readOnly />
+                  </Field>
+                )}
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" name="autoRecord" checked={form.autoRecord} onChange={handleChange} />
+                  Auto-record this stream
+                </label>
+              </>
+            )}
+
+            {form.streamProvider === 'hls' && (
               <Field label="HLS playback URL (.m3u8)" htmlFor="hlsUrl">
                 <input id="hlsUrl" name="hlsUrl" type="url" className="input"
                   placeholder="https://…/index.m3u8" value={form.hlsUrl} onChange={handleChange} />
@@ -307,10 +353,36 @@ export default function Studio() {
 
           {/* RTMP key management */}
           <div className="card space-y-3">
-            <h2 className="font-bold text-slate-900">RTMP ingest</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-bold text-slate-900">RTMP ingest</h2>
+              <div className="flex items-center gap-3 text-xs">
+                <span className={`inline-flex items-center gap-1 font-medium ${isLive ? 'text-red-600' : 'text-slate-400'}`}>
+                  <span className={`h-2 w-2 rounded-full ${isLive ? 'animate-pulse bg-red-600' : 'bg-slate-300'}`} />
+                  {isLive ? 'Online' : 'Offline'}
+                </span>
+                <span className="text-slate-500">{room.viewers} watching</span>
+                {config?.peakViewers ? <span className="text-slate-400">peak {config.peakViewers}</span> : null}
+              </div>
+            </div>
             <p className="text-sm text-slate-600">
               Point OBS (or any RTMP encoder) at the server URL and stream key below.
+              Output is transcoded to adaptive HLS (240p–720p, capped at 1000&nbsp;kbps).
             </p>
+
+            {config?.streamDisabled && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                This stream is disabled — publishing is blocked until you re-enable it.
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-ghost" onClick={toggleDisabled} disabled={busy}>
+                {config?.streamDisabled ? 'Enable stream' : 'Disable stream'}
+              </button>
+              <button type="button" className="btn-ghost" onClick={restartStream} disabled={busy}>
+                Restart players
+              </button>
+            </div>
 
             {keyInfo ? (
               <div className="space-y-2">

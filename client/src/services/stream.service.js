@@ -21,6 +21,14 @@ export const streamService = {
     const { data } = await api.post(`/api/events/${eventId}/stream/live`, { live });
     return data.data;
   },
+  async setDisabled(eventId, disabled) {
+    const { data } = await api.post(`/api/events/${eventId}/stream/disable`, { disabled });
+    return data.data;
+  },
+  async restart(eventId) {
+    const { data } = await api.post(`/api/events/${eventId}/stream/restart`);
+    return data.data;
+  },
   async getChatHistory(eventId, limit = 50) {
     const { data } = await api.get(`/api/events/${eventId}/chat`, { params: { limit } });
     return data.data;

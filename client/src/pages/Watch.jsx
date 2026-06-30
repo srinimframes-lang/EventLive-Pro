@@ -152,7 +152,7 @@ export default function Watch() {
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         {/* Player + meta */}
         <div className="lg:col-span-2">
-          <LivePlayer config={mergedConfig} />
+          <LivePlayer key={room.playerNonce} config={mergedConfig} />
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{event.title}</h2>
