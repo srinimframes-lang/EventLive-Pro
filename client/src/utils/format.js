@@ -130,10 +130,16 @@ export function watchPath(event) {
 
 /**
  * Builds a shareable absolute (short) URL for the in-app watch page.
+ * White-label aware: uses `originOverride` if given, else the event's
+ * `brandDomain` (the organizer's active custom domain), else the current origin.
  */
-export function buildWatchUrl(event) {
-  if (typeof window === 'undefined' || !event) return '';
-  return `${window.location.origin}${watchPath(event)}`;
+export function buildWatchUrl(event, originOverride) {
+  if (!event) return '';
+  let origin = originOverride;
+  if (!origin && event.brandDomain) origin = `https://${event.brandDomain}`;
+  if (!origin && typeof window !== 'undefined') origin = window.location.origin;
+  if (!origin) return '';
+  return `${origin}${watchPath(event)}`;
 }
 
 /**

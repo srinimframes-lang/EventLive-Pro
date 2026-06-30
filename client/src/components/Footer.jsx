@@ -12,6 +12,7 @@ export default function Footer() {
         <div>
           <p className="font-display text-lg font-bold text-brand-700">{settings.companyName}</p>
           <p className="mt-1 text-sm text-slate-500">{settings.tagline}</p>
+          {settings.footer && <p className="mt-2 text-xs text-slate-500">{settings.footer}</p>}
         </div>
         <div className="text-sm text-slate-600">
           <p className="font-semibold text-slate-800">Quick links</p>

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Event, EVENT_STATUSES, EVENT_CATEGORIES } from '../models/Event.js';
+import { Domain } from '../models/Domain.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
 import { linkCost } from '../config/credits.js';
@@ -113,7 +114,18 @@ export const getEvent = asyncHandler(async (req, res) => {
     throw new Error('Event not found');
   }
 
-  res.status(200).json({ success: true, data: event });
+  // White-label: surface the organizer's active custom domain so share/watch
+  // links can be built on it (falls back to the platform domain when absent).
+  const data = event.toJSON();
+  const organizerId = event.organizer?._id || event.organizer;
+  if (organizerId) {
+    const dom = await Domain.findOne({ customer: organizerId, status: 'active' })
+      .select('host')
+      .lean();
+    data.brandDomain = dom ? dom.host : '';
+  }
+
+  res.status(200).json({ success: true, data });
 });
 
 /**

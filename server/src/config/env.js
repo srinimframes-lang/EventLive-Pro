@@ -73,5 +73,17 @@ export const env = {
       return Boolean(this.url || (this.cloudName && this.apiKey && this.apiSecret));
     },
   },
+  // Optional Vercel integration for white-label custom domains. When a token +
+  // project id are set, approving a domain attaches it to the Vercel project
+  // (auto SSL) and reads its verification/SSL status. Without these, the app
+  // still verifies DNS ownership and the domain is attached manually in Vercel.
+  vercel: {
+    token: process.env.VERCEL_TOKEN || '',
+    projectId: process.env.VERCEL_PROJECT_ID || '',
+    teamId: process.env.VERCEL_TEAM_ID || '',
+    get enabled() {
+      return Boolean(this.token && this.projectId);
+    },
+  },
   isProd: process.env.NODE_ENV === 'production',
 };

@@ -4,12 +4,14 @@ import AdminCustomers from '../components/admin/AdminCustomers.jsx';
 import AdminPayments from '../components/admin/AdminPayments.jsx';
 import AdminEvents from '../components/admin/AdminEvents.jsx';
 import AdminSettings from '../components/admin/AdminSettings.jsx';
+import AdminDomains from '../components/admin/AdminDomains.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'customers', label: 'Customers' },
   { id: 'payments', label: 'Payments' },
   { id: 'events', label: 'Events' },
+  { id: 'whitelabel', label: 'White Label' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -43,6 +45,7 @@ export default function Admin() {
         {tab === 'customers' && <AdminCustomers />}
         {tab === 'payments' && <AdminPayments />}
         {tab === 'events' && <AdminEvents />}
+        {tab === 'whitelabel' && <AdminDomains />}
         {tab === 'settings' && <AdminSettings />}
       </div>
     </div>

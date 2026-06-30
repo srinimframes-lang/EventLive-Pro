@@ -19,7 +19,18 @@ import {
   approveCreditOrder,
   rejectCreditOrder,
 } from '../controllers/admin.controller.js';
+import {
+  listDomains,
+  createDomain,
+  verifyDomain,
+  approveDomain,
+  suspendDomain,
+  removeDomain,
+  updateCustomerBranding,
+  uploadCustomerBrandingLogo,
+} from '../controllers/adminDomain.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
+import { upload } from '../middleware/upload.middleware.js';
 
 const router = Router();
 
@@ -47,5 +58,16 @@ router.post('/subadmins/:id/credits', adjustSubAdminCredits);
 router.get('/credit-orders', listCreditOrders);
 router.post('/credit-orders/:id/approve', approveCreditOrder);
 router.post('/credit-orders/:id/reject', rejectCreditOrder);
+
+// White-label: per-customer branding
+router.patch('/customers/:id/branding', updateCustomerBranding);
+router.post('/customers/:id/branding/logo', upload.single('logo'), uploadCustomerBrandingLogo);
+
+// White-label: custom domains
+router.route('/domains').get(listDomains).post(createDomain);
+router.post('/domains/:id/verify', verifyDomain);
+router.post('/domains/:id/approve', approveDomain);
+router.post('/domains/:id/suspend', suspendDomain);
+router.delete('/domains/:id', removeDomain);
 
 export default router;

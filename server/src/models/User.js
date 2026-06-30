@@ -74,6 +74,21 @@ const userSchema = new Schema(
       ref: 'User',
       default: null,
     },
+    // ── White-label branding (Phase 3) ───────────────────────────
+    // Shown on the customer's own custom-domain site instead of the default
+    // platform branding. All optional; empty values fall back to the platform
+    // Settings (MaaEvents9 / EventLive Pro), so existing accounts are unaffected.
+    branding: {
+      businessName: { type: String, default: '', trim: true, maxlength: 80 },
+      logoUrl: { type: String, default: '' },
+      tagline: { type: String, default: '', trim: true, maxlength: 120 },
+      primaryColor: { type: String, default: '', trim: true }, // hex, e.g. #be185d
+      whatsappNumber: { type: String, default: '', trim: true },
+      contactPhone: { type: String, default: '', trim: true },
+      contactEmail: { type: String, default: '', trim: true },
+      address: { type: String, default: '', trim: true, maxlength: 200 },
+      footer: { type: String, default: '', trim: true, maxlength: 300 },
+    },
   },
   { timestamps: true }
 );

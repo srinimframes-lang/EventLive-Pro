@@ -84,4 +84,36 @@ export const adminService = {
     const { data } = await api.post(`/api/admin/credit-orders/${id}/reject`, { adminNote });
     return data.data;
   },
+
+  // ── White-label: custom domains ─────────────────────────
+  async listDomains() {
+    const { data } = await api.get('/api/admin/domains');
+    return data.data;
+  },
+  async createDomain(payload) {
+    const { data } = await api.post('/api/admin/domains', payload);
+    return data.data;
+  },
+  async verifyDomain(id) {
+    const { data } = await api.post(`/api/admin/domains/${id}/verify`);
+    return data.data;
+  },
+  async approveDomain(id, force) {
+    const { data } = await api.post(`/api/admin/domains/${id}/approve`, { force: Boolean(force) });
+    return data.data;
+  },
+  async suspendDomain(id) {
+    const { data } = await api.post(`/api/admin/domains/${id}/suspend`);
+    return data.data;
+  },
+  async removeDomain(id) {
+    const { data } = await api.delete(`/api/admin/domains/${id}`);
+    return data.data;
+  },
+
+  // ── White-label: per-customer branding ──────────────────
+  async updateCustomerBranding(id, payload) {
+    const { data } = await api.patch(`/api/admin/customers/${id}/branding`, payload);
+    return data.data;
+  },
 };

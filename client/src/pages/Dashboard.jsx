@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { eventService } from '../services/event.service.js';
+import { tenantService } from '../services/tenant.service.js';
 import BuyCreditsPanel from '../components/BuyCreditsPanel.jsx';
-import { formatDateTime, watchPath } from '../utils/format.js';
+import WhiteLabelPanel from '../components/WhiteLabelPanel.jsx';
+import { formatDateTime, watchPath, buildWatchUrl } from '../utils/format.js';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
@@ -12,6 +14,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+  const [linkOrigin, setLinkOrigin] = useState('');
   const justRegistered = location.state?.justRegistered;
   const pendingApproval = user?.role !== 'admin' && user?.approved === false;
   const balance = user?.creditBalance ?? 0;
@@ -28,9 +31,14 @@ export default function Dashboard() {
   useEffect(() => {
     refreshUser();
     load();
+    // White-label: use the customer's active custom domain for their links.
+    tenantService
+      .myDomains()
+      .then((d) => setLinkOrigin(d.activeHost ? `https://${d.activeHost}` : ''))
+      .catch(() => {});
   }, [refreshUser, load]);
 
-  const liveLink = (ev) => `${window.location.origin}${watchPath(ev)}`;
+  const liveLink = (ev) => buildWatchUrl(ev, linkOrigin);
   const copyLink = async (ev) => {
     try {
       await navigator.clipboard.writeText(liveLink(ev));
@@ -142,6 +150,9 @@ export default function Dashboard() {
       <div id="buy-credits" className="mt-8 scroll-mt-20">
         <BuyCreditsPanel />
       </div>
+
+      {/* White-label branding & custom domains */}
+      <WhiteLabelPanel initialBranding={user?.branding} />
 
       <div className="card mt-8">
         <h2 className="text-lg font-bold text-slate-900">Your account</h2>

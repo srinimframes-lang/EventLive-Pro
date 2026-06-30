@@ -9,6 +9,7 @@ import { env } from './config/env.js';
 import apiRoutes from './routes/index.js';
 import { notFound, errorHandler } from './middleware/error.middleware.js';
 import { UPLOADS_DIR } from './middleware/upload.middleware.js';
+import { startDomainCache, isActiveDomainOrigin } from './utils/domainCache.js';
 
 const app = express();
 
@@ -26,13 +27,18 @@ app.use(
 
 // CORS allow-list: accept any configured client origin (normalised, no trailing
 // slash) plus requests with no Origin header (curl, health checks, same-origin).
+// Approved white-label custom domains are allowed dynamically via a cached
+// allow-list (refreshed from the Domain collection).
 const allowedOrigins = new Set(env.clientUrls);
+// Keep the cache of active custom-domain origins warm.
+startDomainCache();
 app.use(
   cors({
     origin(origin, callback) {
       if (!origin) return callback(null, true);
       const normalised = origin.replace(/\/+$/, '');
       if (allowedOrigins.has(normalised)) return callback(null, true);
+      if (isActiveDomainOrigin(normalised)) return callback(null, true);
       return callback(new Error(`Origin ${origin} not allowed by CORS`));
     },
     credentials: true,

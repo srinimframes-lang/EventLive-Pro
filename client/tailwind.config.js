@@ -4,18 +4,20 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Primary brand — deep romantic plum/rose for a premium wedding feel.
+        // Primary brand — driven by CSS variables so white-label customers can
+        // theme it at runtime. Defaults (in index.css) match the original
+        // plum/rose palette exactly, so the default site is unchanged.
         brand: {
-          50: '#fdf2f8',
-          100: '#fce7f3',
-          200: '#fbcfe8',
-          300: '#f9a8d4',
-          400: '#f472b6',
-          500: '#ec4899',
-          600: '#be185d',
-          700: '#9d174d',
-          800: '#831843',
-          900: '#500724',
+          50: 'rgb(var(--brand-50) / <alpha-value>)',
+          100: 'rgb(var(--brand-100) / <alpha-value>)',
+          200: 'rgb(var(--brand-200) / <alpha-value>)',
+          300: 'rgb(var(--brand-300) / <alpha-value>)',
+          400: 'rgb(var(--brand-400) / <alpha-value>)',
+          500: 'rgb(var(--brand-500) / <alpha-value>)',
+          600: 'rgb(var(--brand-600) / <alpha-value>)',
+          700: 'rgb(var(--brand-700) / <alpha-value>)',
+          800: 'rgb(var(--brand-800) / <alpha-value>)',
+          900: 'rgb(var(--brand-900) / <alpha-value>)',
         },
         // Gold accent for premium highlights.
         gold: {

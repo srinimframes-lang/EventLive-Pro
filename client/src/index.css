@@ -5,6 +5,20 @@
 @tailwind utilities;
 
 @layer base {
+  /* Default brand palette (RGB triplets) — matches the original plum/rose hex
+     values exactly. White-label customers override these at runtime. */
+  :root {
+    --brand-50: 253 242 248;
+    --brand-100: 252 231 243;
+    --brand-200: 251 207 232;
+    --brand-300: 249 168 212;
+    --brand-400: 244 114 182;
+    --brand-500: 236 72 153;
+    --brand-600: 190 24 93;
+    --brand-700: 157 23 77;
+    --brand-800: 131 24 67;
+    --brand-900: 80 7 36;
+  }
   html {
     scroll-behavior: smooth;
   }
