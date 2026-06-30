@@ -8,6 +8,7 @@ import {
   listPayments,
   approvePayment,
   rejectPayment,
+  voidPayment,
   getAnalytics,
   createSubAdmin,
   listSubAdmins,
@@ -35,6 +36,7 @@ router.post('/customers/:id/credits', adjustCustomerCredits);
 router.get('/payments', listPayments);
 router.post('/payments/:id/approve', approvePayment);
 router.post('/payments/:id/reject', rejectPayment);
+router.delete('/payments/:id', voidPayment);
 
 // Resellers (sub admins)
 router.route('/subadmins').get(listSubAdmins).post(createSubAdmin);

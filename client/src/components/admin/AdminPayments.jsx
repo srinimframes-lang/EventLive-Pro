@@ -61,6 +61,24 @@ export default function AdminPayments() {
     }
   };
 
+  const voidPayment = async (p) => {
+    const warn =
+      p.status === 'approved'
+        ? `Void this payment? ${p.credits} credit(s) will be removed from ${p.user?.email} (clamped to their current balance) and the record deleted.`
+        : 'Void and permanently delete this payment record?';
+    if (!window.confirm(warn)) return;
+    setBusyId(p.id);
+    setError('');
+    try {
+      await adminService.voidPayment(p.id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -134,6 +152,14 @@ export default function AdminPayments() {
                       {p.status}
                     </span>
                     {p.reviewNote && <span className="text-xs text-slate-500">— {p.reviewNote}</span>}
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                      disabled={busyId === p.id}
+                      onClick={() => voidPayment(p)}
+                    >
+                      {busyId === p.id ? 'Working…' : 'Void payment'}
+                    </button>
                   </div>
                 )}
               </div>

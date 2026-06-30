@@ -197,6 +197,41 @@ export const rejectPayment = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @route DELETE /api/admin/payments/:id
+ * @desc  Void (delete) a payment request. If it was approved, the credits it
+ *        granted are reversed — clamped to the customer's current balance so the
+ *        wallet never goes negative (e.g. if some were already spent).
+ * @access Private/Admin
+ */
+export const voidPayment = asyncHandler(async (req, res) => {
+  const payment = await Payment.findById(req.params.id);
+  if (!payment) {
+    res.status(404);
+    throw new Error('Payment request not found');
+  }
+
+  let reversedCredits = 0;
+  if (payment.status === 'approved' && payment.credits > 0) {
+    const user = await User.findById(payment.user).select('creditBalance');
+    const available = user?.creditBalance ?? 0;
+    const toRemove = Math.min(payment.credits, available);
+    if (toRemove > 0) {
+      await changeBalance({
+        userId: payment.user,
+        amount: -toRemove,
+        reason: 'manual_remove',
+        note: `Voided payment of ${payment.credits} credit(s)`,
+        createdBy: req.user._id,
+      });
+      reversedCredits = toRemove;
+    }
+  }
+
+  await payment.deleteOne();
+  res.status(200).json({ success: true, data: { id: req.params.id, reversedCredits } });
+});
+
+/**
  * @route DELETE /api/admin/customers/:id
  * @access Private/Admin
  */

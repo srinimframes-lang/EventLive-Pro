@@ -42,6 +42,10 @@ export const adminService = {
     const { data } = await api.post(`/api/admin/payments/${id}/reject`, { adminNote });
     return data.data;
   },
+  async voidPayment(id) {
+    const { data } = await api.delete(`/api/admin/payments/${id}`);
+    return data.data;
+  },
 
   // ── Sub admins (resellers) ──────────────────────────────
   async listSubAdmins() {
