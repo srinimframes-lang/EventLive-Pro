@@ -1,0 +1,41 @@
+{
+	# Automatic HTTPS via Let's Encrypt.
+	email {$ACME_EMAIL}
+}
+
+# Serves the FFmpeg-generated HLS over HTTPS for the public playback domain.
+{$STREAM_DOMAIN} {
+	encode gzip
+
+	# CORS preflight (hls.js fetches from the main app origin).
+	@options method OPTIONS
+	handle @options {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+		header Access-Control-Allow-Headers "*"
+		respond 204
+	}
+
+	# HLS playlists + segments:  /live/<shortCode>/master.m3u8
+	handle_path /live/* {
+		root * /srv/hls
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "no-store"
+		@m3u8 path *.m3u8
+		header @m3u8 Content-Type "application/vnd.apple.mpegurl"
+		@ts path *.ts
+		header @ts Content-Type "video/mp2t"
+		file_server
+	}
+
+	# Recordings download (admin shares the direct link as needed).
+	handle_path /recordings/* {
+		root * /srv/recordings
+		header Access-Control-Allow-Origin "*"
+		file_server browse off
+	}
+
+	handle {
+		respond "EventLive Pro media server" 200
+	}
+}

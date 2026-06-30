@@ -15,6 +15,7 @@ import {
   setStreamDisabled,
   restartStream,
   authenticateStream,
+  mediamtxAuth,
   streamStarted,
   streamStopped,
   getChatHistory,
@@ -40,6 +41,7 @@ router
 // Registered before the :id routes; 'stream' is a literal first segment so it
 // never collides with the slug/:id param routes below.
 router.post('/stream/auth', authenticateStream);
+router.post('/stream/mediamtx-auth', mediamtxAuth);
 router.post('/stream/started', streamStarted);
 router.post('/stream/stopped', streamStopped);
 

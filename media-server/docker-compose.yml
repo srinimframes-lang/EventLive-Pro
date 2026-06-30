@@ -1,0 +1,69 @@
+# EventLive Pro — one-click private streaming stack
+#   mediamtx : RTMP ingest + FFmpeg ABR HLS (240/360/480/720, capped 1000 kbps)
+#   caddy    : automatic HTTPS, serves the HLS playlists/segments + recordings
+#
+# Usage:
+#   cp .env.example .env   # then fill in the values
+#   docker compose up -d --build
+#
+# Required env (see .env.example):
+#   STREAM_DOMAIN, ACME_EMAIL, BACKEND_URL, MEDIA_SERVER_SECRET, PUBLIC_HLS_BASE
+
+services:
+  mediamtx:
+    build:
+      context: ./mediamtx
+    image: eventlive-mediamtx:latest
+    restart: unless-stopped
+    environment:
+      # MediaMTX external auth → backend (token secures the endpoint).
+      MTX_AUTHHTTPADDRESS: "${BACKEND_URL}/api/events/stream/mediamtx-auth?token=${MEDIA_SERVER_SECRET}"
+      # Consumed by the runOn scripts.
+      BACKEND_URL: "${BACKEND_URL}"
+      MEDIA_SERVER_SECRET: "${MEDIA_SERVER_SECRET}"
+      PUBLIC_HLS_BASE: "${PUBLIC_HLS_BASE}"
+    ports:
+      - "1935:1935" # RTMP ingest (OBS / encoders)
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./scripts:/scripts:ro
+      - hls:/hls
+      - recordings:/recordings
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9997/v3/paths/list"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      mediamtx:
+        condition: service_healthy
+    environment:
+      STREAM_DOMAIN: "${STREAM_DOMAIN}"
+      ACME_EMAIL: "${ACME_EMAIL}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - hls:/srv/hls:ro
+      - recordings:/srv/recordings:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  hls:
+  recordings:
+  caddy_data:
+  caddy_config:

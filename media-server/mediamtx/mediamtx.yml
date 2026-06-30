@@ -1,0 +1,47 @@
+###############################################
+# EventLive Pro — MediaMTX configuration
+# RTMP ingest only; HLS/ABR is produced by FFmpeg (runOnPublish) and served by
+# Caddy. Most secrets are injected via MTX_* environment variables in compose.
+###############################################
+
+logLevel: info
+logDestinations: [stdout]
+
+# Control API (used by health checks; bound to the container only).
+api: yes
+apiAddress: :9997
+
+# Disable everything we don't use; keep the surface small.
+metrics: no
+pprof: no
+playback: no
+rtsp: no
+rtmp: yes
+rtmpAddress: :1935
+rtmpEncryption: "no"
+hls: no
+webrtc: no
+srt: no
+
+# ── Authentication ───────────────────────────────────────────────
+# External HTTP auth. The real address (including ?token=SECRET) is provided by
+# MTX_AUTHHTTPADDRESS in docker-compose. Reads/playback are public (HLS is
+# served by Caddy, not MediaMTX), so only publishing is validated.
+authMethod: http
+authHTTPExclude:
+  - action: read
+  - action: playback
+  - action: api
+  - action: metrics
+  - action: pprof
+
+# ── Path defaults ────────────────────────────────────────────────
+# On publish, kick off the transcode + notify the backend; on unpublish, notify
+# the backend and stop any recording. Scripts are mounted at /scripts.
+pathDefaults:
+  runOnPublish: bash /scripts/on_publish.sh
+  runOnPublishRestart: no
+  runOnUnpublish: bash /scripts/on_unpublish.sh
+
+paths:
+  all_others:

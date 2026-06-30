@@ -247,6 +247,30 @@ export const authenticateStream = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @route POST /api/events/stream/mediamtx-auth
+ * @desc  MediaMTX external-auth hook. MediaMTX POSTs { action, path, ... } and
+ *        expects HTTP 200 to allow, non-2xx to deny. Secured by a `?token=`
+ *        query that must match MEDIA_SERVER_SECRET. Reads are always allowed
+ *        (public playback); only `publish` is validated against the stream key.
+ * @access Media server (token query)
+ */
+export const mediamtxAuth = asyncHandler(async (req, res) => {
+  if (env.mediaServerSecret && req.query.token !== env.mediaServerSecret) {
+    return res.status(401).json({ ok: false });
+  }
+  const action = req.body?.action;
+  if (action !== 'publish') {
+    return res.status(200).json({ ok: true }); // reads/playback/api → allow
+  }
+  const streamKey = String(req.body?.path || '').trim();
+  const event = await Event.findOne({ rtmpStreamKey: streamKey }).select('+rtmpStreamKey');
+  if (!event || event.streamDisabled || ['ended', 'cancelled'].includes(event.status)) {
+    return res.status(401).json({ ok: false });
+  }
+  return res.status(200).json({ ok: true });
+});
+
+/**
  * @route POST /api/events/stream/started
  * @desc  Media server reports a publish started; flip the event live + store URL.
  * @access Media server (x-media-secret)
