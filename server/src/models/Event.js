@@ -235,30 +235,25 @@ eventSchema.statics.generateUniqueShortCode = async function generateUniqueShort
   return `${prefix}${randomSegment(10)}`;
 };
 
-// Build a unique slug from the title before validation/save.
-eventSchema.pre('validate', async function ensureSlug(next) {
-  if (!this.isModified('title') && this.slug) return next();
-
-  const base = slugify(this.title || '') || 'event';
-  let candidate = base;
-  let counter = 1;
-
-  // Ensure uniqueness, ignoring the current document.
-  // eslint-disable-next-line no-await-in-loop
-  while (await this.constructor.exists({ slug: candidate, _id: { $ne: this._id } })) {
-    candidate = `${base}-${counter}`;
-    counter += 1;
+// Assign a unique slug (from the title) and a stable short code before
+// validation. Implemented as a single async hook (no `next()`), since mixing
+// `next()` with async hooks can cause later hooks to be skipped.
+eventSchema.pre('validate', async function ensureSlugAndShortCode() {
+  if (this.isModified('title') || !this.slug) {
+    const base = slugify(this.title || '') || 'event';
+    let candidate = base;
+    let counter = 1;
+    // eslint-disable-next-line no-await-in-loop
+    while (await this.constructor.exists({ slug: candidate, _id: { $ne: this._id } })) {
+      candidate = `${base}-${counter}`;
+      counter += 1;
+    }
+    this.slug = candidate;
   }
 
-  this.slug = candidate;
-  return next();
-});
-
-// Assign a unique short code once, on first save (kept stable thereafter).
-eventSchema.pre('validate', async function ensureShortCode(next) {
-  if (this.shortCode) return next();
-  this.shortCode = await this.constructor.generateUniqueShortCode(this);
-  return next();
+  if (!this.shortCode) {
+    this.shortCode = await this.constructor.generateUniqueShortCode(this);
+  }
 });
 
 eventSchema.set('toJSON', {
