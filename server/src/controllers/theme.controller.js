@@ -21,7 +21,7 @@ export const listThemes = asyncHandler(async (req, res) => {
   if (req.query.category && THEME_CATEGORIES.includes(req.query.category)) {
     filter.category = req.query.category;
   }
-  const themes = await Theme.find(filter).sort({ category: 1, sortOrder: 1, name: 1 });
+  const themes = await Theme.find(filter).sort({ sortOrder: 1, category: 1, name: 1 });
   res.status(200).json({ success: true, data: themes });
 });
 
@@ -70,7 +70,7 @@ export const adminListThemes = asyncHandler(async (req, res) => {
   if (req.query.category && THEME_CATEGORIES.includes(req.query.category)) {
     filter.category = req.query.category;
   }
-  const themes = await Theme.find(filter).sort({ category: 1, sortOrder: 1, name: 1 });
+  const themes = await Theme.find(filter).sort({ sortOrder: 1, category: 1, name: 1 });
   res.status(200).json({ success: true, data: themes });
 });
 
@@ -98,6 +98,7 @@ export const createTheme = asyncHandler(async (req, res) => {
     backgroundImage: b.backgroundImage || '',
     colors: b.colors || {},
     fonts: b.fonts || {},
+    style: b.style || {},
     heroLabel: b.heroLabel || 'Live',
     footerText: b.footerText || '',
     isPremium: b.isPremium !== false,
@@ -126,6 +127,7 @@ export const updateTheme = asyncHandler(async (req, res) => {
   if (b.slug) theme.slug = slugify(b.slug);
   if (b.colors) Object.assign(theme.colors, b.colors);
   if (b.fonts) Object.assign(theme.fonts, b.fonts);
+  if (b.style) Object.assign(theme.style, b.style);
   await theme.save();
   res.status(200).json({ success: true, data: theme });
 });

@@ -10,6 +10,10 @@ import QAPanel from './live/QAPanel.jsx';
 import ViewerCount from './live/ViewerCount.jsx';
 import PhotoGallery from './PhotoGallery.jsx';
 import ShareButtons from './ShareButtons.jsx';
+import ThemeEffects from './theme/ThemeEffects.jsx';
+import ThemeDecor from './theme/ThemeDecor.jsx';
+import PremiumButton from './theme/PremiumButton.jsx';
+import GlassCard from './theme/GlassCard.jsx';
 
 /**
  * Premium themed watch layout. Uses the event's frozen themeSnapshot so
@@ -28,7 +32,7 @@ export default function ThemedWatchLayout({
   playerNonce,
 }) {
   const snap = event.themeSnapshot || {};
-  // Always use the theme's background — never let coverImage replace the template design.
+  const style = snap.style || {};
   const themeBg = resolveMediaUrl(snap.backgroundImage);
   const couplePhoto = event.coverImage ? resolveMediaUrl(event.coverImage) : '';
   const vars = themeStyleVars(snap);
@@ -45,96 +49,116 @@ export default function ThemedWatchLayout({
 
   const title = coupleTitle || event.title;
   const heroLabel = snap.heroLabel || 'Live';
+  const isDarkSurface = (snap.colors?.surface || '').toLowerCase().includes('1c') ||
+    (snap.colors?.surface || '').toLowerCase().includes('0f');
 
   return (
     <div
-      className="themed-watch min-h-screen"
+      className="themed-watch relative min-h-screen overflow-x-hidden"
       style={{
         ...vars,
         fontFamily: 'var(--theme-font-body)',
         backgroundColor: 'var(--theme-surface)',
       }}
     >
-      {/* Hero — theme background + primary tint (unique per template) */}
-      <header className="relative overflow-hidden text-[var(--theme-hero-text)]">
+      {/* Full-screen fixed background */}
+      <div className="theme-bg-fixed" aria-hidden>
         {themeBg && (
-          <img src={themeBg} alt="" className="absolute inset-0 h-full w-full object-cover" aria-hidden />
+          <img
+            src={themeBg}
+            alt=""
+            className="theme-bg-image"
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+          />
         )}
         <div
-          className="absolute inset-0"
+          className="theme-bg-overlay"
           style={{
-            background: `linear-gradient(to top, var(--theme-footer-bg) 0%, color-mix(in srgb, var(--theme-primary) 55%, transparent) 45%, color-mix(in srgb, var(--theme-secondary) 35%, transparent) 100%)`,
+            background: `linear-gradient(135deg,
+              color-mix(in srgb, var(--theme-gradient-from) 70%, transparent) 0%,
+              color-mix(in srgb, var(--theme-secondary) 50%, transparent) 40%,
+              color-mix(in srgb, var(--theme-footer-bg) 85%, transparent) 100%)`,
           }}
-          aria-hidden
         />
-        <div
-          className="relative px-4 py-10 sm:py-16"
-          style={{ minHeight: 'min(42vh, 420px)' }}
-        >
+        <div className="theme-bg-shimmer" aria-hidden />
+      </div>
+
+      {/* Hero */}
+      <header className="theme-hero relative overflow-hidden text-[var(--theme-hero-text)]">
+        <ThemeEffects
+          particleStyle={style.particleStyle || 'bokeh'}
+          gradientFrom={style.gradientFrom}
+          gradientTo={style.gradientTo}
+        />
+        <ThemeDecor iconSet={style.iconSet} decoration={style.decoration} />
+        <div className="theme-animate-fade-up relative px-4 py-12 sm:py-20" style={{ minHeight: 'min(48vh, 460px)' }}>
           <div className="mx-auto max-w-4xl text-center">
             {couplePhoto && (
               <img
                 src={couplePhoto}
                 alt={title}
-                className="mx-auto mb-4 h-24 w-24 rounded-full border-4 object-cover shadow-xl sm:h-28 sm:w-28"
+                className="theme-couple-photo mx-auto mb-5 h-24 w-24 rounded-full border-4 object-cover shadow-2xl sm:h-32 sm:w-32"
                 style={{ borderColor: 'var(--theme-accent)' }}
               />
             )}
             {event.photographerName && (
-              <div className="mb-4 flex items-center justify-center gap-2 text-sm opacity-90">
+              <GlassCard className="mx-auto mb-5 inline-flex items-center gap-2 px-4 py-2 text-sm" dark>
                 {event.photographerLogo && (
                   <img
                     src={resolveMediaUrl(event.photographerLogo)}
                     alt=""
-                    className="h-8 w-8 rounded-md object-contain bg-white/10"
+                    className="h-8 w-8 rounded-md object-contain"
                   />
                 )}
                 <span>Captured by {event.photographerName}</span>
-              </div>
+              </GlassCard>
             )}
             <p
-              className="text-xs uppercase tracking-[0.35em] opacity-90"
+              className="theme-hero-label text-xs uppercase tracking-[0.4em] sm:text-sm"
               style={{ color: 'var(--theme-accent)' }}
             >
               {heroLabel}
             </p>
             <h1
-              className="mt-2 text-3xl font-extrabold drop-shadow sm:text-5xl md:text-6xl"
+              className="theme-hero-title mt-3 text-3xl font-extrabold drop-shadow-lg sm:text-5xl md:text-6xl"
               style={{ fontFamily: 'var(--theme-font-heading)' }}
             >
               {title}
             </h1>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm opacity-95">
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm opacity-95">
               {event.startTime && <span>{formatDateTime(event.startTime)}</span>}
               {event.venue && (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   <span aria-hidden>📍</span>
                   {event.venue}
                 </span>
               )}
             </div>
-            <a
+            <PremiumButton
+              as="a"
               href="#watch-player"
-              className="mt-6 inline-flex items-center gap-2 rounded-full px-8 py-3 text-sm font-bold text-white shadow-lg transition hover:opacity-95"
-              style={{ backgroundColor: 'var(--theme-primary)' }}
+              buttonStyle={style.buttonStyle || 'pill-glow'}
+              className="mt-8 gap-2 px-10 py-3.5 text-sm sm:text-base"
             >
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-              </span>
-              Watch Live
-            </a>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+                </span>
+                Watch Live
+              </PremiumButton>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-3 py-6 sm:px-4">
+      <main className="relative mx-auto max-w-7xl px-3 py-8 sm:px-4">
         <div id="watch-player" className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <div className="overflow-hidden rounded-2xl shadow-xl ring-1 ring-black/5">
+          <div className="theme-animate-fade-up theme-animate-delay-1 lg:col-span-2">
+            <GlassCard className="overflow-hidden p-0" dark={isDarkSurface}>
               <LivePlayer key={playerNonce} config={mergedConfig} />
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            </GlassCard>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
               <h2
                 className="text-xl font-bold sm:text-2xl"
                 style={{ fontFamily: 'var(--theme-font-heading)', color: 'var(--theme-secondary)' }}
@@ -147,13 +171,15 @@ export default function ThemedWatchLayout({
               <ShareButtons url={watchUrl} title={title} />
             </div>
             {event.description && (
-              <p className="mt-4 whitespace-pre-wrap text-slate-600">{event.description}</p>
+              <GlassCard className="mt-4 text-sm leading-relaxed opacity-90" dark={isDarkSurface}>
+                <p className="whitespace-pre-wrap">{event.description}</p>
+              </GlassCard>
             )}
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="flex h-[60vh] flex-col overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-black/5 sm:h-[70vh]">
-              <div className="flex border-b border-slate-200">
+          <div className="theme-animate-fade-up theme-animate-delay-2 lg:col-span-1">
+            <GlassCard className="flex h-[60vh] flex-col overflow-hidden p-0 sm:h-[70vh]" dark={isDarkSurface}>
+              <div className="flex border-b border-white/10">
                 {chatOn && (
                   <ThemedTab active={activeTab === 'chat'} onClick={() => setTab('chat')}>
                     Chat
@@ -163,7 +189,7 @@ export default function ThemedWatchLayout({
                   Q&amp;A {room.questions.length > 0 && `(${room.questions.length})`}
                 </ThemedTab>
               </div>
-              <div className="min-h-0 flex-1">
+              <div className="min-h-0 flex-1 bg-white/95">
                 {activeTab === 'chat' ? (
                   <LiveChat messages={room.messages} onSend={room.sendMessage} disabled={!room.connected} />
                 ) : (
@@ -177,28 +203,26 @@ export default function ThemedWatchLayout({
                   />
                 )}
               </div>
-            </div>
+            </GlassCard>
           </div>
         </div>
 
-        {/* Gallery */}
-        <section className="mt-10">
-          <div className="mb-4 flex items-center justify-between">
+        <section className="theme-animate-fade-up theme-animate-delay-3 mt-12">
+          <GlassCard className="mb-4 flex items-center justify-between" dark={isDarkSurface}>
             <h2
               className="text-xl font-bold sm:text-2xl"
               style={{ fontFamily: 'var(--theme-font-heading)', color: 'var(--theme-secondary)' }}
             >
               Photo Gallery
             </h2>
-            <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>
-          </div>
+            <span className="text-sm opacity-70">{event.gallery?.length || 0} photos</span>
+          </GlassCard>
           <PhotoGallery photos={event.gallery || []} />
         </section>
       </main>
 
-      {/* Footer */}
       <footer
-        className="mt-8 px-4 py-8 text-center text-sm"
+        className="theme-footer relative mt-10 px-4 py-10 text-center text-sm"
         style={{
           backgroundColor: 'var(--theme-footer-bg)',
           color: 'var(--theme-footer-text)',
@@ -223,7 +247,7 @@ function ThemedTab({ active, onClick, children }) {
       style={
         active
           ? { borderBottom: '2px solid var(--theme-primary)', color: 'var(--theme-primary)' }
-          : { color: '#64748b' }
+          : { color: 'inherit', opacity: 0.65 }
       }
     >
       {children}

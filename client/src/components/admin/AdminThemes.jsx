@@ -27,6 +27,14 @@ const EMPTY = {
     heading: '"Playfair Display", Georgia, serif',
     body: 'Inter, system-ui, sans-serif',
   },
+  style: {
+    decoration: 'elegant',
+    buttonStyle: 'pill-glow',
+    iconSet: 'rings',
+    particleStyle: 'bokeh',
+    gradientFrom: '',
+    gradientTo: '',
+  },
 };
 
 export default function AdminThemes() {
@@ -86,6 +94,7 @@ export default function AdminThemes() {
       sortOrder: t.sortOrder || 0,
       colors: { ...EMPTY.colors, ...t.colors },
       fonts: { ...EMPTY.fonts, ...t.fonts },
+      style: { ...EMPTY.style, ...t.style },
     });
   };
 
@@ -124,6 +133,25 @@ export default function AdminThemes() {
   const onColor = (key, val) =>
     setForm((f) => ({ ...f, colors: { ...f.colors, [key]: val } }));
 
+  const onStyle = (key, val) =>
+    setForm((f) => ({ ...f, style: { ...f.style, [key]: val } }));
+
+  const uploadBg = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || editing === 'new' || !editing) return;
+    setBusy(true);
+    try {
+      const data = await themeService.uploadBackground(editing, file);
+      setForm((f) => ({ ...f, backgroundImage: data.backgroundImage }));
+      flash('Background uploaded');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+      e.target.value = '';
+    }
+  };
+
   if (loading && !themes.length) return <p className="text-slate-500">Loading themes…</p>;
 
   return (
@@ -134,7 +162,9 @@ export default function AdminThemes() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900">Theme Builder</h2>
-          <p className="text-sm text-slate-500">{themes.length} templates · {Object.keys(counts).length} categories</p>
+          <p className="text-sm text-slate-500">
+            {themes.length} templates · {themes.filter((t) => (t.slug || '').startsWith('premium-')).length} premium named
+          </p>
         </div>
         <button type="button" className="btn-primary" onClick={startCreate}>
           Add theme
@@ -182,6 +212,11 @@ export default function AdminThemes() {
           <Field label="Background image URL">
             <input className="input" value={form.backgroundImage} onChange={(e) => setForm((f) => ({ ...f, backgroundImage: e.target.value }))} />
           </Field>
+          {editing !== 'new' && (
+            <Field label="Upload background">
+              <input type="file" accept="image/*" className="input text-sm" onChange={uploadBg} disabled={busy} />
+            </Field>
+          )}
           <div className="sm:col-span-2">
             <Field label="Description">
               <textarea className="input" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
@@ -201,6 +236,38 @@ export default function AdminThemes() {
           <Field label="Body font">
             <input className="input" value={form.fonts.body} onChange={(e) => setForm((f) => ({ ...f, fonts: { ...f.fonts, body: e.target.value } }))} />
           </Field>
+          <Field label="Decoration">
+            <input className="input" value={form.style.decoration} onChange={(e) => onStyle('decoration', e.target.value)} />
+          </Field>
+          <Field label="Button style">
+            <select className="input" value={form.style.buttonStyle} onChange={(e) => onStyle('buttonStyle', e.target.value)}>
+              {['pill-glow', 'glass', 'rounded-gold', 'neon', 'outline-glass', 'sharp'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Icon set">
+            <input className="input" value={form.style.iconSet} onChange={(e) => onStyle('iconSet', e.target.value)} />
+          </Field>
+          <Field label="Particle style">
+            <select className="input" value={form.style.particleStyle} onChange={(e) => onStyle('particleStyle', e.target.value)}>
+              {['bokeh', 'petals', 'gold-dust', 'neon', 'bubbles', 'stars', 'confetti', 'leaves', 'dust', 'none'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Gradient from">
+            <div className="flex gap-2">
+              <input className="input" value={form.style.gradientFrom} onChange={(e) => onStyle('gradientFrom', e.target.value)} />
+              <input type="color" className="h-10 w-10 rounded border" value={form.style.gradientFrom || form.colors.primary} onChange={(e) => onStyle('gradientFrom', e.target.value)} />
+            </div>
+          </Field>
+          <Field label="Gradient to">
+            <div className="flex gap-2">
+              <input className="input" value={form.style.gradientTo} onChange={(e) => onStyle('gradientTo', e.target.value)} />
+              <input type="color" className="h-10 w-10 rounded border" value={form.style.gradientTo || form.colors.accent} onChange={(e) => onStyle('gradientTo', e.target.value)} />
+            </div>
+          </Field>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.isPremium} onChange={(e) => setForm((f) => ({ ...f, isPremium: e.target.checked }))} />
             Premium theme
@@ -212,7 +279,7 @@ export default function AdminThemes() {
           <div className="sm:col-span-2 flex flex-wrap gap-2">
             <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
             <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-            <button type="button" className="btn-outline" onClick={() => setPreview({ themeSnapshot: { ...form, name: form.name } })}>
+            <button type="button" className="btn-outline" onClick={() => setPreview({ themeSnapshot: { ...form, name: form.name, style: form.style } })}>
               Preview
             </button>
           </div>

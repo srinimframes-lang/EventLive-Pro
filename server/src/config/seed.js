@@ -14,12 +14,14 @@ import { Event } from '../models/Event.js';
  *  - a few default packages (only if none exist yet)
  */
 import { seedDefaultThemes } from './seedThemes.js';
+import { seedPremiumThemes } from './seedPremiumThemes.js';
 
 export async function runSeed() {
   await seedSuperAdmin();
   await Settings.getSingleton();
   await seedDefaultPackages();
   await seedDefaultThemes();
+  await seedPremiumThemes();
   await cleanupLegacyPayments();
   await backfillShortCodes();
 }

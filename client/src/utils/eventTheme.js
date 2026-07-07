@@ -56,6 +56,14 @@ export function normalizeEventTheme(event) {
         heading: snap.fonts?.heading || '"Playfair Display", Georgia, serif',
         body: snap.fonts?.body || 'Inter, system-ui, sans-serif',
       },
+      style: {
+        decoration: snap.style?.decoration || 'elegant',
+        buttonStyle: snap.style?.buttonStyle || 'pill-glow',
+        iconSet: snap.style?.iconSet || 'rings',
+        particleStyle: snap.style?.particleStyle || 'bokeh',
+        gradientFrom: snap.style?.gradientFrom || snap.colors?.primary || '',
+        gradientTo: snap.style?.gradientTo || snap.colors?.accent || '',
+      },
     };
   }
   return event;
@@ -66,6 +74,7 @@ export function themeStyleVars(snapshot) {
   if (!snapshot) return {};
   const c = snapshot.colors || {};
   const f = snapshot.fonts || {};
+  const s = snapshot.style || {};
   // Use snapshot values only — no hardcoded brand fallbacks in themed mode.
   return {
     '--theme-primary': c.primary || '#6366f1',
@@ -77,6 +86,8 @@ export function themeStyleVars(snapshot) {
     '--theme-footer-text': c.footerText || '#f8fafc',
     '--theme-font-heading': f.heading || '"Playfair Display", Georgia, serif',
     '--theme-font-body': f.body || 'Inter, system-ui, sans-serif',
+    '--theme-gradient-from': s.gradientFrom || c.primary || '#6366f1',
+    '--theme-gradient-to': s.gradientTo || c.accent || '#818cf8',
   };
 }
 

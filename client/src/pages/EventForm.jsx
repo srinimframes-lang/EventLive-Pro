@@ -110,7 +110,15 @@ export default function EventForm() {
     setThemesLoading(true);
     themeService
       .list(themeCategory)
-      .then((list) => active && setThemes(list || []))
+      .then((list) => {
+        const sorted = (list || []).slice().sort((a, b) => {
+          const aPrem = (a.slug || '').startsWith('premium-') ? 0 : 1;
+          const bPrem = (b.slug || '').startsWith('premium-') ? 0 : 1;
+          if (aPrem !== bPrem) return aPrem - bPrem;
+          return (a.sortOrder || 0) - (b.sortOrder || 0);
+        });
+        active && setThemes(sorted);
+      })
       .catch(() => active && setThemes([]))
       .finally(() => active && setThemesLoading(false));
     return () => {

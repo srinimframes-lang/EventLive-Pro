@@ -53,6 +53,18 @@ const fontSchema = new Schema(
   { _id: false }
 );
 
+const styleSchema = new Schema(
+  {
+    decoration: { type: String, default: 'elegant', trim: true }, // floral, gold, neon, mandala, minimal, cinematic…
+    buttonStyle: { type: String, default: 'pill-glow', trim: true }, // pill-glow, glass, sharp, neon, outline
+    iconSet: { type: String, default: 'rings', trim: true },
+    particleStyle: { type: String, default: 'bokeh', trim: true }, // petals, gold, neon, bubbles, stars, confetti, bokeh, none
+    gradientFrom: { type: String, default: '', trim: true },
+    gradientTo: { type: String, default: '', trim: true },
+  },
+  { _id: false }
+);
+
 const themeSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 80 },
@@ -67,6 +79,7 @@ const themeSchema = new Schema(
     backgroundImage: { type: String, default: '', trim: true },
     colors: { type: colorSchema, default: () => ({}) },
     fonts: { type: fontSchema, default: () => ({}) },
+    style: { type: styleSchema, default: () => ({}) },
     heroLabel: { type: String, default: 'Live', trim: true, maxlength: 40 },
     footerText: { type: String, default: '', trim: true, maxlength: 200 },
     isPremium: { type: Boolean, default: true, index: true },
@@ -92,6 +105,7 @@ themeSchema.methods.toSnapshot = function toSnapshot() {
     backgroundImage: this.backgroundImage,
     colors: { ...this.colors?.toObject?.() || this.colors },
     fonts: { ...this.fonts?.toObject?.() || this.fonts },
+    style: { ...this.style?.toObject?.() || this.style },
     heroLabel: this.heroLabel,
     footerText: this.footerText,
     isPremium: this.isPremium,
