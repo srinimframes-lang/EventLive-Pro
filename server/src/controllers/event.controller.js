@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Event, EVENT_STATUSES, EVENT_CATEGORIES } from '../models/Event.js';
 import { Domain } from '../models/Domain.js';
+import { Theme } from '../models/Theme.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
 import { linkCost } from '../config/credits.js';
@@ -33,18 +34,29 @@ const EDITABLE_FIELDS = [
 
 /** Apply theme selection: stores ref + frozen snapshot so catalog edits never affect live pages. */
 async function applyThemeSelection(target, themeId, res) {
-  if (themeId === undefined) return;
-  if (!themeId) {
+  const id = themeId === undefined ? undefined : String(themeId || '').trim();
+  if (id === undefined) return;
+  if (!id) {
     target.theme = null;
-    target.themeSnapshot = {};
+    target.themeSnapshot = {
+      name: '',
+      category: '',
+      backgroundImage: '',
+      heroLabel: '',
+      footerText: '',
+      isPremium: false,
+      colors: {},
+      fonts: {},
+    };
+    if (target.markModified) target.markModified('themeSnapshot');
     return;
   }
-  const snap = await snapshotTheme(themeId);
+  const snap = await snapshotTheme(id);
   if (!snap) {
     res.status(400);
     throw new Error('Theme not found or inactive');
   }
-  target.theme = themeId;
+  target.theme = id;
   target.themeSnapshot = snap;
   if (target.markModified) target.markModified('themeSnapshot');
 }
@@ -136,6 +148,13 @@ export const getEvent = asyncHandler(async (req, res) => {
   // White-label: surface the organizer's active custom domain so share/watch
   // links can be built on it (falls back to the platform domain when absent).
   const data = event.toJSON();
+
+  // Repair: theme ref saved but snapshot missing (legacy bug) — backfill once.
+  if (data.theme && !data.themeSnapshot?.name) {
+    const theme = await Theme.findById(data.theme);
+    if (theme) data.themeSnapshot = theme.toSnapshot();
+  }
+
   const organizerId = event.organizer?._id || event.organizer;
   if (organizerId) {
     const dom = await Domain.findOne({ customer: organizerId, status: 'active' })
@@ -160,7 +179,8 @@ export const createEvent = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
   payload.createdByRole = role;
-  await applyThemeSelection(payload, req.body.theme, res);
+  const themeId = req.body.theme ?? payload.theme;
+  await applyThemeSelection(payload, themeId, res);
 
   // ── Admin: unlimited, no credits consumed ───────────────────────────
   if (role === 'admin') {

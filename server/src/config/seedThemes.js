@@ -95,9 +95,10 @@ export async function seedDefaultThemes() {
 
   const docs = [];
   for (const category of THEME_CATEGORIES) {
+    const catIdx = THEME_CATEGORIES.indexOf(category);
     for (let i = 0; i < 8; i += 1) {
       const name = `${TEMPLATE_NAMES[i]} — ${category.replace(/_/g, ' ')}`;
-      const palette = PALETTES[i];
+      const palette = PALETTES[(i + catIdx) % PALETTES.length];
       docs.push({
         name,
         slug: slugify(`${category}-${TEMPLATE_NAMES[i]}-${i}`),
@@ -122,14 +123,22 @@ export async function seedDefaultThemes() {
     }
   }
 
-  // Upsert by slug so re-runs are safe.
+  // Upsert by slug so re-runs are safe; refresh palette/fonts on existing rows.
   let created = 0;
+  let updated = 0;
   for (const doc of docs) {
     const existing = await Theme.findOne({ slug: doc.slug });
     if (!existing) {
       await Theme.create(doc);
       created += 1;
+    } else {
+      existing.colors = doc.colors;
+      existing.fonts = doc.fonts;
+      existing.backgroundImage = doc.backgroundImage;
+      existing.heroLabel = doc.heroLabel;
+      await existing.save();
+      updated += 1;
     }
   }
-  console.log(`[seed] Themes: ${created} created, ${await Theme.countDocuments()} total.`);
+  console.log(`[seed] Themes: ${created} created, ${updated} refreshed, ${await Theme.countDocuments()} total.`);
 }

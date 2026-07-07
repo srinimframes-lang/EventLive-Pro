@@ -166,6 +166,10 @@ export default function EventForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (!isEdit && !form.theme) {
+      setError('Please select a professional theme for your live page.');
+      return;
+    }
     setSubmitting(true);
 
     const youtubeVideoId = form.isOnline ? extractYouTubeId(form.youtubeUrl) : '';
@@ -365,13 +369,14 @@ export default function EventForm() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {themes.map((t) => {
-                const selected = form.theme === t.id;
-                const primary = t.colors?.primary || '#be185d';
+                const tid = t.id || t._id;
+                const selected = form.theme === tid;
+                const primary = t.colors?.primary || '#6366f1';
                 return (
                   <button
-                    key={t.id}
+                    key={tid}
                     type="button"
-                    onClick={() => setForm((f) => ({ ...f, theme: t.id }))}
+                    onClick={() => setForm((f) => ({ ...f, theme: tid }))}
                     className={`overflow-hidden rounded-xl border text-left transition ${
                       selected ? 'border-brand-600 ring-2 ring-brand-500' : 'border-slate-200 hover:border-slate-300'
                     }`}

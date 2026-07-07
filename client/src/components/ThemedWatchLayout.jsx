@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { formatDateTime, resolveMediaUrl } from '../utils/format.js';
 import {
   googleFontsHref,
-  hasEventTheme,
   themeStyleVars,
 } from '../utils/eventTheme.js';
 import LivePlayer from './live/LivePlayer.jsx';
@@ -28,10 +27,10 @@ export default function ThemedWatchLayout({
   canAnswer,
   playerNonce,
 }) {
-  const snap = event.themeSnapshot;
-  const bg = event.coverImage
-    ? resolveMediaUrl(event.coverImage)
-    : resolveMediaUrl(snap.backgroundImage);
+  const snap = event.themeSnapshot || {};
+  // Always use the theme's background — never let coverImage replace the template design.
+  const themeBg = resolveMediaUrl(snap.backgroundImage);
+  const couplePhoto = event.coverImage ? resolveMediaUrl(event.coverImage) : '';
   const vars = themeStyleVars(snap);
   const fontsHref = googleFontsHref(snap);
 
@@ -43,8 +42,6 @@ export default function ThemedWatchLayout({
     document.head.appendChild(link);
     return () => link.remove();
   }, [fontsHref]);
-
-  if (!hasEventTheme(event)) return null;
 
   const title = coupleTitle || event.title;
   const heroLabel = snap.heroLabel || 'Live';
@@ -58,16 +55,31 @@ export default function ThemedWatchLayout({
         backgroundColor: 'var(--theme-surface)',
       }}
     >
-      {/* Hero */}
+      {/* Hero — theme background + primary tint (unique per template) */}
       <header className="relative overflow-hidden text-[var(--theme-hero-text)]">
-        {bg && (
-          <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" aria-hidden />
+        {themeBg && (
+          <img src={themeBg} alt="" className="absolute inset-0 h-full w-full object-cover" aria-hidden />
         )}
         <div
-          className="relative bg-gradient-to-t from-black/85 via-black/50 to-black/30 px-4 py-10 sm:py-16"
+          className="absolute inset-0"
+          style={{
+            background: `linear-gradient(to top, var(--theme-footer-bg) 0%, color-mix(in srgb, var(--theme-primary) 55%, transparent) 45%, color-mix(in srgb, var(--theme-secondary) 35%, transparent) 100%)`,
+          }}
+          aria-hidden
+        />
+        <div
+          className="relative px-4 py-10 sm:py-16"
           style={{ minHeight: 'min(42vh, 420px)' }}
         >
           <div className="mx-auto max-w-4xl text-center">
+            {couplePhoto && (
+              <img
+                src={couplePhoto}
+                alt={title}
+                className="mx-auto mb-4 h-24 w-24 rounded-full border-4 object-cover shadow-xl sm:h-28 sm:w-28"
+                style={{ borderColor: 'var(--theme-accent)' }}
+              />
+            )}
             {event.photographerName && (
               <div className="mb-4 flex items-center justify-center gap-2 text-sm opacity-90">
                 {event.photographerLogo && (
