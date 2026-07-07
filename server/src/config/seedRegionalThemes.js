@@ -318,16 +318,22 @@ export const REGIONAL_THEMES = [
 
 export async function seedRegionalThemes() {
   let upserted = 0;
+  let failed = 0;
   for (const doc of REGIONAL_THEMES) {
-    const payload = { ...doc, isPremium: true, isActive: true };
-    const existing = await Theme.findOne({ slug: doc.slug });
-    if (existing) {
-      Object.assign(existing, payload);
-      await existing.save();
-    } else {
-      await Theme.create(payload);
+    try {
+      const payload = { ...doc, isPremium: true, isActive: true };
+      const existing = await Theme.findOne({ slug: doc.slug });
+      if (existing) {
+        Object.assign(existing, payload);
+        await existing.save();
+      } else {
+        await Theme.create(payload);
+      }
+      upserted += 1;
+    } catch (err) {
+      failed += 1;
+      console.error(`[seed] Regional theme failed (${doc.slug}):`, err.message);
     }
-    upserted += 1;
   }
-  console.log(`[seed] Regional themes upserted: ${upserted}.`);
+  console.log(`[seed] Regional themes upserted: ${upserted}${failed ? `, failed: ${failed}` : ''}.`);
 }

@@ -53,4 +53,8 @@ export const themeService = {
     const { data } = await api.post(`/api/admin/themes/${id}/duplicate`);
     return data.data;
   },
+  async reseedRegional() {
+    const { data } = await api.post('/api/admin/themes/reseed-regional');
+    return data.data;
+  },
 };

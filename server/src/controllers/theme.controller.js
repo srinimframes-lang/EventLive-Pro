@@ -2,6 +2,7 @@ import { Theme, THEME_CATEGORIES, THEME_REGIONS } from '../models/Theme.js';
 import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
+import { seedRegionalThemes } from '../config/seedRegionalThemes.js';
 
 function slugify(text) {
   return String(text || '')
@@ -232,6 +233,17 @@ export const duplicateTheme = asyncHandler(async (req, res) => {
     sortOrder: (source.sortOrder || 0) + 1,
   });
   res.status(201).json({ success: true, data: theme });
+});
+
+/**
+ * @route POST /api/admin/themes/reseed-regional
+ * @desc  Upsert all South Indian regional themes (idempotent)
+ * @access Private/Admin
+ */
+export const reseedRegionalThemes = asyncHandler(async (_req, res) => {
+  await seedRegionalThemes();
+  const count = await Theme.countDocuments({ region: { $in: THEME_REGIONS }, isActive: true });
+  res.status(200).json({ success: true, data: { regionalCount: count } });
 });
 
 /** Helper used by event controller to copy theme into event snapshot. */
