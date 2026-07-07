@@ -5,12 +5,14 @@ import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
 import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../utils/format.js';
+import { hasEventTheme } from '../utils/eventTheme.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
+import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
 
 export default function Watch() {
   const { idOrSlug } = useParams();
@@ -29,8 +31,6 @@ export default function Watch() {
       .get(idOrSlug)
       .then(async (ev) => {
         if (!active) return;
-        // Redirect any long/legacy/short-only URL to the canonical, readable
-        // short URL: /live/<shortCode>/<couple-slug>. Lookup still uses the ID.
         const canonical = watchPath(ev);
         if (ev.shortCode && canonical && window.location.pathname !== canonical) {
           navigate(canonical, { replace: true });
@@ -64,7 +64,8 @@ export default function Watch() {
     return event.brideName || event.groomName || '';
   }, [event]);
 
-  // SEO: reflect the event in the document title while on the watch page.
+  const themed = hasEventTheme(event);
+
   useEffect(() => {
     if (!event) return undefined;
     const prev = document.title;
@@ -73,6 +74,12 @@ export default function Watch() {
       document.title = prev;
     };
   }, [event, coupleTitle]);
+
+  useEffect(() => {
+    if (!themed) return undefined;
+    document.body.classList.add('watch-themed');
+    return () => document.body.classList.remove('watch-themed');
+  }, [themed]);
 
   if (error)
     return (
@@ -87,6 +94,23 @@ export default function Watch() {
   const watchUrl = buildWatchUrl(event);
   const chatOn = event.chatEnabled !== false;
   const activeTab = chatOn ? tab : 'qa';
+
+  if (themed) {
+    return (
+      <ThemedWatchLayout
+        event={event}
+        coupleTitle={coupleTitle}
+        watchUrl={watchUrl}
+        mergedConfig={mergedConfig}
+        room={room}
+        chatOn={chatOn}
+        activeTab={activeTab}
+        setTab={setTab}
+        canAnswer={canAnswer}
+        playerNonce={room.playerNonce}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
@@ -113,7 +137,6 @@ export default function Watch() {
         )}
       </div>
 
-      {/* Couple banner */}
       {coupleTitle && (
         <div className="relative mt-3 overflow-hidden rounded-2xl text-center text-white shadow-lg">
           {event.coverImage && (
@@ -150,15 +173,12 @@ export default function Watch() {
       )}
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
-        {/* Player + meta */}
         <div className="lg:col-span-2">
           <LivePlayer key={room.playerNonce} config={mergedConfig} />
-
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{event.title}</h2>
             <ViewerCount count={room.viewers} isLive={mergedConfig?.isLive} />
           </div>
-
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <ShareButtons url={watchUrl} title={coupleTitle || event.title} />
             {canAnswer && (
@@ -167,13 +187,10 @@ export default function Watch() {
               </Link>
             )}
           </div>
-
           {event.description && (
             <p className="mt-4 whitespace-pre-wrap text-slate-600">{event.description}</p>
           )}
         </div>
-
-        {/* Realtime sidebar */}
         <div className="lg:col-span-1">
           <div className="card flex h-[60vh] flex-col p-0 sm:h-[70vh]">
             <div className="flex border-b border-slate-200">
@@ -208,7 +225,6 @@ export default function Watch() {
         </div>
       </div>
 
-      {/* Photo gallery */}
       <section className="mt-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Photo gallery</h2>

@@ -31,6 +31,13 @@ import {
   updateCustomerBranding,
   uploadCustomerBrandingLogo,
 } from '../controllers/adminDomain.controller.js';
+import {
+  adminListThemes,
+  createTheme,
+  updateTheme,
+  deleteTheme,
+  uploadThemeBackground,
+} from '../controllers/theme.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 
@@ -73,5 +80,12 @@ router.post('/domains/:id/approve', approveDomain);
 router.post('/domains/:id/suspend', suspendDomain);
 router.post('/domains/:id/refresh', refreshDomainStatus);
 router.delete('/domains/:id', removeDomain);
+
+// Theme builder
+router.get('/themes', adminListThemes);
+router.post('/themes', createTheme);
+router.patch('/themes/:id', updateTheme);
+router.delete('/themes/:id', deleteTheme);
+router.post('/themes/:id/background', upload.single('background'), uploadThemeBackground);
 
 export default router;

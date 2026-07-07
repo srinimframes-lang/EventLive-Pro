@@ -8,6 +8,7 @@ import adminRoutes from './admin.routes.js';
 import resellerRoutes from './reseller.routes.js';
 import paymentRoutes from './payment.routes.js';
 import tenantRoutes from './tenant.routes.js';
+import themeRoutes from './theme.routes.js';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/admin', adminRoutes);
 router.use('/reseller', resellerRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/tenant', tenantRoutes);
+router.use('/themes', themeRoutes);
 
 export default router;

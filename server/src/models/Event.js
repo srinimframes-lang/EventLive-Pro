@@ -203,6 +203,35 @@ const eventSchema = new Schema(
       trim: true,
       default: '',
     },
+
+    // ── Professional theme (snapshot at selection — immune to catalog edits) ──
+    theme: {
+      type: Schema.Types.ObjectId,
+      ref: 'Theme',
+      default: null,
+    },
+    themeSnapshot: {
+      name: { type: String, default: '' },
+      category: { type: String, default: '' },
+      backgroundImage: { type: String, default: '' },
+      colors: {
+        primary: { type: String, default: '' },
+        secondary: { type: String, default: '' },
+        accent: { type: String, default: '' },
+        heroText: { type: String, default: '' },
+        surface: { type: String, default: '' },
+        footerBg: { type: String, default: '' },
+        footerText: { type: String, default: '' },
+      },
+      fonts: {
+        heading: { type: String, default: '' },
+        body: { type: String, default: '' },
+      },
+      heroLabel: { type: String, default: '' },
+      footerText: { type: String, default: '' },
+      isPremium: { type: Boolean, default: false },
+    },
+
     capacity: {
       type: Number,
       min: [0, 'Capacity cannot be negative'],

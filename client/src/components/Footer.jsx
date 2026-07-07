@@ -7,7 +7,7 @@ export default function Footer() {
   const wa = whatsappLink(settings.whatsappNumber);
 
   return (
-    <footer className="border-t border-slate-200 bg-white">
+    <footer className="site-footer border-t border-slate-200 bg-white">
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:grid-cols-3">
         <div>
           <p className="font-display text-lg font-bold text-brand-700">{settings.companyName}</p>

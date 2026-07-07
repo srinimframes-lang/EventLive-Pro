@@ -4,6 +4,7 @@ import { Domain } from '../models/Domain.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
 import { linkCost } from '../config/credits.js';
+import { snapshotTheme } from '../controllers/theme.controller.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -29,6 +30,24 @@ const EDITABLE_FIELDS = [
   'webrtcUrl',
   'chatEnabled',
 ];
+
+/** Apply theme selection: stores ref + frozen snapshot so catalog edits never affect live pages. */
+async function applyThemeSelection(target, themeId, res) {
+  if (themeId === undefined) return;
+  if (!themeId) {
+    target.theme = null;
+    target.themeSnapshot = {};
+    return;
+  }
+  const snap = await snapshotTheme(themeId);
+  if (!snap) {
+    res.status(400);
+    throw new Error('Theme not found or inactive');
+  }
+  target.theme = themeId;
+  target.themeSnapshot = snap;
+  if (target.markModified) target.markModified('themeSnapshot');
+}
 
 /**
  * Throws a 403 unless the user may manage this event: the Super Admin can
@@ -141,6 +160,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
   payload.createdByRole = role;
+  await applyThemeSelection(payload, req.body.theme, res);
 
   // ── Admin: unlimited, no credits consumed ───────────────────────────
   if (role === 'admin') {
@@ -210,6 +230,9 @@ export const updateEvent = asyncHandler(async (req, res) => {
 
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) event[field] = req.body[field];
+  }
+  if (req.body.theme !== undefined) {
+    await applyThemeSelection(event, req.body.theme, res);
   }
 
   await event.save();

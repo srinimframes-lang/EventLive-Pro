@@ -25,6 +25,13 @@
   body {
     @apply bg-slate-50 text-slate-800 antialiased;
   }
+  /* Themed watch pages ship their own footer — hide the global shell. */
+  body.watch-themed .site-footer {
+    display: none;
+  }
+  body.watch-themed main {
+    padding: 0;
+  }
 }
 
 @layer components {

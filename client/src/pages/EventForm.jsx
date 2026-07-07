@@ -7,6 +7,8 @@ import {
 } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
+import { themeService } from '../services/theme.service.js';
+import { THEME_CATEGORY_LABELS, THEME_CATEGORIES } from '../utils/eventTheme.js';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
 
@@ -29,7 +31,10 @@ const EMPTY = {
   photographerName: '',
   photographerLogo: '',
   coverImage: '',
+  theme: '',
 };
+
+const DEFAULT_THEME_CATEGORY = 'wedding';
 
 export default function EventForm() {
   const { id } = useParams();
@@ -55,6 +60,9 @@ export default function EventForm() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [error, setError] = useState('');
+  const [themeCategory, setThemeCategory] = useState(DEFAULT_THEME_CATEGORY);
+  const [themes, setThemes] = useState([]);
+  const [themesLoading, setThemesLoading] = useState(true);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -84,7 +92,11 @@ export default function EventForm() {
           photographerName: event.photographerName || '',
           photographerLogo: event.photographerLogo || '',
           coverImage: event.coverImage || '',
+          theme: event.theme?.id || event.theme || '',
         });
+        if (event.themeSnapshot?.category) {
+          setThemeCategory(event.themeSnapshot.category);
+        }
       })
       .catch((err) => active && setError(err.message))
       .finally(() => active && setLoading(false));
@@ -92,6 +104,19 @@ export default function EventForm() {
       active = false;
     };
   }, [id, isEdit]);
+
+  useEffect(() => {
+    let active = true;
+    setThemesLoading(true);
+    themeService
+      .list(themeCategory)
+      .then((list) => active && setThemes(list || []))
+      .catch(() => active && setThemes([]))
+      .finally(() => active && setThemesLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [themeCategory]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -167,6 +192,7 @@ export default function EventForm() {
       streamProvider: youtubeVideoId ? 'youtube' : 'none',
       chatEnabled: form.chatEnabled,
     };
+    if (form.theme) payload.theme = form.theme;
 
     // Non-admins spend credits per new link.
     if (showCreditPicker) payload.linkType = linkType;
@@ -307,6 +333,85 @@ export default function EventForm() {
                 className="input" value={form.endTime} onChange={handleChange} />
             </Field>
           </div>
+        </Section>
+
+        {/* ── Professional theme ─────────────────────────────── */}
+        <Section
+          title="Professional theme"
+          subtitle="Choose a premium template for your live page. Your selection is saved with the event and won't change if templates are updated later."
+        >
+          <Field label="Event type" htmlFor="themeCategory">
+            <select
+              id="themeCategory"
+              className="input"
+              value={themeCategory}
+              onChange={(e) => {
+                setThemeCategory(e.target.value);
+                setForm((f) => ({ ...f, theme: '' }));
+              }}
+            >
+              {THEME_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {THEME_CATEGORY_LABELS[c]}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {themesLoading ? (
+            <p className="text-sm text-slate-500">Loading themes…</p>
+          ) : themes.length === 0 ? (
+            <p className="text-sm text-slate-500">No themes available for this category.</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {themes.map((t) => {
+                const selected = form.theme === t.id;
+                const primary = t.colors?.primary || '#be185d';
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, theme: t.id }))}
+                    className={`overflow-hidden rounded-xl border text-left transition ${
+                      selected ? 'border-brand-600 ring-2 ring-brand-500' : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div
+                      className="relative h-24 bg-cover bg-center"
+                      style={{
+                        backgroundImage: t.backgroundImage
+                          ? `url(${resolveMediaUrl(t.backgroundImage)})`
+                          : undefined,
+                        backgroundColor: primary,
+                      }}
+                    >
+                      {t.isPremium && (
+                        <span className="absolute right-2 top-2 rounded-full bg-gold-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                          Premium
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <p className="font-semibold text-slate-900">{t.name}</p>
+                      <p className="text-xs text-slate-500 line-clamp-1">{t.description}</p>
+                      <div className="mt-2 flex gap-1">
+                        {[primary, t.colors?.secondary, t.colors?.accent].filter(Boolean).map((c) => (
+                          <span
+                            key={c}
+                            className="h-4 w-4 rounded-full border border-white shadow"
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {form.theme && (
+            <p className="text-xs text-emerald-700">Theme selected. It will be applied to your live watch page.</p>
+          )}
         </Section>
 
         {/* ── Couple ─────────────────────────────────────────── */}

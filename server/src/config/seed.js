@@ -13,10 +13,13 @@ import { Event } from '../models/Event.js';
  *  - the singleton Settings document
  *  - a few default packages (only if none exist yet)
  */
+import { seedDefaultThemes } from './seedThemes.js';
+
 export async function runSeed() {
   await seedSuperAdmin();
   await Settings.getSingleton();
   await seedDefaultPackages();
+  await seedDefaultThemes();
   await cleanupLegacyPayments();
   await backfillShortCodes();
 }
