@@ -37,6 +37,7 @@ import {
   updateTheme,
   deleteTheme,
   uploadThemeBackground,
+  duplicateTheme,
 } from '../controllers/theme.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
@@ -87,5 +88,6 @@ router.post('/themes', createTheme);
 router.patch('/themes/:id', updateTheme);
 router.delete('/themes/:id', deleteTheme);
 router.post('/themes/:id/background', upload.single('background'), uploadThemeBackground);
+router.post('/themes/:id/duplicate', duplicateTheme);
 
 export default router;

@@ -1,8 +1,15 @@
 import api from './api.js';
 
 export const themeService = {
-  async list(category) {
-    const { data } = await api.get('/api/themes', { params: category ? { category } : {} });
+  async list(category, region) {
+    const params = {};
+    if (category) params.category = category;
+    if (region) params.region = region;
+    const { data } = await api.get('/api/themes', { params });
+    return data.data;
+  },
+  async regions() {
+    const { data } = await api.get('/api/themes/regions');
     return data.data;
   },
   async categories() {
@@ -15,8 +22,11 @@ export const themeService = {
   },
 
   // Admin
-  async adminList(category) {
-    const { data } = await api.get('/api/admin/themes', { params: category ? { category } : {} });
+  async adminList(category, region) {
+    const params = {};
+    if (category) params.category = category;
+    if (region) params.region = region;
+    const { data } = await api.get('/api/admin/themes', { params });
     return data.data;
   },
   async create(payload) {
@@ -37,6 +47,10 @@ export const themeService = {
     const { data } = await api.post(`/api/admin/themes/${id}/background`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    return data.data;
+  },
+  async duplicate(id) {
+    const { data } = await api.post(`/api/admin/themes/${id}/duplicate`);
     return data.data;
   },
 };

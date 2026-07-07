@@ -15,6 +15,7 @@ import { Event } from '../models/Event.js';
  */
 import { seedDefaultThemes } from './seedThemes.js';
 import { seedPremiumThemes } from './seedPremiumThemes.js';
+import { seedRegionalThemes } from './seedRegionalThemes.js';
 
 export async function runSeed() {
   await seedSuperAdmin();
@@ -22,6 +23,7 @@ export async function runSeed() {
   await seedDefaultPackages();
   await seedDefaultThemes();
   await seedPremiumThemes();
+  await seedRegionalThemes();
   await cleanupLegacyPayments();
   await backfillShortCodes();
 }

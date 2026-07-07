@@ -213,6 +213,7 @@ const eventSchema = new Schema(
     themeSnapshot: {
       name: { type: String, default: '' },
       category: { type: String, default: '' },
+      region: { type: String, default: '' },
       backgroundImage: { type: String, default: '' },
       colors: {
         primary: { type: String, default: '' },
@@ -234,6 +235,9 @@ const eventSchema = new Schema(
         particleStyle: { type: String, default: 'bokeh' },
         gradientFrom: { type: String, default: '' },
         gradientTo: { type: String, default: '' },
+        goldBorder: { type: Boolean, default: false },
+        loadingAnimation: { type: String, default: 'gold-shimmer' },
+        backgroundMusic: { type: String, default: '' },
       },
       heroLabel: { type: String, default: '' },
       footerText: { type: String, default: '' },

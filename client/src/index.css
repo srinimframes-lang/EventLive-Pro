@@ -266,7 +266,105 @@
   .theme-animate-fade-up,
   .theme-hero-label,
   .theme-hero-title,
-  .theme-footer {
+  .theme-footer,
+  .theme-loading-inner,
+  .theme-loading-bar-fill {
     animation: none !important;
   }
+}
+
+/* ── Regional theme gallery ─────────────────────────────────── */
+.theme-gallery-scroll {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+.theme-gallery-card {
+  @apply w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition;
+  scroll-snap-align: start;
+}
+.theme-gallery-card-selected {
+  @apply border-gold-500 ring-2 ring-gold-400;
+}
+.theme-gallery-card-bg {
+  @apply relative h-32 bg-cover bg-center;
+}
+.theme-gallery-gold-frame {
+  @apply pointer-events-none absolute inset-2 rounded-lg border-2 border-gold-400/70;
+  box-shadow: inset 0 0 12px rgba(251, 191, 36, 0.25);
+}
+.theme-gallery-nav {
+  @apply absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-lg font-bold text-slate-700 shadow-md hover:bg-white;
+}
+.theme-gallery-nav-left { left: -0.25rem; }
+.theme-gallery-nav-right { right: -0.25rem; }
+
+/* ── Gold decorative borders (watch page) ─────────────────── */
+.theme-gold-border-wrap {
+  @apply relative;
+}
+.theme-gold-corner {
+  @apply pointer-events-none absolute h-10 w-10 border-gold-400;
+  border-width: 2px;
+}
+.theme-gold-corner-tl { top: 0.5rem; left: 0.5rem; border-right: none; border-bottom: none; }
+.theme-gold-corner-tr { top: 0.5rem; right: 0.5rem; border-left: none; border-bottom: none; }
+.theme-gold-corner-bl { bottom: 0.5rem; left: 0.5rem; border-right: none; border-top: none; }
+.theme-gold-corner-br { bottom: 0.5rem; right: 0.5rem; border-left: none; border-top: none; }
+.theme-gold-edge {
+  @apply pointer-events-none absolute left-8 right-8 h-px bg-gradient-to-r from-transparent via-gold-400 to-transparent opacity-60;
+}
+.theme-gold-edge-top { top: 0.75rem; }
+.theme-gold-edge-bottom { bottom: 0.75rem; }
+.themed-watch-regional .theme-glass-card {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+/* ── Themed loading screen ──────────────────────────────────── */
+.theme-loading-screen {
+  @apply flex min-h-[40vh] items-center justify-center bg-slate-900 px-4 py-20;
+}
+.theme-loading-inner {
+  @apply text-center text-white;
+}
+.theme-loading-ornament {
+  @apply mx-auto mb-4 text-4xl text-gold-400;
+}
+.theme-loading-label {
+  @apply text-sm font-medium tracking-widest uppercase opacity-80;
+}
+.theme-loading-bar {
+  @apply mx-auto mt-4 h-1 w-40 overflow-hidden rounded-full bg-white/20;
+}
+.theme-loading-bar-fill {
+  @apply block h-full w-1/3 rounded-full bg-gold-400;
+  animation: theme-loading-slide 1.4s ease-in-out infinite;
+}
+.theme-loading-lotus-spin .theme-loading-ornament {
+  animation: theme-lotus-spin 2.5s linear infinite;
+}
+.theme-loading-temple-glow .theme-loading-ornament {
+  animation: theme-pulse-glow 1.8s ease-in-out infinite;
+  text-shadow: 0 0 16px #fbbf24;
+}
+.theme-loading-floral-pulse .theme-loading-ornament {
+  animation: theme-float 2s ease-in-out infinite;
+}
+.theme-loading-gold-shimmer .theme-loading-ornament {
+  animation: theme-pulse-glow 2.2s ease-in-out infinite;
+}
+.theme-loading-wave .theme-loading-ornament {
+  animation: theme-float 3s ease-in-out infinite;
+}
+
+.theme-music-toggle {
+  @apply fixed bottom-5 right-5 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-white/30 bg-black/40 text-lg backdrop-blur-md transition hover:bg-black/60;
+}
+
+@keyframes theme-loading-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+@keyframes theme-lotus-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

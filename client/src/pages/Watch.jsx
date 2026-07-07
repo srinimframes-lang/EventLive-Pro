@@ -13,6 +13,7 @@ import ViewerCount from '../components/live/ViewerCount.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
+import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
 
 export default function Watch() {
   const { idOrSlug } = useParams();
@@ -89,7 +90,7 @@ export default function Watch() {
       </div>
     );
 
-  if (!event) return <p className="py-20 text-center text-slate-500">Loading…</p>;
+  if (!event) return <ThemeLoadingScreen label="Loading event…" />;
 
   const watchUrl = buildWatchUrl(event);
   const chatOn = event.chatEnabled !== false;

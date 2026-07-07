@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { themeService } from '../../services/theme.service.js';
-import { THEME_CATEGORY_LABELS, THEME_CATEGORIES } from '../../utils/eventTheme.js';
+import { THEME_CATEGORY_LABELS, THEME_CATEGORIES, THEME_REGION_LABELS, THEME_REGIONS } from '../../utils/eventTheme.js';
 import { resolveMediaUrl } from '../../utils/format.js';
 import ThemePreviewModal from './ThemePreviewModal.jsx';
 
 const EMPTY = {
   name: '',
   category: 'wedding',
+  region: '',
   description: '',
   backgroundImage: '',
   heroLabel: 'Live',
@@ -34,12 +35,16 @@ const EMPTY = {
     particleStyle: 'bokeh',
     gradientFrom: '',
     gradientTo: '',
+    goldBorder: false,
+    loadingAnimation: 'gold-shimmer',
+    backgroundMusic: '',
   },
 };
 
 export default function AdminThemes() {
   const [themes, setThemes] = useState([]);
   const [filter, setFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -56,7 +61,7 @@ export default function AdminThemes() {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await themeService.adminList(filter || undefined);
+      const data = await themeService.adminList(filter || undefined, regionFilter || undefined);
       setThemes(data || []);
     } catch (err) {
       setError(err.message);
@@ -67,7 +72,7 @@ export default function AdminThemes() {
 
   useEffect(() => {
     load();
-  }, [filter]);
+  }, [filter, regionFilter]);
 
   const counts = useMemo(() => {
     const m = {};
@@ -85,6 +90,7 @@ export default function AdminThemes() {
     setForm({
       name: t.name,
       category: t.category,
+      region: t.region || '',
       description: t.description || '',
       backgroundImage: t.backgroundImage || '',
       heroLabel: t.heroLabel || 'Live',
@@ -136,6 +142,16 @@ export default function AdminThemes() {
   const onStyle = (key, val) =>
     setForm((f) => ({ ...f, style: { ...f.style, [key]: val } }));
 
+  const duplicate = async (id) => {
+    try {
+      await themeService.duplicate(id);
+      flash('Theme duplicated');
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const uploadBg = async (e) => {
     const file = e.target.files?.[0];
     if (!file || editing === 'new' || !editing) return;
@@ -163,7 +179,7 @@ export default function AdminThemes() {
         <div>
           <h2 className="text-lg font-bold text-slate-900">Theme Builder</h2>
           <p className="text-sm text-slate-500">
-            {themes.length} templates · {themes.filter((t) => (t.slug || '').startsWith('premium-')).length} premium named
+            {themes.length} templates · {themes.filter((t) => (t.slug || '').startsWith('regional-')).length} regional · {themes.filter((t) => (t.slug || '').startsWith('premium-')).length} premium
           </p>
         </div>
         <button type="button" className="btn-primary" onClick={startCreate}>
@@ -191,6 +207,26 @@ export default function AdminThemes() {
         ))}
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={`rounded-full px-3 py-1 text-sm ${!regionFilter ? 'bg-gold-500 text-white' : 'bg-slate-100 text-slate-600'}`}
+          onClick={() => setRegionFilter('')}
+        >
+          All regions
+        </button>
+        {THEME_REGIONS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className={`rounded-full px-3 py-1 text-sm ${regionFilter === r ? 'bg-gold-500 text-white' : 'bg-slate-100 text-slate-600'}`}
+            onClick={() => setRegionFilter(r)}
+          >
+            {THEME_REGION_LABELS[r]}
+          </button>
+        ))}
+      </div>
+
       {editing && (
         <form onSubmit={save} className="card grid gap-3 sm:grid-cols-2">
           <h3 className="sm:col-span-2 text-base font-bold text-slate-900">
@@ -203,6 +239,14 @@ export default function AdminThemes() {
             <select className="input" value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
               {THEME_CATEGORIES.map((c) => (
                 <option key={c} value={c}>{THEME_CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Region (South Indian)">
+            <select className="input" value={form.region} onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}>
+              <option value="">None</option>
+              {THEME_REGIONS.map((r) => (
+                <option key={r} value={r}>{THEME_REGION_LABELS[r]}</option>
               ))}
             </select>
           </Field>
@@ -268,6 +312,20 @@ export default function AdminThemes() {
               <input type="color" className="h-10 w-10 rounded border" value={form.style.gradientTo || form.colors.accent} onChange={(e) => onStyle('gradientTo', e.target.value)} />
             </div>
           </Field>
+          <Field label="Loading animation">
+            <select className="input" value={form.style.loadingAnimation} onChange={(e) => onStyle('loadingAnimation', e.target.value)}>
+              {['lotus-spin', 'temple-glow', 'floral-pulse', 'gold-shimmer', 'wave'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Background music URL (optional)">
+            <input className="input" value={form.style.backgroundMusic} onChange={(e) => onStyle('backgroundMusic', e.target.value)} placeholder="https://…" />
+          </Field>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.style.goldBorder} onChange={(e) => onStyle('goldBorder', e.target.checked)} />
+            Gold decorative border
+          </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.isPremium} onChange={(e) => setForm((f) => ({ ...f, isPremium: e.target.checked }))} />
             Premium theme
@@ -300,7 +358,10 @@ export default function AdminThemes() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-semibold text-slate-900">{t.name}</p>
-                  <p className="text-xs text-slate-500">{THEME_CATEGORY_LABELS[t.category]}</p>
+                  <p className="text-xs text-slate-500">
+                    {THEME_CATEGORY_LABELS[t.category]}
+                    {t.region ? ` · ${THEME_REGION_LABELS[t.region]}` : ''}
+                  </p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {t.isPremium && <span className="badge bg-gold-100 text-gold-800">Premium</span>}
@@ -313,6 +374,9 @@ export default function AdminThemes() {
                 </button>
                 <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => startEdit(t)}>
                   Edit
+                </button>
+                <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => duplicate(t.id)}>
+                  Duplicate
                 </button>
                 <button type="button" className="btn-ghost px-2 py-1 text-xs text-red-600" onClick={() => remove(t.id)}>
                   Delete

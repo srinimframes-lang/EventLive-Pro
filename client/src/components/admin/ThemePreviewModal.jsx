@@ -7,7 +7,7 @@ import PremiumButton from '../theme/PremiumButton.jsx';
 import GlassCard from '../theme/GlassCard.jsx';
 
 /** Mini preview of a theme template for the admin panel. */
-export default function ThemePreviewModal({ theme, onClose }) {
+export default function ThemePreviewModal({ theme, onClose, onApply }) {
   const snap = theme;
   const style = snap.style || {};
   const vars = themeStyleVars(snap);
@@ -32,7 +32,14 @@ export default function ThemePreviewModal({ theme, onClose }) {
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <h3 className="font-bold text-slate-900">Theme preview — {snap.name}</h3>
-          <button type="button" className="btn-ghost px-2" onClick={onClose}>✕</button>
+          <div className="flex items-center gap-2">
+            {onApply && (
+              <button type="button" className="btn-primary px-3 py-1 text-sm" onClick={onApply}>
+                Apply Theme
+              </button>
+            )}
+            <button type="button" className="btn-ghost px-2" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="themed-watch-preview" style={{ ...vars, fontFamily: 'var(--theme-font-body)' }}>
           <div className="relative min-h-[240px] overflow-hidden text-[var(--theme-hero-text)]">

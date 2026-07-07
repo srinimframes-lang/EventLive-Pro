@@ -41,12 +41,14 @@ async function applyThemeSelection(target, themeId, res) {
     target.themeSnapshot = {
       name: '',
       category: '',
+      region: '',
       backgroundImage: '',
       heroLabel: '',
       footerText: '',
       isPremium: false,
       colors: {},
       fonts: {},
+      style: {},
     };
     if (target.markModified) target.markModified('themeSnapshot');
     return;

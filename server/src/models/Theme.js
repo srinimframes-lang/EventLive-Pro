@@ -17,6 +17,15 @@ export const THEME_CATEGORIES = [
   'memorial',
 ];
 
+export const THEME_REGIONS = ['telangana', 'andhra', 'tamil_nadu', 'kerala'];
+
+export const THEME_REGION_LABELS = {
+  telangana: 'Telangana',
+  andhra: 'Andhra Pradesh',
+  tamil_nadu: 'Tamil Nadu',
+  kerala: 'Kerala',
+};
+
 export const THEME_CATEGORY_LABELS = {
   wedding: 'Wedding',
   reception: 'Reception',
@@ -61,6 +70,9 @@ const styleSchema = new Schema(
     particleStyle: { type: String, default: 'bokeh', trim: true }, // petals, gold, neon, bubbles, stars, confetti, bokeh, none
     gradientFrom: { type: String, default: '', trim: true },
     gradientTo: { type: String, default: '', trim: true },
+    goldBorder: { type: Boolean, default: false },
+    loadingAnimation: { type: String, default: 'gold-shimmer', trim: true },
+    backgroundMusic: { type: String, default: '', trim: true },
   },
   { _id: false }
 );
@@ -73,6 +85,12 @@ const themeSchema = new Schema(
       type: String,
       enum: THEME_CATEGORIES,
       required: true,
+      index: true,
+    },
+    region: {
+      type: String,
+      enum: THEME_REGIONS,
+      default: undefined,
       index: true,
     },
     description: { type: String, default: '', trim: true, maxlength: 300 },
@@ -102,6 +120,7 @@ themeSchema.methods.toSnapshot = function toSnapshot() {
   return {
     name: this.name,
     category: this.category,
+    region: this.region || '',
     backgroundImage: this.backgroundImage,
     colors: { ...this.colors?.toObject?.() || this.colors },
     fonts: { ...this.fonts?.toObject?.() || this.fonts },

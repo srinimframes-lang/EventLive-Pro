@@ -13,7 +13,8 @@ import ShareButtons from './ShareButtons.jsx';
 import ThemeEffects from './theme/ThemeEffects.jsx';
 import ThemeDecor from './theme/ThemeDecor.jsx';
 import PremiumButton from './theme/PremiumButton.jsx';
-import GlassCard from './theme/GlassCard.jsx';
+import ThemeGoldBorder from './theme/ThemeGoldBorder.jsx';
+import ThemeMusicToggle from './theme/ThemeMusicToggle.jsx';
 
 /**
  * Premium themed watch layout. Uses the event's frozen themeSnapshot so
@@ -52,9 +53,11 @@ export default function ThemedWatchLayout({
   const isDarkSurface = (snap.colors?.surface || '').toLowerCase().includes('1c') ||
     (snap.colors?.surface || '').toLowerCase().includes('0f');
 
+  const goldBorder = Boolean(style.goldBorder);
+
   return (
     <div
-      className="themed-watch relative min-h-screen overflow-x-hidden"
+      className={`themed-watch relative min-h-screen overflow-x-hidden ${goldBorder ? 'themed-watch-regional' : ''}`}
       style={{
         ...vars,
         fontFamily: 'var(--theme-font-body)',
@@ -93,8 +96,9 @@ export default function ThemedWatchLayout({
           gradientTo={style.gradientTo}
         />
         <ThemeDecor iconSet={style.iconSet} decoration={style.decoration} />
-        <div className="theme-animate-fade-up relative px-4 py-12 sm:py-20" style={{ minHeight: 'min(48vh, 460px)' }}>
-          <div className="mx-auto max-w-4xl text-center">
+        <ThemeGoldBorder enabled={goldBorder} className="relative">
+        <div className="theme-animate-fade-up px-4 py-12 sm:py-20" style={{ minHeight: 'min(48vh, 460px)' }}>
+        <div className="mx-auto max-w-4xl text-center">
             {couplePhoto && (
               <img
                 src={couplePhoto}
@@ -150,7 +154,10 @@ export default function ThemedWatchLayout({
               </PremiumButton>
           </div>
         </div>
+        </ThemeGoldBorder>
       </header>
+
+      <ThemeMusicToggle musicUrl={style.backgroundMusic} />
 
       <main className="relative mx-auto max-w-7xl px-3 py-8 sm:px-4">
         <div id="watch-player" className="grid gap-6 lg:grid-cols-3">

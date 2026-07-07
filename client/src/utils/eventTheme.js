@@ -16,6 +16,15 @@ export const THEME_CATEGORY_LABELS = {
 
 export const THEME_CATEGORIES = Object.keys(THEME_CATEGORY_LABELS);
 
+export const THEME_REGIONS = ['telangana', 'andhra', 'tamil_nadu', 'kerala'];
+
+export const THEME_REGION_LABELS = {
+  telangana: 'Telangana',
+  andhra: 'Andhra Pradesh',
+  tamil_nadu: 'Tamil Nadu',
+  kerala: 'Kerala',
+};
+
 /** True when the event has a frozen theme snapshot to render. */
 export function hasEventTheme(event) {
   if (!event) return false;
@@ -39,6 +48,7 @@ export function normalizeEventTheme(event) {
     event.themeSnapshot = {
       name: snap.name || '',
       category: snap.category || '',
+      region: snap.region || '',
       backgroundImage: snap.backgroundImage || '',
       heroLabel: snap.heroLabel || 'Live',
       footerText: snap.footerText || '',
@@ -63,6 +73,9 @@ export function normalizeEventTheme(event) {
         particleStyle: snap.style?.particleStyle || 'bokeh',
         gradientFrom: snap.style?.gradientFrom || snap.colors?.primary || '',
         gradientTo: snap.style?.gradientTo || snap.colors?.accent || '',
+        goldBorder: Boolean(snap.style?.goldBorder),
+        loadingAnimation: snap.style?.loadingAnimation || 'gold-shimmer',
+        backgroundMusic: snap.style?.backgroundMusic || '',
       },
     };
   }

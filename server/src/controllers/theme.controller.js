@@ -1,4 +1,4 @@
-import { Theme, THEME_CATEGORIES } from '../models/Theme.js';
+import { Theme, THEME_CATEGORIES, THEME_REGIONS } from '../models/Theme.js';
 import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
@@ -21,6 +21,9 @@ export const listThemes = asyncHandler(async (req, res) => {
   if (req.query.category && THEME_CATEGORIES.includes(req.query.category)) {
     filter.category = req.query.category;
   }
+  if (req.query.region && THEME_REGIONS.includes(req.query.region)) {
+    filter.region = req.query.region;
+  }
   const themes = await Theme.find(filter).sort({ sortOrder: 1, category: 1, name: 1 });
   res.status(200).json({ success: true, data: themes });
 });
@@ -37,6 +40,21 @@ export const listThemeCategories = asyncHandler(async (_req, res) => {
   ]);
   const map = Object.fromEntries(counts.map((c) => [c._id, c.count]));
   const data = THEME_CATEGORIES.map((id) => ({ id, count: map[id] || 0 }));
+  res.status(200).json({ success: true, data });
+});
+
+/**
+ * @route GET /api/themes/regions
+ * @desc  South Indian regional theme counts by state
+ * @access Public
+ */
+export const listThemeRegions = asyncHandler(async (_req, res) => {
+  const counts = await Theme.aggregate([
+    { $match: { isActive: true, region: { $in: THEME_REGIONS } } },
+    { $group: { _id: '$region', count: { $sum: 1 } } },
+  ]);
+  const map = Object.fromEntries(counts.map((c) => [c._id, c.count]));
+  const data = THEME_REGIONS.map((id) => ({ id, count: map[id] || 0 }));
   res.status(200).json({ success: true, data });
 });
 
@@ -70,6 +88,9 @@ export const adminListThemes = asyncHandler(async (req, res) => {
   if (req.query.category && THEME_CATEGORIES.includes(req.query.category)) {
     filter.category = req.query.category;
   }
+  if (req.query.region && THEME_REGIONS.includes(req.query.region)) {
+    filter.region = req.query.region;
+  }
   const themes = await Theme.find(filter).sort({ sortOrder: 1, category: 1, name: 1 });
   res.status(200).json({ success: true, data: themes });
 });
@@ -94,6 +115,7 @@ export const createTheme = asyncHandler(async (req, res) => {
     name: b.name,
     slug,
     category: b.category,
+    region: b.region && THEME_REGIONS.includes(b.region) ? b.region : undefined,
     description: b.description || '',
     backgroundImage: b.backgroundImage || '',
     colors: b.colors || {},
@@ -120,10 +142,11 @@ export const updateTheme = asyncHandler(async (req, res) => {
     throw new Error('Theme not found');
   }
   const b = req.body || {};
-  const top = ['name', 'category', 'description', 'backgroundImage', 'heroLabel', 'footerText', 'isPremium', 'isActive', 'sortOrder'];
+  const top = ['name', 'category', 'region', 'description', 'backgroundImage', 'heroLabel', 'footerText', 'isPremium', 'isActive', 'sortOrder'];
   for (const key of top) {
     if (b[key] !== undefined) theme[key] = b[key];
   }
+  if (b.region === '' || b.region === null) theme.region = undefined;
   if (b.slug) theme.slug = slugify(b.slug);
   if (b.colors) Object.assign(theme.colors, b.colors);
   if (b.fonts) Object.assign(theme.fonts, b.fonts);
@@ -171,6 +194,44 @@ export const uploadThemeBackground = asyncHandler(async (req, res) => {
   theme.backgroundImage = await persistUpload(req.file);
   await theme.save();
   res.status(201).json({ success: true, data: { backgroundImage: theme.backgroundImage } });
+});
+
+/**
+ * @route POST /api/admin/themes/:id/duplicate
+ * @desc  Duplicate a theme as a new inactive copy
+ * @access Private/Admin
+ */
+export const duplicateTheme = asyncHandler(async (req, res) => {
+  const source = await Theme.findById(req.params.id);
+  if (!source) {
+    res.status(404);
+    throw new Error('Theme not found');
+  }
+  const base = slugify(`${source.slug}-copy`);
+  let slug = base;
+  let n = 1;
+  // eslint-disable-next-line no-await-in-loop
+  while (await Theme.findOne({ slug })) {
+    slug = `${base}-${n}`;
+    n += 1;
+  }
+  const theme = await Theme.create({
+    name: `${source.name} (Copy)`,
+    slug,
+    category: source.category,
+    region: source.region,
+    description: source.description,
+    backgroundImage: source.backgroundImage,
+    colors: source.colors?.toObject?.() || source.colors,
+    fonts: source.fonts?.toObject?.() || source.fonts,
+    style: source.style?.toObject?.() || source.style,
+    heroLabel: source.heroLabel,
+    footerText: source.footerText,
+    isPremium: source.isPremium,
+    isActive: false,
+    sortOrder: (source.sortOrder || 0) + 1,
+  });
+  res.status(201).json({ success: true, data: theme });
 });
 
 /** Helper used by event controller to copy theme into event snapshot. */
