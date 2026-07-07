@@ -88,11 +88,42 @@ function slugify(text) {
 
 export async function seedDefaultThemes() {
   const count = await Theme.countDocuments();
-  if (count >= THEME_CATEGORIES.length * 8) {
-    console.log(`[seed] Themes present (${count}).`);
+  const target = THEME_CATEGORIES.length * 8;
+
+  const docs = buildThemeDocs();
+
+  if (count >= target) {
+    // Catalog already seeded — refresh palette/fonts/backgrounds on every deploy
+    // so category-specific colors stay distinct without duplicating rows.
+    let updated = 0;
+    for (const doc of docs) {
+      const existing = await Theme.findOne({ slug: doc.slug });
+      if (!existing) continue;
+      existing.colors = doc.colors;
+      existing.fonts = doc.fonts;
+      existing.backgroundImage = doc.backgroundImage;
+      existing.heroLabel = doc.heroLabel;
+      existing.description = doc.description;
+      await existing.save();
+      updated += 1;
+    }
+    console.log(`[seed] Themes refreshed: ${updated} of ${count}.`);
     return;
   }
 
+  // First-time seed.
+  let created = 0;
+  for (const doc of docs) {
+    const existing = await Theme.findOne({ slug: doc.slug });
+    if (!existing) {
+      await Theme.create(doc);
+      created += 1;
+    }
+  }
+  console.log(`[seed] Themes: ${created} created, ${await Theme.countDocuments()} total.`);
+}
+
+function buildThemeDocs() {
   const docs = [];
   for (const category of THEME_CATEGORIES) {
     const catIdx = THEME_CATEGORIES.indexOf(category);
@@ -122,23 +153,5 @@ export async function seedDefaultThemes() {
       });
     }
   }
-
-  // Upsert by slug so re-runs are safe; refresh palette/fonts on existing rows.
-  let created = 0;
-  let updated = 0;
-  for (const doc of docs) {
-    const existing = await Theme.findOne({ slug: doc.slug });
-    if (!existing) {
-      await Theme.create(doc);
-      created += 1;
-    } else {
-      existing.colors = doc.colors;
-      existing.fonts = doc.fonts;
-      existing.backgroundImage = doc.backgroundImage;
-      existing.heroLabel = doc.heroLabel;
-      await existing.save();
-      updated += 1;
-    }
-  }
-  console.log(`[seed] Themes: ${created} created, ${updated} refreshed, ${await Theme.countDocuments()} total.`);
+  return docs;
 }
