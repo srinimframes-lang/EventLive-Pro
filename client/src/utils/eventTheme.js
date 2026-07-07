@@ -25,19 +25,51 @@ export const THEME_REGION_LABELS = {
   kerala: 'Kerala',
 };
 
-/** True when the event has a frozen theme snapshot to render. */
+/** Default snapshot used when theme data is missing or corrupt. */
+export const DEFAULT_THEME_SNAPSHOT = {
+  name: 'Classic Live',
+  category: 'wedding',
+  region: '',
+  backgroundImage: '',
+  heroLabel: 'Live',
+  footerText: '',
+  isPremium: false,
+  colors: {
+    primary: '#be185d',
+    secondary: '#9d174d',
+    accent: '#f472b6',
+    heroText: '#ffffff',
+    surface: '#fdf2f8',
+    footerBg: '#1e1b4b',
+    footerText: '#f8fafc',
+  },
+  fonts: {
+    heading: '"Playfair Display", Georgia, serif',
+    body: 'Inter, system-ui, sans-serif',
+  },
+  style: {
+    decoration: 'elegant',
+    buttonStyle: 'pill-glow',
+    iconSet: 'rings',
+    particleStyle: 'bokeh',
+    gradientFrom: '#be185d',
+    gradientTo: '#f472b6',
+    goldBorder: false,
+    loadingAnimation: 'gold-shimmer',
+    backgroundMusic: '',
+  },
+};
+
+function isValidThemeSnapshot(snap) {
+  if (!snap || typeof snap !== 'object') return false;
+  return Boolean(snap.name || snap.colors?.primary || snap.backgroundImage);
+}
+
+/** True when the event should use the themed watch layout. */
 export function hasEventTheme(event) {
   if (!event) return false;
   if (event.theme) return true;
-  const snap = event.themeSnapshot;
-  if (!snap || typeof snap !== 'object') return false;
-  return Boolean(
-    snap.name ||
-      snap.category ||
-      snap.backgroundImage ||
-      snap.colors?.primary ||
-      snap.heroLabel
-  );
+  return isValidThemeSnapshot(event.themeSnapshot);
 }
 
 /** Normalize API payload so themeSnapshot is always a plain object. */
@@ -82,26 +114,62 @@ export function normalizeEventTheme(event) {
   return event;
 }
 
+/**
+ * Normalize theme data and guarantee a usable snapshot when a theme is selected.
+ * Falls back to DEFAULT_THEME_SNAPSHOT if the snapshot is missing or invalid.
+ */
+export function ensureSafeEventTheme(event) {
+  if (!event) return event;
+  const normalized = normalizeEventTheme({ ...event });
+  const wantsTheme = Boolean(normalized.theme);
+  if (!wantsTheme) return normalized;
+
+  if (!isValidThemeSnapshot(normalized.themeSnapshot)) {
+    normalized.themeSnapshot = { ...DEFAULT_THEME_SNAPSHOT };
+    normalized._themeFallback = true;
+  }
+  return normalized;
+}
+
 /** Build scoped CSS variables + font families for a theme snapshot. */
 export function themeStyleVars(snapshot) {
-  if (!snapshot) return {};
-  const c = snapshot.colors || {};
-  const f = snapshot.fonts || {};
-  const s = snapshot.style || {};
-  // Use snapshot values only — no hardcoded brand fallbacks in themed mode.
-  return {
-    '--theme-primary': c.primary || '#6366f1',
-    '--theme-secondary': c.secondary || c.primary || '#4f46e5',
-    '--theme-accent': c.accent || c.primary || '#818cf8',
-    '--theme-hero-text': c.heroText || '#ffffff',
-    '--theme-surface': c.surface || '#f8fafc',
-    '--theme-footer-bg': c.footerBg || '#0f172a',
-    '--theme-footer-text': c.footerText || '#f8fafc',
-    '--theme-font-heading': f.heading || '"Playfair Display", Georgia, serif',
-    '--theme-font-body': f.body || 'Inter, system-ui, sans-serif',
-    '--theme-gradient-from': s.gradientFrom || c.primary || '#6366f1',
-    '--theme-gradient-to': s.gradientTo || c.accent || '#818cf8',
-  };
+  const snap = snapshot && typeof snapshot === 'object' ? snapshot : DEFAULT_THEME_SNAPSHOT;
+  try {
+    const c = snap.colors || {};
+    const f = snap.fonts || {};
+    const s = snap.style || {};
+    return {
+      '--theme-primary': c.primary || '#6366f1',
+      '--theme-secondary': c.secondary || c.primary || '#4f46e5',
+      '--theme-accent': c.accent || c.primary || '#818cf8',
+      '--theme-hero-text': c.heroText || '#ffffff',
+      '--theme-surface': c.surface || '#f8fafc',
+      '--theme-footer-bg': c.footerBg || '#0f172a',
+      '--theme-footer-text': c.footerText || '#f8fafc',
+      '--theme-font-heading': f.heading || '"Playfair Display", Georgia, serif',
+      '--theme-font-body': f.body || 'Inter, system-ui, sans-serif',
+      '--theme-gradient-from': s.gradientFrom || c.primary || '#6366f1',
+      '--theme-gradient-to': s.gradientTo || c.accent || '#818cf8',
+    };
+  } catch {
+    const d = DEFAULT_THEME_SNAPSHOT;
+    const c = d.colors;
+    const f = d.fonts;
+    const s = d.style;
+    return {
+      '--theme-primary': c.primary,
+      '--theme-secondary': c.secondary,
+      '--theme-accent': c.accent,
+      '--theme-hero-text': c.heroText,
+      '--theme-surface': c.surface,
+      '--theme-footer-bg': c.footerBg,
+      '--theme-footer-text': c.footerText,
+      '--theme-font-heading': f.heading,
+      '--theme-font-body': f.body,
+      '--theme-gradient-from': s.gradientFrom,
+      '--theme-gradient-to': s.gradientTo,
+    };
+  }
 }
 
 /** Extract unique Google Font family names from CSS font stacks. */

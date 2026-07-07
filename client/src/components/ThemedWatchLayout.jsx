@@ -13,6 +13,7 @@ import ShareButtons from './ShareButtons.jsx';
 import ThemeEffects from './theme/ThemeEffects.jsx';
 import ThemeDecor from './theme/ThemeDecor.jsx';
 import PremiumButton from './theme/PremiumButton.jsx';
+import GlassCard from './theme/GlassCard.jsx';
 import ThemeGoldBorder from './theme/ThemeGoldBorder.jsx';
 import ThemeMusicToggle from './theme/ThemeMusicToggle.jsx';
 
@@ -172,7 +173,7 @@ export default function ThemedWatchLayout({
               >
                 {event.title}
               </h2>
-              <ViewerCount count={room.viewers} isLive={mergedConfig?.isLive} />
+              <ViewerCount count={room?.viewers || 0} isLive={mergedConfig?.isLive} />
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <ShareButtons url={watchUrl} title={title} />
@@ -193,18 +194,18 @@ export default function ThemedWatchLayout({
                   </ThemedTab>
                 )}
                 <ThemedTab active={activeTab === 'qa'} onClick={() => setTab('qa')}>
-                  Q&amp;A {room.questions.length > 0 && `(${room.questions.length})`}
+                  Q&amp;A {(room?.questions?.length || 0) > 0 && `(${room.questions.length})`}
                 </ThemedTab>
               </div>
               <div className="min-h-0 flex-1 bg-white/95">
                 {activeTab === 'chat' ? (
-                  <LiveChat messages={room.messages} onSend={room.sendMessage} disabled={!room.connected} />
+                  <LiveChat messages={room?.messages || []} onSend={room?.sendMessage} disabled={!room?.connected} />
                 ) : (
                   <QAPanel
-                    questions={room.questions}
-                    onAsk={room.askQuestion}
-                    onUpvote={room.upvoteQuestion}
-                    onAnswer={room.answerQuestion}
+                    questions={room?.questions || []}
+                    onAsk={room?.askQuestion}
+                    onUpvote={room?.upvoteQuestion}
+                    onAnswer={room?.answerQuestion}
                     canAnswer={canAnswer}
                     disabled={!room.connected}
                   />

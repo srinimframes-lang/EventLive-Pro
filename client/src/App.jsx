@@ -18,7 +18,7 @@ import Reseller from './pages/Reseller.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
 import EventForm from './pages/EventForm.jsx';
-import NotFound from './pages/NotFound.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 
 // Code-split the live-streaming pages so heavy deps (hls.js, socket.io-client)
 // load only when needed.
@@ -35,6 +35,7 @@ export default function App() {
       <Navbar />
       <main className="flex-1">
         <Suspense fallback={<PageLoader />}>
+          <ErrorBoundary>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
@@ -115,6 +116,7 @@ export default function App() {
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </ErrorBoundary>
         </Suspense>
       </main>
       <Footer />
