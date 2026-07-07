@@ -57,4 +57,8 @@ export const themeService = {
     const { data } = await api.post('/api/admin/themes/reseed-regional');
     return data.data;
   },
+  async reorder(order) {
+    const { data } = await api.put('/api/admin/themes/reorder', { order });
+    return data.data;
+  },
 };

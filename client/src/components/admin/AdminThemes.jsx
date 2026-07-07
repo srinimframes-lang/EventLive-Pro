@@ -3,6 +3,7 @@ import { themeService } from '../../services/theme.service.js';
 import { THEME_CATEGORY_LABELS, THEME_CATEGORIES, THEME_REGION_LABELS, THEME_REGIONS } from '../../utils/eventTheme.js';
 import { resolveMediaUrl } from '../../utils/format.js';
 import ThemePreviewModal from './ThemePreviewModal.jsx';
+import AdminThemeDragList from './AdminThemeDragList.jsx';
 
 const EMPTY = {
   name: '',
@@ -344,48 +345,14 @@ export default function AdminThemes() {
         </form>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {themes.map((t) => (
-          <div key={t.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div
-              className="h-28 bg-cover bg-center"
-              style={{
-                backgroundImage: t.backgroundImage ? `url(${resolveMediaUrl(t.backgroundImage)})` : undefined,
-                backgroundColor: t.colors?.primary,
-              }}
-            />
-            <div className="p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-slate-900">{t.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {THEME_CATEGORY_LABELS[t.category]}
-                    {t.region ? ` · ${THEME_REGION_LABELS[t.region]}` : ''}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  {t.isPremium && <span className="badge bg-gold-100 text-gold-800">Premium</span>}
-                  {!t.isActive && <span className="badge bg-slate-100 text-slate-500">Inactive</span>}
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1">
-                <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => setPreview({ themeSnapshot: t })}>
-                  Preview
-                </button>
-                <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => startEdit(t)}>
-                  Edit
-                </button>
-                <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => duplicate(t.id)}>
-                  Duplicate
-                </button>
-                <button type="button" className="btn-ghost px-2 py-1 text-xs text-red-600" onClick={() => remove(t.id)}>
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <AdminThemeDragList
+        themes={themes}
+        onReorder={load}
+        onPreview={(t) => setPreview({ themeSnapshot: t })}
+        onEdit={startEdit}
+        onDuplicate={duplicate}
+        onRemove={remove}
+      />
 
       {preview && (
         <ThemePreviewModal theme={preview.themeSnapshot} onClose={() => setPreview(null)} />

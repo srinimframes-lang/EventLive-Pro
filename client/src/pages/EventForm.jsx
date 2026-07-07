@@ -8,7 +8,6 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
 import { themeService } from '../services/theme.service.js';
-import { THEME_CATEGORY_LABELS, THEME_CATEGORIES } from '../utils/eventTheme.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
@@ -35,8 +34,6 @@ const EMPTY = {
   theme: '',
 };
 
-const DEFAULT_THEME_CATEGORY = 'wedding';
-
 export default function EventForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -61,8 +58,6 @@ export default function EventForm() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [error, setError] = useState('');
-  const [themeCategory, setThemeCategory] = useState(DEFAULT_THEME_CATEGORY);
-  const [themeView, setThemeView] = useState('regional');
   const [allThemes, setAllThemes] = useState([]);
   const [themesLoading, setThemesLoading] = useState(true);
 
@@ -96,9 +91,6 @@ export default function EventForm() {
           coverImage: event.coverImage || '',
           theme: event.theme?.id || event.theme || '',
         });
-        if (event.themeSnapshot?.category) {
-          setThemeCategory(event.themeSnapshot.category);
-        }
       })
       .catch((err) => active && setError(err.message))
       .finally(() => active && setLoading(false));
@@ -113,12 +105,7 @@ export default function EventForm() {
     themeService
       .list()
       .then((list) => {
-        const sorted = (list || []).slice().sort((a, b) => {
-          const aReg = (a.slug || '').startsWith('regional-') ? 0 : (a.slug || '').startsWith('premium-') ? 1 : 2;
-          const bReg = (b.slug || '').startsWith('regional-') ? 0 : (b.slug || '').startsWith('premium-') ? 1 : 2;
-          if (aReg !== bReg) return aReg - bReg;
-          return (a.sortOrder || 0) - (b.sortOrder || 0);
-        });
+        const sorted = (list || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
         active && setAllThemes(sorted);
       })
       .catch(() => active && setAllThemes([]))
@@ -127,8 +114,6 @@ export default function EventForm() {
       active = false;
     };
   }, []);
-
-  const themes = allThemes.filter((t) => t.category === themeCategory);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -353,113 +338,17 @@ export default function EventForm() {
 
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
-          title="Professional theme"
-          subtitle="Browse South Indian regional collections or all premium templates. Preview live, then apply with one click."
+          title="Theme Gallery"
+          subtitle="Search, filter, and preview premium themes. Tap a card for full preview, then use Use Theme to apply."
         >
-          <div className="mb-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold ${
-                themeView === 'regional' ? 'bg-gold-500 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
-              onClick={() => setThemeView('regional')}
-            >
-              South Indian Regional
-            </button>
-            <button
-              type="button"
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold ${
-                themeView === 'all' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
-              onClick={() => setThemeView('all')}
-            >
-              All Themes
-            </button>
-          </div>
-
-          {themeView === 'regional' ? (
-            <ThemeGallery
-              themes={allThemes}
-              selectedId={form.theme}
-              onSelect={(tid) => setForm((f) => ({ ...f, theme: tid }))}
-              loading={themesLoading}
-            />
-          ) : (
-            <>
-              <Field label="Event type" htmlFor="themeCategory">
-                <select
-                  id="themeCategory"
-                  className="input"
-                  value={themeCategory}
-                  onChange={(e) => {
-                    setThemeCategory(e.target.value);
-                    setForm((f) => ({ ...f, theme: '' }));
-                  }}
-                >
-                  {THEME_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {THEME_CATEGORY_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              {themesLoading ? (
-                <p className="text-sm text-slate-500">Loading themes…</p>
-              ) : themes.length === 0 ? (
-                <p className="text-sm text-slate-500">No themes available for this category.</p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {themes.map((t) => {
-                    const tid = t.id || t._id;
-                    const selected = form.theme === tid;
-                    const primary = t.colors?.primary || '#6366f1';
-                    return (
-                      <button
-                        key={tid}
-                        type="button"
-                        onClick={() => setForm((f) => ({ ...f, theme: tid }))}
-                        className={`overflow-hidden rounded-xl border text-left transition ${
-                          selected ? 'border-brand-600 ring-2 ring-brand-500' : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div
-                          className="relative h-24 bg-cover bg-center"
-                          style={{
-                            backgroundImage: t.backgroundImage
-                              ? `url(${resolveMediaUrl(t.backgroundImage)})`
-                              : undefined,
-                            backgroundColor: primary,
-                          }}
-                        >
-                          {t.isPremium && (
-                            <span className="absolute right-2 top-2 rounded-full bg-gold-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                              Premium
-                            </span>
-                          )}
-                        </div>
-                        <div className="p-3">
-                          <p className="font-semibold text-slate-900">{t.name}</p>
-                          <p className="text-xs text-slate-500 line-clamp-1">{t.description}</p>
-                          <div className="mt-2 flex gap-1">
-                            {[primary, t.colors?.secondary, t.colors?.accent].filter(Boolean).map((c) => (
-                              <span
-                                key={c}
-                                className="h-4 w-4 rounded-full border border-white shadow"
-                                style={{ backgroundColor: c }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
+          <ThemeGallery
+            themes={allThemes}
+            selectedId={form.theme}
+            onSelect={(tid) => setForm((f) => ({ ...f, theme: tid }))}
+            loading={themesLoading}
+          />
           {form.theme && (
-            <p className="text-xs text-emerald-700">Theme selected. It will be applied to your live watch page.</p>
+            <p className="mt-3 text-xs text-emerald-700">Theme selected — it will appear on your live watch page.</p>
           )}
         </Section>
 

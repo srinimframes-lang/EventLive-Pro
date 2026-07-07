@@ -34,8 +34,8 @@ export default function ThemePreviewModal({ theme, onClose, onApply }) {
           <h3 className="font-bold text-slate-900">Theme preview — {snap.name}</h3>
           <div className="flex items-center gap-2">
             {onApply && (
-              <button type="button" className="btn-primary px-3 py-1 text-sm" onClick={onApply}>
-                Apply Theme
+              <button type="button" className="btn-primary px-4 py-1.5 text-sm" onClick={onApply}>
+                Use Theme
               </button>
             )}
             <button type="button" className="btn-ghost px-2" onClick={onClose}>✕</button>

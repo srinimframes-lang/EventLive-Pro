@@ -39,6 +39,7 @@ import {
   uploadThemeBackground,
   duplicateTheme,
   reseedRegionalThemes,
+  reorderThemes,
 } from '../controllers/theme.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
@@ -90,6 +91,7 @@ router.patch('/themes/:id', updateTheme);
 router.delete('/themes/:id', deleteTheme);
 router.post('/themes/:id/background', upload.single('background'), uploadThemeBackground);
 router.post('/themes/reseed-regional', reseedRegionalThemes);
+router.put('/themes/reorder', reorderThemes);
 router.post('/themes/:id/duplicate', duplicateTheme);
 
 export default router;

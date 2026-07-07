@@ -368,3 +368,131 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ── Modern theme gallery (Event Form) ──────────────────────── */
+.theme-gallery-modern {
+  @apply space-y-3;
+}
+.theme-gallery-toolbar {
+  @apply flex flex-col gap-2 sm:flex-row sm:items-center;
+}
+.theme-gallery-search {
+  @apply w-full;
+}
+.theme-gallery-fav-filter {
+  @apply rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-gold-300;
+}
+.theme-gallery-fav-filter-on {
+  @apply border-gold-400 bg-gold-50 text-gold-800;
+}
+.theme-gallery-cats {
+  @apply flex gap-2 overflow-x-auto pb-1;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.theme-gallery-cat {
+  @apply shrink-0 snap-start rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 sm:text-sm;
+}
+.theme-gallery-cat-active {
+  @apply border-brand-600 bg-brand-600 text-white shadow-sm;
+}
+.theme-gallery-scroll-y {
+  @apply max-h-[min(70vh,720px)] overflow-y-auto overflow-x-hidden pr-1;
+  scroll-behavior: smooth;
+}
+.theme-gallery-grid {
+  @apply grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3;
+}
+.theme-gallery-loading {
+  @apply flex flex-col items-center gap-3 py-12;
+}
+.theme-gallery-loading-pulse {
+  @apply h-10 w-10 animate-pulse rounded-full bg-brand-200;
+}
+.theme-gallery-sentinel {
+  @apply flex flex-col items-center gap-2 py-6;
+}
+.theme-gallery-sentinel-dot {
+  @apply h-2 w-2 animate-ping rounded-full bg-brand-400;
+}
+
+.theme-live-card {
+  @apply overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition;
+}
+.theme-live-card:hover {
+  @apply border-slate-300 shadow-md;
+  transform: translateY(-2px);
+}
+.theme-live-card-selected {
+  @apply border-brand-600 ring-2 ring-brand-400;
+}
+.theme-live-card-hit {
+  @apply block w-full text-left;
+}
+.theme-live-card-stage {
+  @apply relative aspect-[16/10] overflow-hidden;
+}
+.theme-live-card-bg {
+  @apply absolute inset-0 h-full w-full object-cover transition duration-700;
+}
+.theme-live-card:hover .theme-live-card-bg {
+  transform: scale(1.06);
+}
+.theme-live-card-overlay {
+  @apply absolute inset-0;
+}
+.theme-live-card-shimmer {
+  @apply absolute inset-0 opacity-25;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%);
+  background-size: 200% 100%;
+  animation: theme-gallery-shimmer 3s ease-in-out infinite;
+}
+.theme-live-card-footer {
+  @apply flex items-center gap-2 border-t border-slate-100 px-3 py-2;
+}
+.theme-live-card-actions {
+  @apply flex gap-2 border-t border-slate-100 px-2 py-2;
+}
+.theme-live-badge {
+  @apply absolute z-10 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase;
+}
+.theme-live-badge-premium {
+  @apply left-2 top-2 bg-gold-500 text-white;
+}
+.theme-live-badge-region {
+  @apply right-2 top-2 bg-black/50 text-white backdrop-blur-sm;
+}
+.theme-live-badge-active {
+  @apply bottom-2 left-2 bg-emerald-600 text-white;
+}
+.theme-fav-btn {
+  @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg text-slate-300 transition hover:bg-slate-100 hover:text-gold-500;
+}
+.theme-fav-btn-active {
+  @apply text-gold-500;
+}
+.theme-use-btn {
+  @apply rounded-lg bg-gold-500 py-1.5 text-xs font-bold text-white transition hover:bg-gold-600;
+}
+.theme-use-btn-active {
+  @apply bg-emerald-600 hover:bg-emerald-700;
+}
+
+/* Admin drag-and-drop reorder */
+.theme-drag-row {
+  @apply flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-2 shadow-sm transition;
+}
+.theme-drag-row-over {
+  @apply border-brand-400 bg-brand-50;
+}
+.theme-drag-handle {
+  @apply cursor-grab select-none px-1 text-lg text-slate-400 active:cursor-grabbing;
+}
+.theme-drag-ghost {
+  @apply opacity-40;
+}
+
+@keyframes theme-gallery-shimmer {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
+}

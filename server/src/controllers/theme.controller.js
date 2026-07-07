@@ -236,6 +236,27 @@ export const duplicateTheme = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @route PUT /api/admin/themes/reorder
+ * @desc  Reorder themes by id array (sets sortOrder 1…n)
+ * @access Private/Admin
+ */
+export const reorderThemes = asyncHandler(async (req, res) => {
+  const { order } = req.body || {};
+  if (!Array.isArray(order) || !order.length) {
+    res.status(400);
+    throw new Error('order array is required');
+  }
+  let sortOrder = 1;
+  for (const id of order) {
+    if (!mongoose.isValidObjectId(id)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await Theme.findByIdAndUpdate(id, { sortOrder });
+    sortOrder += 1;
+  }
+  res.status(200).json({ success: true, data: { updated: sortOrder - 1 } });
+});
+
+/**
  * @route POST /api/admin/themes/reseed-regional
  * @desc  Upsert all South Indian regional themes (idempotent)
  * @access Private/Admin
