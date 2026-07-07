@@ -18,6 +18,7 @@ import Reseller from './pages/Reseller.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
 import EventForm from './pages/EventForm.jsx';
+import NotFound from './pages/NotFound.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 
 // Code-split the live-streaming pages so heavy deps (hls.js, socket.io-client)
