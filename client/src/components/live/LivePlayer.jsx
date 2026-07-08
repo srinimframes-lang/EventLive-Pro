@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
+import { extractYouTubeId } from '../../utils/format.js';
 
 const RETRY_MS = 3000;
 const OFFLINE_MSG = '🔴 Live stream is currently offline.';
 
-/** Overlay states shown on top of the video. */
 const OVERLAY = {
   NONE: 'none',
   BUFFERING: 'buffering',
@@ -51,7 +51,16 @@ function PlayerOverlay({ state }) {
 }
 
 function YouTubePlayer({ videoId }) {
-  if (!videoId) return <Offline message="No YouTube video configured" />;
+  if (!videoId) {
+    return (
+      <Frame>
+        <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/80">
+          No YouTube video configured
+        </div>
+      </Frame>
+    );
+  }
+
   return (
     <Frame>
       <iframe
@@ -62,6 +71,13 @@ function YouTubePlayer({ videoId }) {
         allowFullScreen
       />
     </Frame>
+  );
+}
+
+function resolveYoutubeVideoId(config) {
+  return (
+    extractYouTubeId(config?.youtubeVideoId || '') ||
+    extractYouTubeId(config?.streamUrl || '')
   );
 }
 
@@ -335,11 +351,18 @@ function WebRtcPlayer({ url, isLive = true }) {
  */
 export default function LivePlayer({ config }) {
   if (!config) {
-    return (
-      <Frame>
-        <PlayerOverlay state={OVERLAY.BUFFERING} />
-      </Frame>
-    );
+    return <Frame />;
+  }
+
+  if (config.streamDisabled) {
+    return <Offline message="This live stream has been disabled." />;
+  }
+
+  const videoId = resolveYoutubeVideoId(config);
+  const isYoutube = config.provider === 'youtube' || Boolean(videoId);
+
+  if (isYoutube) {
+    return <YouTubePlayer videoId={videoId} />;
   }
 
   const { provider, isLive } = config;
@@ -351,7 +374,6 @@ export default function LivePlayer({ config }) {
     return <Offline message={OFFLINE_MSG} />;
   }
 
-  if (provider === 'youtube') return <YouTubePlayer videoId={config.youtubeVideoId} />;
   if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} isLive={live} />;
   if (provider === 'webrtc') return <WebRtcPlayer url={config.webrtcUrl} isLive={live} />;
   if (provider === 'rtmp') {
