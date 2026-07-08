@@ -9,6 +9,7 @@ import resellerRoutes from './reseller.routes.js';
 import paymentRoutes from './payment.routes.js';
 import tenantRoutes from './tenant.routes.js';
 import themeRoutes from './theme.routes.js';
+import seoRoutes from './seo.routes.js';
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use('/reseller', resellerRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/tenant', tenantRoutes);
 router.use('/themes', themeRoutes);
+router.use('/seo', seoRoutes);
 
 export default router;

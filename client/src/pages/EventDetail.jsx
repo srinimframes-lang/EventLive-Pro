@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
+import EventSeo from '../components/seo/EventSeo.jsx';
+import { coverImageAlt } from '../utils/seo.js';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 
 export default function EventDetail() {
@@ -69,6 +71,8 @@ export default function EventDetail() {
   const watchPath = buildWatchPath(event);
 
   return (
+    <>
+      <EventSeo event={event} pageType="detail" />
     <div className="mx-auto max-w-3xl px-4 py-8 sm:py-10">
       <Link to="/events" className="text-sm text-brand-600 hover:underline">
         ← Back to events
@@ -119,7 +123,9 @@ export default function EventDetail() {
       {event.coverImage && (
         <img
           src={resolveMediaUrl(event.coverImage)}
-          alt={coupleTitle || event.title}
+          alt={coverImageAlt(event)}
+          loading="lazy"
+          decoding="async"
           className="mt-6 aspect-[16/9] w-full rounded-2xl object-cover shadow-sm"
         />
       )}
@@ -162,10 +168,11 @@ export default function EventDetail() {
             <h2 className="text-lg font-bold text-slate-900">Photo gallery</h2>
             <span className="text-sm text-slate-500">{event.gallery.length} photos</span>
           </div>
-          <PhotoGallery photos={event.gallery} />
+          <PhotoGallery photos={event.gallery} event={event} />
         </div>
       )}
     </div>
+    </>
   );
 }
 

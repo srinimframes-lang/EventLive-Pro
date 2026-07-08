@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { eventService, EVENT_CATEGORIES } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import EventCard from '../components/EventCard.jsx';
+import { useSettings } from '../context/SettingsContext.jsx';
+import SiteSeo from '../components/seo/SiteSeo.jsx';
+import { truncate } from '../utils/seo.js';
 
 export default function Events() {
   const { isAdmin } = useAuth();
+  const { settings } = useSettings();
   const [state, setState] = useState({ data: [], total: 0, page: 1, pages: 1 });
   const [filters, setFilters] = useState({ search: '', category: '', page: 1 });
   const [loading, setLoading] = useState(true);
@@ -17,6 +20,7 @@ export default function Events() {
     setError('');
 
     const params = { page: filters.page, limit: 9 };
+    if (!isAdmin) params.public = true;
     if (filters.search) params.search = filters.search;
     if (filters.category) params.category = filters.category;
 
@@ -31,11 +35,20 @@ export default function Events() {
     return () => {
       active = false;
     };
-  }, [filters]);
+  }, [filters, isAdmin]);
 
   const update = (patch) => setFilters((f) => ({ ...f, page: 1, ...patch }));
 
   return (
+    <>
+      <SiteSeo
+        path="/events"
+        title={`Live Weddings & Events | ${settings?.companyName || 'EventLive Pro'}`}
+        description={truncate(
+          'Browse live and upcoming wedding streams. Watch celebrations in HD with photo galleries and shareable guest links.',
+          300
+        )}
+      />
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -120,5 +133,6 @@ export default function Events() {
         </>
       )}
     </div>
+    </>
   );
 }

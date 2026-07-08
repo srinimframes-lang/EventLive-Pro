@@ -92,7 +92,7 @@ export default function PhotographyStudio({ event, themed = false, surfaceDark =
     <div className="studio-card-inner">
       <div className="studio-card-header">
         {studio.logoUrl && (
-          <img src={studio.logoUrl} alt="" className="studio-logo" loading="lazy" decoding="async" />
+          <img src={studio.logoUrl} alt={studio.name || 'Photography studio logo'} className="studio-logo" loading="lazy" decoding="async" />
         )}
         <div className="min-w-0 flex-1 text-left">
           {studio.studioName && <p className="studio-name">{studio.studioName}</p>}

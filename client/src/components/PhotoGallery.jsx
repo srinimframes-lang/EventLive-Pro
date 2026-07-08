@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { resolveMediaUrl } from '../utils/format.js';
+import { galleryPhotoAlt } from '../utils/seo.js';
 
 /**
  * Responsive photo gallery with a simple lightbox.
- * @param {{ photos: Array<{id?:string,_id?:string,url:string,caption?:string}>, onDelete?: (photoId:string)=>void }} props
+ * @param {{ photos: Array<{id?:string,_id?:string,url:string,caption?:string}>, event?: object, onDelete?: (photoId:string)=>void }} props
  */
-export default function PhotoGallery({ photos = [], onDelete }) {
+export default function PhotoGallery({ photos = [], event, onDelete }) {
   const [active, setActive] = useState(null);
 
   useEffect(() => {
@@ -26,8 +27,9 @@ export default function PhotoGallery({ photos = [], onDelete }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
-        {photos.map((photo) => {
+        {photos.map((photo, index) => {
           const photoId = photo.id || photo._id;
+          const alt = galleryPhotoAlt(photo, event, index);
           return (
             <div
               key={photoId || photo.url}
@@ -40,7 +42,7 @@ export default function PhotoGallery({ photos = [], onDelete }) {
               >
                 <img
                   src={resolveMediaUrl(photo.url)}
-                  alt={photo.caption || 'Event photo'}
+                  alt={alt}
                   loading="lazy"
                   className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                 />

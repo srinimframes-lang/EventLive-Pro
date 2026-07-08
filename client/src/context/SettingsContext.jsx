@@ -13,6 +13,14 @@ const FALLBACK = {
   contactPhone: '',
   contactEmail: '',
   address: '',
+  seo: {
+    siteUrl: 'https://eventlivepro.com',
+    defaultOgImage: '',
+    homepageTitle: '',
+    homepageDescription: '',
+  },
+  googleAnalyticsId: '',
+  googleSearchConsoleVerification: '',
   footer: '',
   payment: {
     gpayNumber: '',

@@ -6,6 +6,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
 import { linkCost } from '../config/credits.js';
 import { snapshotTheme } from '../controllers/theme.controller.js';
+import { regionFromDistrictSlug } from '../constants/districts.js';
 import { extractYouTubeId } from '../utils/youtube.js';
 
 const EDITABLE_FIELDS = [
@@ -112,6 +113,13 @@ export const listEvents = asyncHandler(async (req, res) => {
   // `mine=true` scopes results to the authenticated organizer.
   if (req.query.mine === 'true' && req.user) {
     filter.organizer = req.user._id;
+  }
+  if (req.query.public === 'true') {
+    filter.status = { $in: ['published', 'live', 'ended'] };
+  }
+  if (req.query.district) {
+    const region = regionFromDistrictSlug(String(req.query.district));
+    if (region) filter['themeSnapshot.region'] = region;
   }
   if (req.query.search) {
     filter.$text = { $search: req.query.search };

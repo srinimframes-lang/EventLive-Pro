@@ -19,6 +19,8 @@ import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
 import EventForm from './pages/EventForm.jsx';
 import NotFound from './pages/NotFound.jsx';
+import Districts from './pages/Districts.jsx';
+import DistrictDetail from './pages/DistrictDetail.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 
 // Code-split the live-streaming pages so heavy deps (hls.js, socket.io-client)
@@ -56,6 +58,8 @@ export default function App() {
 
             {/* Public watch */}
             <Route path="/events" element={<Events />} />
+            <Route path="/districts" element={<Districts />} />
+            <Route path="/districts/:slug" element={<DistrictDetail />} />
             <Route path="/events/:idOrSlug/live" element={<Watch />} />
             <Route path="/live/:idOrSlug" element={<Watch />} />
             <Route path="/live/:idOrSlug/:coupleSlug" element={<Watch />} />

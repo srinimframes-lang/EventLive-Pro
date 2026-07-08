@@ -1,7 +1,16 @@
 import { Link } from 'react-router-dom';
 
+import SiteSeo from '../components/seo/SiteSeo.jsx';
+
 export default function NotFound() {
   return (
+    <>
+      <SiteSeo
+        title="Page Not Found | EventLive Pro"
+        description="The page you are looking for does not exist."
+        path="/404"
+        noindex
+      />
     <div className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
       <p className="text-6xl font-extrabold text-brand-600">404</p>
       <h1 className="mt-2 text-2xl font-bold text-slate-900">Page not found</h1>
@@ -10,5 +19,6 @@ export default function NotFound() {
         Back home
       </Link>
     </div>
+    </>
   );
 }

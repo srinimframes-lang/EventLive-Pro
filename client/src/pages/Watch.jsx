@@ -14,7 +14,7 @@ import PhotoGallery from '../components/PhotoGallery.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
 import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
-import PhotographyStudio from '../components/PhotographyStudio.jsx';
+import EventSeo from '../components/seo/EventSeo.jsx';
 
 export default function Watch() {
   const { idOrSlug } = useParams();
@@ -69,15 +69,6 @@ export default function Watch() {
   const themed = hasEventTheme(event);
 
   useEffect(() => {
-    if (!event) return undefined;
-    const prev = document.title;
-    document.title = `${coupleTitle || event.title} · Live`;
-    return () => {
-      document.title = prev;
-    };
-  }, [event, coupleTitle]);
-
-  useEffect(() => {
     if (!themed) return undefined;
     document.body.classList.add('watch-themed');
     return () => document.body.classList.remove('watch-themed');
@@ -99,7 +90,9 @@ export default function Watch() {
 
   if (themed) {
     return (
-      <ThemedWatchLayout
+      <>
+        <EventSeo event={event} pageType="watch" />
+        <ThemedWatchLayout
         event={event}
         coupleTitle={coupleTitle}
         watchUrl={watchUrl}
@@ -111,10 +104,13 @@ export default function Watch() {
         canAnswer={canAnswer}
         playerNonce={room.playerNonce}
       />
+      </>
     );
   }
 
   return (
+    <>
+      <EventSeo event={event} pageType="watch" />
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -232,11 +228,12 @@ export default function Watch() {
           <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Photo gallery</h2>
           <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>
         </div>
-        <PhotoGallery photos={event.gallery || []} />
+        <PhotoGallery photos={event.gallery || []} event={event} />
       </section>
 
       <PhotographyStudio event={event} />
     </div>
+    </>
   );
 }
 

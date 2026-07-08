@@ -133,7 +133,7 @@ export function WatchGallerySection({ event, surfaceDark, galleryVariant }) {
           {event.gallery?.length || 0} photos
         </span>
       </div>
-      <ThemedGallery photos={event.gallery || []} variant={galleryVariant} />
+      <ThemedGallery photos={event.gallery || []} variant={galleryVariant} event={event} />
     </section>
   );
 }
@@ -197,7 +197,7 @@ export function PhotographerBadge({ event }) {
       {event.photographerLogo && (
         <img
           src={resolveMediaUrl(event.photographerLogo)}
-          alt=""
+          alt={event.photographerName ? `${event.photographerName} logo` : 'Photographer logo'}
           className="h-7 w-7 rounded-md object-contain"
         />
       )}

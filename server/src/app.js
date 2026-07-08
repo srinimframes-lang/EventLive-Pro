@@ -10,6 +10,7 @@ import apiRoutes from './routes/index.js';
 import { notFound, errorHandler } from './middleware/error.middleware.js';
 import { UPLOADS_DIR } from './middleware/upload.middleware.js';
 import { startDomainCache, isActiveDomainOrigin } from './utils/domainCache.js';
+import { getSitemap, getRobots } from './controllers/seo.controller.js';
 
 const app = express();
 
@@ -76,6 +77,10 @@ app.use(
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
+
+// SEO — crawlers fetch these directly (also proxied from Vercel frontend).
+app.get('/sitemap.xml', getSitemap);
+app.get('/robots.txt', getRobots);
 
 // API routes
 app.use('/api', apiRoutes);

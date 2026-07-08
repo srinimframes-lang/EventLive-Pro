@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { packageService } from '../services/package.service.js';
+import SiteSeo from '../components/seo/SiteSeo.jsx';
+import { truncate } from '../utils/seo.js';
 import { formatCurrency, whatsappLink } from '../utils/format.js';
 
 export default function Book() {
@@ -25,6 +27,15 @@ export default function Book() {
   );
 
   return (
+    <>
+      <SiteSeo
+        path="/book"
+        title={`Book Wedding Live Streaming | ${settings.companyName}`}
+        description={truncate(
+          `Book your wedding live stream with ${settings.companyName}. Choose a package, pay securely, and get a private HD watch link for your guests.`,
+          300
+        )}
+      />
     <div className="mx-auto max-w-6xl px-4 py-12">
       <div className="text-center">
         <h1 className="font-display text-4xl font-bold text-slate-900">Book your wedding stream</h1>
@@ -91,5 +102,6 @@ export default function Book() {
         </div>
       )}
     </div>
+    </>
   );
 }

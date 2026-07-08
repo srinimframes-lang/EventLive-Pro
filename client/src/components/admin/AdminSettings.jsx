@@ -15,6 +15,8 @@ export default function AdminSettings() {
   }, [settings]);
 
   const top = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const seoField = (e) =>
+    setForm((f) => ({ ...f, seo: { ...(f.seo || {}), [e.target.name]: e.target.value } }));
   const pay = (e) =>
     setForm((f) => ({ ...f, payment: { ...f.payment, [e.target.name]: e.target.value } }));
   const bank = (e) =>
@@ -36,6 +38,9 @@ export default function AdminSettings() {
         contactPhone: form.contactPhone,
         contactEmail: form.contactEmail,
         address: form.address,
+        googleAnalyticsId: form.googleAnalyticsId,
+        googleSearchConsoleVerification: form.googleSearchConsoleVerification,
+        seo: form.seo,
         payment: form.payment,
       });
       await refresh();
@@ -135,6 +140,74 @@ export default function AdminSettings() {
           <div>
             <label className="label">Address</label>
             <input name="address" className="input" value={form.address || ''} onChange={top} />
+          </div>
+        </div>
+      </div>
+
+      {/* SEO & analytics */}
+      <div className="card space-y-4">
+        <h2 className="text-lg font-bold text-slate-900">SEO &amp; analytics</h2>
+        <p className="text-xs text-slate-500">
+          Controls site-wide meta tags, Google Analytics, and Search Console verification.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Site URL (canonical base)</label>
+            <input
+              name="siteUrl"
+              className="input"
+              placeholder="https://eventlivepro.com"
+              value={form.seo?.siteUrl || ''}
+              onChange={seoField}
+            />
+          </div>
+          <div>
+            <label className="label">Default OG image URL</label>
+            <input
+              name="defaultOgImage"
+              className="input"
+              placeholder="https://…"
+              value={form.seo?.defaultOgImage || ''}
+              onChange={seoField}
+            />
+          </div>
+          <div>
+            <label className="label">Homepage title</label>
+            <input
+              name="homepageTitle"
+              className="input"
+              value={form.seo?.homepageTitle || ''}
+              onChange={seoField}
+            />
+          </div>
+          <div>
+            <label className="label">Homepage meta description</label>
+            <input
+              name="homepageDescription"
+              className="input"
+              value={form.seo?.homepageDescription || ''}
+              onChange={seoField}
+            />
+          </div>
+          <div>
+            <label className="label">Google Analytics ID (G-XXXXXXXX)</label>
+            <input
+              name="googleAnalyticsId"
+              className="input"
+              placeholder="G-XXXXXXXXXX"
+              value={form.googleAnalyticsId || ''}
+              onChange={top}
+            />
+          </div>
+          <div>
+            <label className="label">Google Search Console verification</label>
+            <input
+              name="googleSearchConsoleVerification"
+              className="input"
+              placeholder="verification token"
+              value={form.googleSearchConsoleVerification || ''}
+              onChange={top}
+            />
           </div>
         </div>
       </div>

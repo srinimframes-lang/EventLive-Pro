@@ -29,9 +29,18 @@ export const updateSettings = asyncHandler(async (req, res) => {
     'contactPhone',
     'contactEmail',
     'address',
+    'googleAnalyticsId',
+    'googleSearchConsoleVerification',
   ];
   for (const key of topLevel) {
     if (b[key] !== undefined) settings[key] = b[key];
+  }
+
+  if (b.seo) {
+    const seoFields = ['siteUrl', 'defaultOgImage', 'homepageTitle', 'homepageDescription'];
+    for (const key of seoFields) {
+      if (b.seo[key] !== undefined) settings.seo[key] = b.seo[key];
+    }
   }
 
   if (b.creditPricing) {

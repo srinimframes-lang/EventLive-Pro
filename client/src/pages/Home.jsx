@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { packageService } from '../services/package.service.js';
-import { formatCurrency, whatsappLink } from '../utils/format.js';
+import SiteSeo from '../components/seo/SiteSeo.jsx';
+import { truncate } from '../utils/seo.js';
 
 const steps = [
   { n: '01', title: 'Choose a package', desc: 'Pick the wedding streaming package that fits your celebration.' },
@@ -24,6 +25,21 @@ export default function Home() {
   const wa = whatsappLink(settings.whatsappNumber, `Hi ${settings.companyName}, I'd like to book a wedding live stream.`);
 
   return (
+    <>
+      <SiteSeo
+        path="/"
+        title={
+          settings.seo?.homepageTitle ||
+          `${settings.companyName} — ${settings.tagline || 'Premium Wedding Live Streaming'}`
+        }
+        description={
+          settings.seo?.homepageDescription ||
+          truncate(
+            `${settings.companyName} streams weddings and celebrations live in HD. Photo galleries, themed pages, and instant share links for guests worldwide.`,
+            300
+          )
+        }
+      />
     <div>
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 text-white">
@@ -143,5 +159,6 @@ export default function Home() {
         </div>
       </section>
     </div>
+    </>
   );
 }

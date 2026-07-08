@@ -28,6 +28,11 @@ export default function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/districts" className="hover:text-brand-700">
+                By District
+              </Link>
+            </li>
+            <li>
               <Link to="/login" className="hover:text-brand-700">
                 Customer Login
               </Link>

@@ -22,6 +22,16 @@ const settingsSchema = new Schema(
     contactEmail: { type: String, default: '', trim: true },
     address: { type: String, default: '', trim: true },
 
+    // ── SEO & analytics ───────────────────────────────────────
+    seo: {
+      siteUrl: { type: String, default: 'https://eventlivepro.com', trim: true },
+      defaultOgImage: { type: String, default: '', trim: true },
+      homepageTitle: { type: String, default: '', trim: true, maxlength: 120 },
+      homepageDescription: { type: String, default: '', trim: true, maxlength: 300 },
+    },
+    googleAnalyticsId: { type: String, default: '', trim: true },
+    googleSearchConsoleVerification: { type: String, default: '', trim: true },
+
     // ── Reseller credit pricing (₹ per credit) ────────────────
     creditPricing: {
       youtube: { type: Number, default: 100, min: 0 }, // 1 YouTube event

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveMediaUrl } from '../../../utils/format.js';
+import { galleryPhotoAlt } from '../../../utils/seo.js';
 
 const VARIANTS = {
   'masonry-gold': 'gallery-masonry-gold',
@@ -15,7 +16,7 @@ const VARIANTS = {
   default: 'gallery-default',
 };
 
-export default function ThemedGallery({ photos = [], variant = 'default', onDelete }) {
+export default function ThemedGallery({ photos = [], variant = 'default', event, onDelete }) {
   const [active, setActive] = useState(null);
   const rootClass = VARIANTS[variant] || VARIANTS.default;
 
@@ -37,14 +38,15 @@ export default function ThemedGallery({ photos = [], variant = 'default', onDele
   return (
     <>
       <div className={rootClass}>
-        {photos.map((photo) => {
+        {photos.map((photo, index) => {
           const photoId = photo.id || photo._id;
+          const alt = galleryPhotoAlt(photo, event, index);
           return (
             <div key={photoId || photo.url} className="gallery-item group relative overflow-hidden">
               <button type="button" onClick={() => setActive(photo)} className="block h-full w-full">
                 <img
                   src={resolveMediaUrl(photo.url)}
-                  alt={photo.caption || 'Event photo'}
+                  alt={alt}
                   loading="lazy"
                   className="gallery-img h-full w-full object-cover"
                 />
