@@ -1,24 +1,52 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
+
+const RETRY_MS = 3000;
+const OFFLINE_MSG = '🔴 Live stream is currently offline.';
+
+/** Overlay states shown on top of the video. */
+const OVERLAY = {
+  NONE: 'none',
+  BUFFERING: 'buffering',
+  RECONNECTING: 'reconnecting',
+};
 
 function Frame({ children }) {
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
       {children}
     </div>
   );
 }
 
-function Offline({ message }) {
+function Offline({ message = OFFLINE_MSG }) {
   return (
     <Frame>
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
-        <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-xl">
-          ▶
-        </span>
-        <p className="text-sm">{message || 'Stream is offline'}</p>
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 px-6 text-center text-white">
+        <p className="text-lg font-bold leading-snug sm:text-xl">{message}</p>
       </div>
     </Frame>
+  );
+}
+
+function PlayerOverlay({ state }) {
+  if (state === OVERLAY.NONE) return null;
+
+  const isBuffering = state === OVERLAY.BUFFERING;
+  const icon = isBuffering ? '📶' : '🔄';
+  const title = isBuffering ? 'Network is slow.' : 'Reconnecting to the live stream...';
+  const subtitle = isBuffering ? 'Please wait while we reconnect to the live stream...' : '';
+
+  return (
+    <div className="player-overlay" role="status" aria-live="polite">
+      <div className="player-overlay-panel">
+        <div className="player-overlay-spinner" aria-hidden />
+        <p className="player-overlay-title">
+          <span aria-hidden>{icon}</span> {title}
+        </p>
+        {subtitle && <p className="player-overlay-subtitle">{subtitle}</p>}
+      </div>
+    </div>
   );
 }
 
@@ -37,33 +65,37 @@ function YouTubePlayer({ videoId }) {
   );
 }
 
-function Spinner() {
-  return (
-    <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/30">
-      <span className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-    </div>
-  );
-}
-
-function HlsPlayer({ src, poster }) {
+function HlsPlayer({ src, poster, isLive = true }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
-  const retryRef = useRef(0);
-  const reconnectTimer = useRef(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [levels, setLevels] = useState([]); // [{ index, height }]
-  const [currentLevel, setCurrentLevel] = useState(-1); // -1 = Auto
+  const retryTimer = useRef(null);
+  const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
+  const [levels, setLevels] = useState([]);
+  const [currentLevel, setCurrentLevel] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const clearRetry = useCallback(() => {
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+  }, []);
+
+  const scheduleRetry = useCallback(() => {
+    clearRetry();
+    setOverlay(OVERLAY.RECONNECTING);
+    retryTimer.current = setTimeout(() => {
+      setReloadKey((k) => k + 1);
+    }, RETRY_MS);
+  }, [clearRetry]);
+
   useEffect(() => {
+    if (!isLive) return undefined;
     const video = videoRef.current;
     if (!video || !src) return undefined;
-    setError('');
-    setLoading(true);
 
-    // Tuned for slow connections: small initial buffer for fast startup, then
-    // a healthy back buffer; ABR starts at a low rendition and adapts upward.
+    setOverlay(OVERLAY.BUFFERING);
+
     const hlsConfig = {
       enableWorker: true,
       lowLatencyMode: true,
@@ -71,22 +103,18 @@ function HlsPlayer({ src, poster }) {
       maxBufferLength: 20,
       startLevel: -1,
       maxMaxBufferLength: 60,
-      manifestLoadingMaxRetry: 6,
-      levelLoadingMaxRetry: 6,
-      fragLoadingMaxRetry: 6,
-    };
-
-    const scheduleReconnect = () => {
-      retryRef.current += 1;
-      const delay = Math.min(2000 * retryRef.current, 10000);
-      setError(`Reconnecting… (attempt ${retryRef.current})`);
-      reconnectTimer.current = setTimeout(() => setReloadKey((k) => k + 1), delay);
+      manifestLoadingMaxRetry: 4,
+      levelLoadingMaxRetry: 4,
+      fragLoadingMaxRetry: 4,
     };
 
     let hls;
+    let useNative = false;
+
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS (Safari / iOS) — quality is handled by the OS.
+      useNative = true;
       video.src = src;
+      video.load();
       video.play?.().catch(() => {});
     } else if (Hls.isSupported()) {
       hls = new Hls(hlsConfig);
@@ -94,69 +122,101 @@ function HlsPlayer({ src, poster }) {
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
-        retryRef.current = 0;
         const lvls = (data.levels || []).map((l, index) => ({ index, height: l.height || 0 }));
         setLevels(lvls);
         video.play?.().catch(() => {});
       });
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => setCurrentLevel(hls.autoLevelEnabled ? -1 : data.level));
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
+        if (hlsRef.current) setCurrentLevel(hlsRef.current.autoLevelEnabled ? -1 : data.level);
+      });
       hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) return;
+        if (!data.fatal) {
+          if (
+            data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+            data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
+          ) {
+            setOverlay(OVERLAY.BUFFERING);
+          }
+          return;
+        }
+        setOverlay(OVERLAY.RECONNECTING);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            hls.startLoad();
+            try {
+              hls.startLoad();
+            } catch {
+              /* reload below */
+            }
+            scheduleRetry();
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
-            hls.recoverMediaError();
+            try {
+              hls.recoverMediaError();
+            } catch {
+              scheduleRetry();
+            }
             break;
           default:
             hls.destroy();
-            scheduleReconnect();
+            hlsRef.current = null;
+            scheduleRetry();
         }
       });
     } else {
-      setError('HLS is not supported in this browser.');
+      scheduleRetry();
     }
 
     const onPlaying = () => {
-      setLoading(false);
-      setError('');
+      clearRetry();
+      setOverlay(OVERLAY.NONE);
     };
-    const onWaiting = () => setLoading(true);
+    const onWaiting = () => setOverlay(OVERLAY.BUFFERING);
+    const onStalled = () => setOverlay(OVERLAY.BUFFERING);
+    const onVideoError = () => {
+      if (useNative) scheduleRetry();
+    };
+
     video.addEventListener('playing', onPlaying);
     video.addEventListener('waiting', onWaiting);
+    video.addEventListener('stalled', onStalled);
+    video.addEventListener('error', onVideoError);
 
     return () => {
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('waiting', onWaiting);
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (hls) hls.destroy();
-      hlsRef.current = null;
+      video.removeEventListener('stalled', onStalled);
+      video.removeEventListener('error', onVideoError);
+      clearRetry();
+      if (hls) {
+        hls.destroy();
+        hlsRef.current = null;
+      }
     };
-  }, [src, reloadKey]);
+  }, [src, reloadKey, isLive, scheduleRetry, clearRetry]);
 
   const pickLevel = (index) => {
     setCurrentLevel(index);
-    if (hlsRef.current) hlsRef.current.currentLevel = index; // -1 = auto
+    if (hlsRef.current) hlsRef.current.currentLevel = index;
   };
 
+  if (!isLive) return <Offline />;
   if (!src) return <Offline message="No HLS source configured" />;
 
   return (
     <Frame>
       <video
         ref={videoRef}
-        className="absolute inset-0 h-full w-full"
+        className="absolute inset-0 h-full w-full bg-black object-contain"
         controls
         autoPlay
         playsInline
         muted
         poster={poster || undefined}
       />
-      {loading && <Spinner />}
+      <PlayerOverlay state={overlay} />
 
-      {levels.length > 1 && (
-        <div className="absolute right-2 top-2 flex flex-wrap justify-end gap-1">
+      {levels.length > 1 && overlay === OVERLAY.NONE && (
+        <div className="absolute right-2 top-2 z-20 flex flex-wrap justify-end gap-1">
           <button
             type="button"
             onClick={() => pickLevel(-1)}
@@ -183,36 +243,44 @@ function HlsPlayer({ src, poster }) {
             ))}
         </div>
       )}
-
-      {error && (
-        <div className="absolute inset-x-0 bottom-0 bg-red-600/90 px-3 py-2 text-center text-sm text-white">
-          {error}
-        </div>
-      )}
     </Frame>
   );
 }
 
-function WebRtcPlayer({ url }) {
+function WebRtcPlayer({ url, isLive = true }) {
   const videoRef = useRef(null);
-  const [error, setError] = useState('');
+  const retryTimer = useRef(null);
+  const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const scheduleRetry = useCallback(() => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    setOverlay(OVERLAY.RECONNECTING);
+    retryTimer.current = setTimeout(() => setReloadKey((k) => k + 1), RETRY_MS);
+  }, []);
 
   useEffect(() => {
+    if (!isLive) return undefined;
     const video = videoRef.current;
     if (!video || !url) return undefined;
-    setError('');
 
+    setOverlay(OVERLAY.BUFFERING);
     const pc = new RTCPeerConnection();
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
     pc.ontrack = (event) => {
       [video.srcObject] = event.streams;
+      video.play?.().catch(() => {});
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        scheduleRetry();
+      }
     };
 
     let cancelled = false;
     (async () => {
       try {
-        // WHEP: POST the SDP offer, receive the SDP answer.
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         const res = await fetch(url, {
@@ -224,64 +292,76 @@ function WebRtcPlayer({ url }) {
         const answer = await res.text();
         if (cancelled) return;
         await pc.setRemoteDescription({ type: 'answer', sdp: answer });
+        setOverlay(OVERLAY.NONE);
       } catch {
-        if (!cancelled) setError('Unable to connect to the WebRTC stream.');
+        if (!cancelled) scheduleRetry();
       }
     })();
 
+    const onPlaying = () => setOverlay(OVERLAY.NONE);
+    const onWaiting = () => setOverlay(OVERLAY.BUFFERING);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('waiting', onWaiting);
+
     return () => {
       cancelled = true;
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
       pc.close();
     };
-  }, [url]);
+  }, [url, reloadKey, isLive, scheduleRetry]);
 
+  if (!isLive) return <Offline />;
   if (!url) return <Offline message="No WebRTC source configured" />;
 
   return (
     <Frame>
       <video
         ref={videoRef}
-        className="absolute inset-0 h-full w-full"
+        className="absolute inset-0 h-full w-full bg-black object-contain"
         controls
         autoPlay
         playsInline
         muted
       />
-      {error && (
-        <div className="absolute inset-x-0 bottom-0 bg-red-600/90 px-3 py-2 text-center text-sm text-white">
-          {error}
-        </div>
-      )}
+      <PlayerOverlay state={overlay} />
     </Frame>
   );
 }
 
 /**
  * Renders the appropriate live player for the configured provider.
- * @param {{ config: { provider, youtubeVideoId, hlsUrl, webrtcUrl, isLive } }} props
  */
 export default function LivePlayer({ config }) {
-  if (!config) return <Offline message="Loading…" />;
-
-  const { provider, isLive } = config;
-  const poster = config.poster || '';
-  // Private-server playback URL (derived from the media server) with fallback.
-  const playback = config.playbackUrl || config.hlsUrl;
-
-  if (provider === 'youtube') return <YouTubePlayer videoId={config.youtubeVideoId} />;
-  if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} />;
-  if (provider === 'webrtc') return <WebRtcPlayer url={config.webrtcUrl} />;
-  if (provider === 'rtmp') {
-    // RTMP is an ingest protocol; playback uses the media server's HLS output.
-    if (playback) return <HlsPlayer src={playback} poster={poster} />;
+  if (!config) {
     return (
-      <Offline
-        message={
-          isLive ? 'Starting the private stream…' : 'Private server stream is offline'
-        }
-      />
+      <Frame>
+        <PlayerOverlay state={OVERLAY.BUFFERING} />
+      </Frame>
     );
   }
 
-  return <Offline message={isLive ? 'Live, but no player configured' : 'Stream is offline'} />;
+  const { provider, isLive } = config;
+  const poster = config.poster || '';
+  const playback = config.playbackUrl || config.hlsUrl;
+  const live = Boolean(isLive);
+
+  if (!live) {
+    return <Offline message={OFFLINE_MSG} />;
+  }
+
+  if (provider === 'youtube') return <YouTubePlayer videoId={config.youtubeVideoId} />;
+  if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} isLive={live} />;
+  if (provider === 'webrtc') return <WebRtcPlayer url={config.webrtcUrl} isLive={live} />;
+  if (provider === 'rtmp') {
+    if (playback) return <HlsPlayer src={playback} poster={poster} isLive={live} />;
+    return (
+      <Frame>
+        <PlayerOverlay state={OVERLAY.RECONNECTING} />
+      </Frame>
+    );
+  }
+
+  return <Offline message="Live stream is not configured yet." />;
 }

@@ -289,6 +289,26 @@
   .theme-footer {
     animation: theme-fade-up 0.8s ease both;
   }
+
+  /* ── Live player overlays (buffering / reconnecting) ──────── */
+  .player-overlay {
+    @apply absolute inset-0 z-10 flex items-center justify-center px-6 text-center text-white;
+    background: rgba(0, 0, 0, 0.72);
+    animation: player-overlay-in 0.45s ease both;
+  }
+  .player-overlay-panel {
+    @apply flex max-w-sm flex-col items-center gap-3;
+  }
+  .player-overlay-spinner {
+    @apply h-11 w-11 rounded-full border-[3px] border-white/25 border-t-white;
+    animation: spin 0.85s linear infinite;
+  }
+  .player-overlay-title {
+    @apply text-base font-bold leading-snug sm:text-lg;
+  }
+  .player-overlay-subtitle {
+    @apply text-sm font-medium leading-relaxed text-white/85;
+  }
 }
 
 @keyframes theme-gradient-shift {
@@ -317,6 +337,10 @@
   0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
+@keyframes player-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .theme-bg-image,
@@ -328,6 +352,7 @@
   .theme-hero-label,
   .theme-hero-title,
   .theme-footer,
+  .player-overlay-spinner,
   .theme-loading-inner,
   .theme-loading-bar-fill {
     animation: none !important;
