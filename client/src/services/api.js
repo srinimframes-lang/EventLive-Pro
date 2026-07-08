@@ -6,6 +6,7 @@ import { API_ORIGIN } from '../config.js';
 const api = axios.create({
   baseURL: API_ORIGIN,
   withCredentials: true,
+  timeout: 90_000,
 });
 
 // Attach the bearer token (if present) to every request.
@@ -22,7 +23,9 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const message =
-      error.response?.data?.message || error.message || 'Something went wrong';
+      error.code === 'ECONNABORTED'
+        ? 'Request timed out. The server may be waking up — please try again.'
+        : error.response?.data?.message || error.message || 'Something went wrong';
     return Promise.reject(new Error(message));
   }
 );

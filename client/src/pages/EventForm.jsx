@@ -7,7 +7,7 @@ import {
 } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
-import { normalizeStudioForm, studioWhatsappError } from '../utils/studioFields.js';
+import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 
@@ -186,76 +186,83 @@ export default function EventForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!isEdit && !form.theme) {
-      setError('Please select a professional theme for your live page.');
-      return;
-    }
     const studioForm = normalizeStudioForm(form);
-    const whatsappErr = studioWhatsappError(studioForm);
-    if (whatsappErr) {
-      setError(whatsappErr);
-      return;
-    }
     setSubmitting(true);
 
     const youtubeVideoId = form.isOnline ? extractYouTubeId(form.youtubeUrl) : '';
 
     const payload = {
-      title: form.title,
-      description: form.description,
+      title: form.title.trim(),
+      description: form.description.trim(),
       category: form.category,
       status: form.status,
       isOnline: form.isOnline,
       location: form.isOnline ? 'Online' : form.location,
-      venue: form.venue,
+      venue: form.venue?.trim() || '',
       capacity: Number(form.capacity) || 0,
       startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
-      tags: form.tags
-        ? form.tags.split(',').map((t) => t.trim()).filter(Boolean)
-        : [],
-      brideName: form.brideName,
-      groomName: form.groomName,
-      studioName: studioForm.studioName,
-      photographerName: studioForm.photographerName,
-      studioPhone: studioForm.studioPhone,
-      studioWhatsapp: studioForm.studioWhatsapp,
-      studioEmail: studioForm.studioEmail,
-      studioWebsite: studioForm.studioWebsite,
-      studioInstagram: studioForm.studioInstagram,
-      studioFacebook: studioForm.studioFacebook,
-      studioYoutube: studioForm.studioYoutube,
-      studioMapsUrl: studioForm.studioMapsUrl,
-      streamUrl: form.isOnline ? form.youtubeUrl : '',
+      brideName: form.brideName?.trim() || '',
+      groomName: form.groomName?.trim() || '',
+      streamUrl: form.isOnline ? form.youtubeUrl?.trim() || '' : '',
       youtubeVideoId,
       streamProvider: youtubeVideoId ? 'youtube' : 'none',
       chatEnabled: form.chatEnabled,
     };
+
+    if (form.tags?.trim()) {
+      payload.tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    }
+
+    const studioKeys = [
+      'studioName',
+      'photographerName',
+      'studioPhone',
+      'studioWhatsapp',
+      'studioEmail',
+      'studioWebsite',
+      'studioInstagram',
+      'studioFacebook',
+      'studioYoutube',
+      'studioMapsUrl',
+    ];
+    for (const key of studioKeys) {
+      if (studioForm[key]) payload[key] = studioForm[key];
+    }
+
     if (form.theme) payload.theme = form.theme;
 
     // Non-admins spend credits per new link.
     if (showCreditPicker) payload.linkType = linkType;
+
+    const pendingCover = pendingCoverRef.current;
+    const pendingLogo = pendingLogoRef.current;
+    pendingCoverRef.current = null;
+    pendingLogoRef.current = null;
 
     try {
       const saved = isEdit
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
 
-      if (!isEdit) {
-        if (pendingCoverRef.current) {
-          await eventService.uploadCover(saved.id, pendingCoverRef.current);
-          pendingCoverRef.current = null;
-        }
-        if (pendingLogoRef.current) {
-          await eventService.uploadLogo(saved.id, pendingLogoRef.current);
-          pendingLogoRef.current = null;
-        }
-      }
+      if (!isAdmin) refreshUser().catch(() => {});
 
-      if (!isAdmin) await refreshUser();
-      navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, { replace: true });
+      navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, {
+        replace: true,
+      });
+
+      // Upload pending media after navigation so a slow upload never blocks the save button.
+      if (!isEdit && saved?.id) {
+        Promise.all([
+          pendingCover ? eventService.uploadCover(saved.id, pendingCover).catch(() => null) : null,
+          pendingLogo ? eventService.uploadLogo(saved.id, pendingLogo).catch(() => null) : null,
+        ]).catch(() => {});
+      }
     } catch (err) {
-      setError(err.message);
+      pendingCoverRef.current = pendingCover;
+      pendingLogoRef.current = pendingLogo;
+      setError(err.message || 'Failed to save event. Please try again.');
+    } finally {
       setSubmitting(false);
     }
   };
@@ -389,7 +396,7 @@ export default function EventForm() {
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
           title="Choose a theme"
-          subtitle="10 premium layout themes — each is a unique wedding website design."
+          subtitle="10 premium layout themes — optional; pick one for a custom live page design."
         >
           <ThemeGallery
             themes={allThemes}
@@ -495,7 +502,7 @@ export default function EventForm() {
         {/* ── Photography branding ───────────────────────────── */}
         <Section
           title="Photography studio"
-          subtitle="Optional. Shown on the public watch page as “Captured by”. Only WhatsApp is required when you add studio details — social links and email are optional."
+          subtitle="Optional. Shown on the public watch page as “Captured by”. All contact and social fields are optional."
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Studio name" htmlFor="studioName">
@@ -569,7 +576,7 @@ export default function EventForm() {
                 onChange={handleChange}
               />
             </Field>
-            <Field label="WhatsApp number" htmlFor="studioWhatsapp" hint="Required when any other studio field is filled">
+            <Field label="WhatsApp number (optional)" htmlFor="studioWhatsapp">
               <input
                 id="studioWhatsapp"
                 name="studioWhatsapp"

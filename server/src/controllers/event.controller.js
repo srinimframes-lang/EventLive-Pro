@@ -9,7 +9,6 @@ import { snapshotTheme } from '../controllers/theme.controller.js';
 import { regionFromDistrictSlug } from '../constants/districts.js';
 import { extractYouTubeId } from '../utils/youtube.js';
 import {
-  assertStudioWhatsapp,
   normalizeStudioFields,
 } from '../utils/studioFields.js';
 
@@ -204,7 +203,6 @@ export const createEvent = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
   normalizeStudioFields(payload);
-  assertStudioWhatsapp(payload, res);
   if (payload.youtubeVideoId !== undefined) {
     payload.youtubeVideoId = extractYouTubeId(payload.youtubeVideoId) || String(payload.youtubeVideoId || '').trim();
   }
@@ -282,7 +280,6 @@ export const updateEvent = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) event[field] = req.body[field];
   }
   normalizeStudioFields(event);
-  assertStudioWhatsapp(event, res);
   if (req.body.youtubeVideoId !== undefined) {
     event.youtubeVideoId = extractYouTubeId(event.youtubeVideoId) || String(event.youtubeVideoId || '').trim();
   }

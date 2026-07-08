@@ -24,9 +24,6 @@ export function hasStudioDetails(form) {
   return STUDIO_STRING_FIELDS.some((key) => Boolean(String(form[key] ?? '').trim()));
 }
 
-export function studioWhatsappError(form) {
-  if (hasStudioDetails(form) && !String(form.studioWhatsapp ?? '').trim()) {
-    return 'WhatsApp number is required when photography studio details are provided.';
-  }
+export function studioWhatsappError() {
   return '';
 }

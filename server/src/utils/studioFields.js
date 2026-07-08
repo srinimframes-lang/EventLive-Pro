@@ -28,12 +28,6 @@ export function hasStudioDetails(obj) {
 }
 
 /**
- * WhatsApp is required only when other studio details are provided.
- * Optional social URLs never block save on their own.
+ * WhatsApp is optional — studio contact fields never block event save.
  */
-export function assertStudioWhatsapp(obj, res) {
-  if (hasStudioDetails(obj) && !String(obj.studioWhatsapp ?? '').trim()) {
-    res.status(400);
-    throw new Error('WhatsApp number is required when photography studio details are provided');
-  }
-}
+export function assertStudioWhatsapp() {}

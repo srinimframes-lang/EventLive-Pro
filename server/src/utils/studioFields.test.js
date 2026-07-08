@@ -40,11 +40,14 @@ test('assertStudioWhatsapp allows fully empty studio section', () => {
   );
 });
 
-test('assertStudioWhatsapp blocks studio name without WhatsApp', () => {
+test('assertStudioWhatsapp is a no-op', () => {
+  assert.doesNotThrow(() => assertStudioWhatsapp({ studioName: 'X' }, {}));
+});
+
+test('assertStudioWhatsapp allows studio name without WhatsApp', () => {
   const res = { statusCode: 200, status(code) { this.statusCode = code; return this; } };
-  assert.throws(
-    () => assertStudioWhatsapp({ studioName: 'Moments Studio', studioWhatsapp: '' }, res),
-    /WhatsApp number is required/
+  assert.doesNotThrow(() =>
+    assertStudioWhatsapp({ studioName: 'Moments Studio', studioWhatsapp: '' }, res)
   );
 });
 

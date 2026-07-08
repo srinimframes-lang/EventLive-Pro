@@ -50,6 +50,7 @@ export async function persistUpload(file) {
       const result = await cloudinary.uploader.upload(file.path, {
         folder: 'eventlive',
         resource_type: 'image',
+        timeout: 60_000,
       });
       // The local temp copy is no longer needed once it lives in Cloudinary.
       unlinkLocal(file.path);
