@@ -5,7 +5,7 @@ import { streamService } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLiveRoom } from '../hooks/useLiveRoom.js';
 import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../utils/format.js';
-import { hasEventTheme, ensureSafeEventTheme } from '../utils/eventTheme.js';
+import { hasEventTheme, ensureSafeEventTheme, publicEventTypeLabel } from '../utils/eventTheme.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
@@ -155,7 +155,7 @@ export default function Watch() {
             }`}
           >
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/90">
-              {event.category === 'concert' ? 'Live' : 'Wedding Live'}
+              {publicEventTypeLabel(event.themeSnapshot?.category || event.category)}
             </p>
             <h1 className="mt-2 text-[2rem] font-extrabold leading-tight text-white sm:text-5xl">
               {coupleTitle || event.title}

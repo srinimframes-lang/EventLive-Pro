@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { formatDateTime, resolveMediaUrl } from '../utils/format.js';
 import {
   googleFontsHref,
+  publicEventTypeLabel,
   themeStyleVars,
 } from '../utils/eventTheme.js';
 import {
@@ -62,7 +63,7 @@ export default function ThemedWatchLayout({
   }, [fontsHref]);
 
   const title = coupleTitle || event.title;
-  const heroLabel = snap.heroLabel || 'Live';
+  const eventTypeLabel = publicEventTypeLabel(snap.category);
   const goldBorder = Boolean(style.goldBorder);
 
   return (
@@ -134,7 +135,7 @@ export default function ThemedWatchLayout({
                 </GlassCard>
               )}
               <p className="theme-hero-label text-xs font-bold uppercase tracking-[0.35em] sm:text-sm">
-                {heroLabel}
+                {eventTypeLabel}
               </p>
               <h1
                 className="theme-hero-title mt-3 text-[2rem] font-extrabold leading-tight sm:text-5xl md:text-6xl"

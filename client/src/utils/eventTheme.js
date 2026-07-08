@@ -18,6 +18,34 @@ export const THEME_CATEGORY_LABELS = {
 
 export const THEME_CATEGORIES = Object.keys(THEME_CATEGORY_LABELS);
 
+/** Public hero labels for live watch pages — never expose internal theme names. */
+export const PUBLIC_EVENT_TYPE_LABELS = {
+  wedding: 'WEDDING LIVE',
+  reception: 'RECEPTION LIVE',
+  sangeet: 'SANGEET LIVE',
+  birthday: 'BIRTHDAY LIVE',
+  upanayanam: 'UPANAYANAM LIVE',
+  half_saree: 'HALF SAREE CEREMONY',
+  engagement: 'ENGAGEMENT LIVE',
+  haldi: 'HALDI LIVE',
+  mehendi: 'MEHENDI LIVE',
+  baby_shower: 'BABY SHOWER LIVE',
+  house_warming: 'HOUSE WARMING LIVE',
+  corporate: 'CORPORATE LIVE',
+  temple: 'TEMPLE LIVE',
+  memorial: 'MEMORIAL LIVE',
+};
+
+/**
+ * Event-type label shown on public watch pages (e.g. "WEDDING LIVE").
+ * Theme catalog names like "Luxury Gold" must never appear publicly.
+ */
+export function publicEventTypeLabel(category) {
+  if (!category) return 'LIVE';
+  const key = String(category).toLowerCase().trim();
+  return PUBLIC_EVENT_TYPE_LABELS[key] || 'LIVE';
+}
+
 export const THEME_REGIONS = ['telangana', 'andhra', 'tamil_nadu', 'kerala'];
 
 export const THEME_REGION_LABELS = {
