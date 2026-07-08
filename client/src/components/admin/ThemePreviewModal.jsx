@@ -1,4 +1,4 @@
-import { formatDateTime } from '../../utils/format.js';
+import { formatDateTime, resolveMediaUrl } from '../../utils/format.js';
 import { themeStyleVars, googleFontsHref } from '../../utils/eventTheme.js';
 import { useEffect } from 'react';
 import ThemeEffects from '../theme/ThemeEffects.jsx';
@@ -22,7 +22,7 @@ export default function ThemePreviewModal({ theme, onClose, onApply }) {
     return () => link.remove();
   }, [fontsHref]);
 
-  const bg = snap.backgroundImage;
+  const bg = resolveMediaUrl(snap.backgroundImage);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>

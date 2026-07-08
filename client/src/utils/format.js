@@ -153,6 +153,7 @@ export function resolveMediaUrl(url) {
   if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) {
     return url;
   }
-  if (url.startsWith('/uploads')) return `${MEDIA_ORIGIN}${url}`;
-  return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  if (path.startsWith('/uploads')) return `${MEDIA_ORIGIN}${path}`;
+  return path;
 }

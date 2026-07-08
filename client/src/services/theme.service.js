@@ -44,9 +44,7 @@ export const themeService = {
   async uploadBackground(id, file) {
     const form = new FormData();
     form.append('background', file);
-    const { data } = await api.post(`/api/admin/themes/${id}/background`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const { data } = await api.post(`/api/admin/themes/${id}/background`, form);
     return data.data;
   },
   async duplicate(id) {

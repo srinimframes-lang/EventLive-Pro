@@ -42,6 +42,8 @@ export default function EventForm() {
   const { user, isAdmin, refreshUser } = useAuth();
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
+  const pendingCoverRef = useRef(null);
+  const pendingLogoRef = useRef(null);
 
   // Non-admins spend credits to create a link (YouTube = 1, Server = 5).
   const [linkType, setLinkType] = useState(
@@ -124,7 +126,8 @@ export default function EventForm() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isEdit) {
-      setError('Save the event first, then upload a logo.');
+      pendingLogoRef.current = file;
+      setForm((f) => ({ ...f, photographerLogo: URL.createObjectURL(file) }));
       return;
     }
     setUploadingLogo(true);
@@ -144,7 +147,8 @@ export default function EventForm() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isEdit) {
-      setError('Save the event first, then upload a couple photo.');
+      pendingCoverRef.current = file;
+      setForm((f) => ({ ...f, coverImage: URL.createObjectURL(file) }));
       return;
     }
     setUploadingCover(true);
@@ -202,8 +206,20 @@ export default function EventForm() {
       const saved = isEdit
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
+
+      if (!isEdit) {
+        if (pendingCoverRef.current) {
+          await eventService.uploadCover(saved.id, pendingCoverRef.current);
+          pendingCoverRef.current = null;
+        }
+        if (pendingLogoRef.current) {
+          await eventService.uploadLogo(saved.id, pendingLogoRef.current);
+          pendingLogoRef.current = null;
+        }
+      }
+
       if (!isAdmin) await refreshUser();
-      navigate(`/events/${saved.slug || saved.id}`, { replace: true });
+      navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, { replace: true });
     } catch (err) {
       setError(err.message);
       setSubmitting(false);
@@ -338,8 +354,8 @@ export default function EventForm() {
 
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
-          title="Theme Gallery"
-          subtitle="Search, filter, and preview premium themes. Tap a card for full preview, then use Use Theme to apply."
+          title="Choose a theme"
+          subtitle="20 curated themes grouped by event type. Pick one for your live watch page."
         >
           <ThemeGallery
             themes={allThemes}
@@ -394,11 +410,11 @@ export default function EventForm() {
                   disabled={uploadingCover}
                 />
                 <p className="mt-1 text-xs text-slate-400">
-                  {isEdit
-                    ? uploadingCover
-                      ? 'Uploading…'
-                      : 'A hero photo of the couple. JPG/PNG, up to 8 MB.'
-                    : 'Save the event first to enable couple photo upload.'}
+                  {uploadingCover
+                    ? 'Uploading…'
+                    : isEdit
+                      ? 'A hero photo of the couple. JPG/PNG, up to 8 MB.'
+                      : 'Select a photo — it will upload when you create the event.'}
                 </p>
               </div>
             </div>
@@ -473,11 +489,11 @@ export default function EventForm() {
                   disabled={uploadingLogo}
                 />
                 <p className="mt-1 text-xs text-slate-400">
-                  {isEdit
-                    ? uploadingLogo
-                      ? 'Uploading…'
-                      : 'PNG/JPG/SVG, up to 8 MB.'
-                    : 'Save the event first to enable logo upload.'}
+                  {uploadingLogo
+                    ? 'Uploading…'
+                    : isEdit
+                      ? 'PNG/JPG/SVG, up to 8 MB.'
+                      : 'Select a logo — it will upload when you create the event.'}
                 </p>
               </div>
             </div>

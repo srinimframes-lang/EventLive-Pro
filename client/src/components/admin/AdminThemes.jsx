@@ -45,7 +45,6 @@ const EMPTY = {
 export default function AdminThemes() {
   const [themes, setThemes] = useState([]);
   const [filter, setFilter] = useState('');
-  const [regionFilter, setRegionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -62,7 +61,7 @@ export default function AdminThemes() {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await themeService.adminList(filter || undefined, regionFilter || undefined);
+      const data = await themeService.adminList(filter || undefined);
       setThemes(data || []);
     } catch (err) {
       setError(err.message);
@@ -73,7 +72,7 @@ export default function AdminThemes() {
 
   useEffect(() => {
     load();
-  }, [filter, regionFilter]);
+  }, [filter]);
 
   const counts = useMemo(() => {
     const m = {};
@@ -178,9 +177,9 @@ export default function AdminThemes() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Theme Builder</h2>
+          <h2 className="text-lg font-bold text-slate-900">Themes</h2>
           <p className="text-sm text-slate-500">
-            {themes.length} templates · {themes.filter((t) => (t.slug || '').startsWith('regional-')).length} regional · {themes.filter((t) => (t.slug || '').startsWith('premium-')).length} premium
+            {themes.length} curated templates
           </p>
         </div>
         <button type="button" className="btn-primary" onClick={startCreate}>
@@ -196,7 +195,9 @@ export default function AdminThemes() {
         >
           All
         </button>
-        {THEME_CATEGORIES.map((c) => (
+        {THEME_CATEGORIES.filter((c) =>
+          ['wedding', 'reception', 'sangeet', 'birthday', 'upanayanam', 'half_saree'].includes(c)
+        ).map((c) => (
           <button
             key={c}
             type="button"
@@ -204,26 +205,6 @@ export default function AdminThemes() {
             onClick={() => setFilter(c)}
           >
             {THEME_CATEGORY_LABELS[c]}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={`rounded-full px-3 py-1 text-sm ${!regionFilter ? 'bg-gold-500 text-white' : 'bg-slate-100 text-slate-600'}`}
-          onClick={() => setRegionFilter('')}
-        >
-          All regions
-        </button>
-        {THEME_REGIONS.map((r) => (
-          <button
-            key={r}
-            type="button"
-            className={`rounded-full px-3 py-1 text-sm ${regionFilter === r ? 'bg-gold-500 text-white' : 'bg-slate-100 text-slate-600'}`}
-            onClick={() => setRegionFilter(r)}
-          >
-            {THEME_REGION_LABELS[r]}
           </button>
         ))}
       </div>
@@ -256,6 +237,13 @@ export default function AdminThemes() {
           </Field>
           <Field label="Background image URL">
             <input className="input" value={form.backgroundImage} onChange={(e) => setForm((f) => ({ ...f, backgroundImage: e.target.value }))} />
+            {form.backgroundImage && (
+              <img
+                src={resolveMediaUrl(form.backgroundImage)}
+                alt="Background preview"
+                className="mt-2 h-24 w-full rounded-lg border border-slate-200 object-cover"
+              />
+            )}
           </Field>
           {editing !== 'new' && (
             <Field label="Upload background">

@@ -138,12 +138,12 @@ export default function Watch() {
         )}
       </div>
 
-      {coupleTitle && (
+      {(coupleTitle || event.coverImage) && (
         <div className="relative mt-3 overflow-hidden rounded-2xl text-center text-white shadow-lg">
           {event.coverImage && (
             <img
               src={resolveMediaUrl(event.coverImage)}
-              alt={coupleTitle}
+              alt={coupleTitle || event.title}
               className="absolute inset-0 h-full w-full object-cover"
             />
           )}
@@ -158,7 +158,7 @@ export default function Watch() {
               {event.category === 'concert' ? 'Live' : 'Wedding Live'}
             </p>
             <h1 className="mt-1 font-serif text-3xl font-extrabold drop-shadow sm:text-5xl">
-              {coupleTitle}
+              {coupleTitle || event.title}
             </h1>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-brand-50/90">
               {event.startTime && <span>{formatDateTime(event.startTime)}</span>}

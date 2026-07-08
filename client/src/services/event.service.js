@@ -30,10 +30,8 @@ export const eventService = {
     const fd = new FormData();
     Array.from(files).forEach((file) => fd.append('photos', file));
     captions.forEach((c) => fd.append('captions', c || ''));
-    const { data } = await api.post(`/api/events/${id}/gallery`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return data.data; // updated gallery array
+    const { data } = await api.post(`/api/events/${id}/gallery`, fd);
+    return data.data;
   },
 
   async deleteGalleryPhoto(id, photoId) {
@@ -45,20 +43,16 @@ export const eventService = {
   async uploadLogo(id, file) {
     const fd = new FormData();
     fd.append('logo', file);
-    const { data } = await api.post(`/api/events/${id}/logo`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return data.data; // { photographerLogo }
+    const { data } = await api.post(`/api/events/${id}/logo`, fd);
+    return data.data;
   },
 
   /** Upload/replace the couple (cover) photo. */
   async uploadCover(id, file) {
     const fd = new FormData();
     fd.append('cover', file);
-    const { data } = await api.post(`/api/events/${id}/cover`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return data.data; // { coverImage }
+    const { data } = await api.post(`/api/events/${id}/cover`, fd);
+    return data.data;
   },
 };
 

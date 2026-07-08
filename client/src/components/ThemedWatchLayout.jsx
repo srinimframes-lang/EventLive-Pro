@@ -108,16 +108,16 @@ export default function ThemedWatchLayout({
                 style={{ borderColor: 'var(--theme-accent)' }}
               />
             )}
-            {event.photographerName && (
+            {(event.photographerLogo || event.photographerName) && (
               <GlassCard className="mx-auto mb-5 inline-flex items-center gap-2 px-4 py-2 text-sm" dark>
                 {event.photographerLogo && (
                   <img
                     src={resolveMediaUrl(event.photographerLogo)}
-                    alt=""
+                    alt={event.photographerName || 'Photographer logo'}
                     className="h-8 w-8 rounded-md object-contain"
                   />
                 )}
-                <span>Captured by {event.photographerName}</span>
+                {event.photographerName && <span>Captured by {event.photographerName}</span>}
               </GlassCard>
             )}
             <p

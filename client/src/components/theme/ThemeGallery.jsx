@@ -1,161 +1,77 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import ThemePreviewModal from '../admin/ThemePreviewModal.jsx';
 import ThemeLivePreviewCard from './ThemeLivePreviewCard.jsx';
-import {
-  GALLERY_CATEGORIES,
-  GALLERY_PAGE_SIZE,
-  galleryCategory,
-  loadFavoriteIds,
-  themeMatchesSearch,
-  toggleFavoriteId,
-} from '../../utils/themeGallery.js';
+import { groupThemesByCategory, themeMatchesSearch } from '../../utils/themeGallery.js';
+import { THEME_CATEGORY_LABELS } from '../../utils/eventTheme.js';
 
 /**
- * Modern theme gallery — vertical scroll, search, category filter, favorites,
- * infinite load, live preview cards, and full preview modal.
+ * Simple theme picker — themes grouped by category with image previews.
  */
 export default function ThemeGallery({ themes, selectedId, onSelect, loading }) {
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('all');
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [favoriteIds, setFavoriteIds] = useState(() => loadFavoriteIds());
   const [previewTheme, setPreviewTheme] = useState(null);
-  const [visibleCount, setVisibleCount] = useState(GALLERY_PAGE_SIZE);
-  const sentinelRef = useRef(null);
-  const listRef = useRef(null);
 
   const filtered = useMemo(() => {
-    let list = themes || [];
-    if (category !== 'all') {
-      list = list.filter((t) => galleryCategory(t) === category);
-    }
-    if (favoritesOnly) {
-      list = list.filter((t) => favoriteIds.includes(t.id || t._id));
-    }
-    if (search.trim()) {
-      list = list.filter((t) => themeMatchesSearch(t, search));
-    }
-    return list;
-  }, [themes, category, favoritesOnly, favoriteIds, search]);
+    const list = themes || [];
+    if (!search.trim()) return list;
+    return list.filter((t) => themeMatchesSearch(t, search));
+  }, [themes, search]);
 
-  const visible = filtered.slice(0, visibleCount);
-  const hasMore = visibleCount < filtered.length;
+  const groups = useMemo(() => groupThemesByCategory(filtered), [filtered]);
 
-  useEffect(() => {
-    setVisibleCount(GALLERY_PAGE_SIZE);
-    listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [category, search, favoritesOnly]);
-
-  useEffect(() => {
-    const node = sentinelRef.current;
-    if (!node || !hasMore) return undefined;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setVisibleCount((n) => Math.min(n + GALLERY_PAGE_SIZE, filtered.length));
-        }
-      },
-      { root: listRef.current, rootMargin: '120px', threshold: 0 }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [hasMore, filtered.length]);
-
-  const handleFavorite = useCallback((id) => {
-    setFavoriteIds(toggleFavoriteId(id));
-  }, []);
-
-  const applyTheme = useCallback(
-    (theme) => {
-      onSelect(theme.id || theme._id);
-      setPreviewTheme(null);
-    },
-    [onSelect]
-  );
+  const applyTheme = (theme) => {
+    onSelect(theme.id || theme._id);
+    setPreviewTheme(null);
+  };
 
   if (loading) {
     return (
-      <div className="theme-gallery-loading">
-        <div className="theme-gallery-loading-pulse" />
-        <p className="text-sm text-slate-500">Loading theme gallery…</p>
-      </div>
+      <div className="py-12 text-center text-sm text-slate-500">Loading themes…</div>
     );
   }
 
   return (
-    <div className="theme-gallery-modern">
-      <div className="theme-gallery-toolbar">
-        <div className="relative flex-1">
-          <input
-            type="search"
-            className="input theme-gallery-search pl-9"
-            placeholder="Search themes…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search themes"
-          />
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">⌕</span>
-        </div>
-        <button
-          type="button"
-          className={`theme-gallery-fav-filter shrink-0 ${favoritesOnly ? 'theme-gallery-fav-filter-on' : ''}`}
-          onClick={() => setFavoritesOnly((v) => !v)}
-        >
-          ★ Favorites{favoriteIds.length ? ` (${favoriteIds.length})` : ''}
-        </button>
-      </div>
+    <div className="space-y-6">
+      <input
+        type="search"
+        className="input"
+        placeholder="Search themes…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        aria-label="Search themes"
+      />
 
-      <div className="theme-gallery-cats" role="tablist">
-        {GALLERY_CATEGORIES.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            role="tab"
-            aria-selected={category === c.id}
-            className={`theme-gallery-cat ${category === c.id ? 'theme-gallery-cat-active' : ''}`}
-            onClick={() => setCategory(c.id)}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      <p className="text-xs text-slate-500">
-        {filtered.length} theme{filtered.length !== 1 ? 's' : ''}
-        {selectedId ? ' · 1 selected' : ''}
-      </p>
-
-      {filtered.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          No themes match your search. Try another category or clear filters.
+          No themes match your search.
         </p>
       ) : (
-        <div ref={listRef} className="theme-gallery-scroll-y">
-          <div className="theme-gallery-grid">
-            {visible.map((t, i) => {
-              const tid = t.id || t._id;
-              return (
-                <ThemeLivePreviewCard
-                  key={tid}
-                  theme={t}
-                  index={i}
-                  selected={selectedId === tid}
-                  favorited={favoriteIds.includes(tid)}
-                  onOpen={() => setPreviewTheme(t)}
-                  onToggleFavorite={() => handleFavorite(tid)}
-                  onUseTheme={() => applyTheme(t)}
-                />
-              );
-            })}
-          </div>
-          {hasMore && (
-            <div ref={sentinelRef} className="theme-gallery-sentinel">
-              <span className="theme-gallery-sentinel-dot" />
-              <span className="text-xs text-slate-400">Loading more themes…</span>
+        groups.map((group) => (
+          <section key={group.id} className="space-y-3">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+              {THEME_CATEGORY_LABELS[group.id] || group.label}
+              <span className="ml-2 font-normal text-slate-400">({group.themes.length})</span>
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {group.themes.map((theme) => {
+                const tid = theme.id || theme._id;
+                return (
+                  <ThemeLivePreviewCard
+                    key={tid}
+                    theme={theme}
+                    selected={selectedId === tid}
+                    onOpen={() => setPreviewTheme(theme)}
+                    onUseTheme={() => applyTheme(theme)}
+                  />
+                );
+              })}
             </div>
-          )}
-        </div>
+          </section>
+        ))
+      )}
+
+      {selectedId && (
+        <p className="text-xs text-emerald-700">Theme selected — it will appear on your live watch page.</p>
       )}
 
       {previewTheme && (
