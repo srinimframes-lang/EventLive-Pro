@@ -1,10 +1,13 @@
 import { useMemo } from 'react';
 
-const PARTICLE_COUNTS = { petals: 18, 'gold-dust': 24, neon: 16, bubbles: 14, stars: 20, confetti: 22, bokeh: 12, leaves: 16, dust: 10, none: 0 };
+const PARTICLE_COUNTS = { petals: 12, 'gold-dust': 14, neon: 10, bubbles: 10, stars: 12, confetti: 12, bokeh: 8, leaves: 10, dust: 6, none: 0 };
 
-/** Floating particles + animated gradient orbs for premium themed pages. */
+/**
+ * Background-only effects — confined to the lower hero zone so particles
+ * never overlap couple names or hero text (z-index below content).
+ */
 export default function ThemeEffects({ particleStyle = 'bokeh', gradientFrom, gradientTo }) {
-  const count = PARTICLE_COUNTS[particleStyle] ?? 12;
+  const count = PARTICLE_COUNTS[particleStyle] ?? 8;
   const particles = useMemo(
     () =>
       Array.from({ length: count }, (_, i) => ({
@@ -13,7 +16,7 @@ export default function ThemeEffects({ particleStyle = 'bokeh', gradientFrom, gr
         delay: `${(i * 0.7) % 8}s`,
         duration: `${6 + (i % 5) * 1.4}s`,
         size: `${4 + (i % 6) * 2}px`,
-        opacity: 0.25 + (i % 4) * 0.12,
+        opacity: 0.15 + (i % 4) * 0.06,
       })),
     [count]
   );
@@ -24,14 +27,14 @@ export default function ThemeEffects({ particleStyle = 'bokeh', gradientFrom, gr
   const to = gradientTo || 'var(--theme-accent)';
 
   return (
-    <div className="theme-effects pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+    <div className="theme-effects pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[45%] overflow-hidden" aria-hidden>
       <div
         className="theme-gradient-orb theme-gradient-orb-a"
-        style={{ background: `radial-gradient(circle, color-mix(in srgb, ${from} 45%, transparent) 0%, transparent 70%)` }}
+        style={{ background: `radial-gradient(circle, color-mix(in srgb, ${from} 30%, transparent) 0%, transparent 70%)` }}
       />
       <div
         className="theme-gradient-orb theme-gradient-orb-b"
-        style={{ background: `radial-gradient(circle, color-mix(in srgb, ${to} 40%, transparent) 0%, transparent 70%)` }}
+        style={{ background: `radial-gradient(circle, color-mix(in srgb, ${to} 25%, transparent) 0%, transparent 70%)` }}
       />
       {particleStyle !== 'none' &&
         particles.map((p) => (

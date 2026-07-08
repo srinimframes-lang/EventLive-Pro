@@ -79,32 +79,82 @@
   .theme-bg-overlay {
     @apply absolute inset-0;
   }
-  .theme-bg-shimmer {
-    @apply absolute inset-0 opacity-30;
-    background: linear-gradient(
-      120deg,
-      transparent 0%,
-      color-mix(in srgb, var(--theme-accent) 25%, transparent) 50%,
-      transparent 100%
-    );
-    background-size: 200% 200%;
-    animation: theme-gradient-shift 10s ease infinite;
-  }
   .theme-glass-card {
-    @apply rounded-2xl border border-white/20 shadow-xl;
+    @apply rounded-2xl border shadow-lg;
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+  .theme-glass-card:not(.theme-glass-solid) {
     background: rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .theme-glass-solid {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   .theme-glass-dark {
-    background: rgba(15, 23, 42, 0.35);
     border-color: rgba(255, 255, 255, 0.12);
   }
+  /* ── Readable hero text (couple names, date, venue) ───────── */
+  .theme-hero-inner {
+    @apply relative z-10;
+  }
+  .theme-hero-content {
+    @apply relative;
+  }
+  .theme-hero-backdrop {
+    @apply rounded-2xl px-5 py-8 sm:px-8;
+  }
+  .themed-watch-hero-dark .theme-hero-backdrop {
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .themed-watch-hero-light .theme-hero-backdrop {
+    background: rgba(255, 255, 255, 0.9);
+  }
+  .theme-hero-title {
+    font-weight: 800;
+    text-shadow: none;
+    letter-spacing: -0.02em;
+    color: var(--theme-hero-readable);
+  }
+  .theme-hero-label {
+    color: var(--theme-hero-readable);
+    font-weight: 700;
+    text-shadow: none;
+  }
+  .theme-hero-meta {
+    color: var(--theme-hero-readable-muted);
+    text-shadow: none;
+  }
+  .themed-watch-hero-dark .theme-photographer-badge {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+  }
+  .themed-watch-hero-light .theme-photographer-badge {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(26, 26, 26, 0.12);
+    color: #1a1a1a;
+  }
+  .themed-watch-surface-dark .theme-glass-solid:not(.theme-photographer-badge) {
+    background: rgba(15, 23, 42, 0.9);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--theme-surface-readable);
+  }
+  .themed-watch-surface-light .theme-glass-solid:not(.theme-photographer-badge) {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(26, 26, 26, 0.1);
+    color: var(--theme-surface-readable);
+  }
+  .theme-readable-body {
+    color: var(--theme-surface-readable);
+  }
   .theme-gradient-orb {
-    @apply absolute rounded-full opacity-60;
-    width: min(55vw, 420px);
-    height: min(55vw, 420px);
-    filter: blur(48px);
+    @apply absolute rounded-full opacity-40;
+    width: min(45vw, 360px);
+    height: min(45vw, 360px);
+    filter: blur(20px);
   }
   .theme-gradient-orb-a {
     top: -8%;
@@ -155,8 +205,9 @@
     background: rgba(255, 255, 255, 0.35);
   }
   .theme-decor-neon {
-    text-shadow: 0 0 12px var(--theme-accent), 0 0 24px var(--theme-primary);
-    animation: theme-pulse-glow 2.5s ease-in-out infinite;
+    opacity: 0.45;
+    text-shadow: none;
+    animation: none;
   }
   .theme-couple-photo {
     animation: theme-float 6s ease-in-out infinite;
@@ -166,6 +217,14 @@
   }
   .theme-hero-title {
     animation: theme-fade-up 1s ease 0.15s both;
+  }
+  .theme-btn-readable-light-hero {
+    @apply rounded-full px-8 py-3 font-extrabold shadow-md;
+    background: #1a1a1a;
+    color: #ffffff;
+  }
+  .theme-btn-readable-light-hero:hover {
+    background: #333333;
   }
   .theme-animate-fade-up {
     animation: theme-fade-up 0.7s ease both;
@@ -186,10 +245,11 @@
     box-shadow: 0 8px 32px color-mix(in srgb, var(--theme-primary) 55%, transparent);
   }
   .theme-btn-glass {
-    @apply rounded-2xl px-8 py-3;
-    background: rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    @apply rounded-2xl px-8 py-3 font-extrabold;
+    background: rgba(255, 255, 255, 0.95);
+    color: #1a1a1a;
+    border: 1px solid rgba(26, 26, 26, 0.15);
+    backdrop-filter: none;
   }
   .theme-btn-glass:hover {
     background: rgba(255, 255, 255, 0.28);
@@ -200,20 +260,22 @@
     border: 1px solid color-mix(in srgb, var(--theme-accent) 60%, white);
   }
   .theme-btn-neon {
-    @apply rounded-xl px-8 py-3 uppercase tracking-wider;
-    background: transparent;
+    @apply rounded-xl px-8 py-3 font-extrabold uppercase tracking-wider;
+    background: var(--theme-primary);
+    color: #ffffff;
     border: 2px solid var(--theme-accent);
-    box-shadow: 0 0 16px var(--theme-accent), inset 0 0 12px color-mix(in srgb, var(--theme-accent) 30%, transparent);
-    text-shadow: 0 0 8px var(--theme-accent);
+    box-shadow: none;
+    text-shadow: none;
   }
   .theme-btn-neon:hover {
     background: color-mix(in srgb, var(--theme-accent) 15%, transparent);
   }
   .theme-btn-outline-glass {
-    @apply rounded-xl px-8 py-3;
-    background: transparent;
-    border: 2px solid rgba(255, 255, 255, 0.5);
-    backdrop-filter: blur(8px);
+    @apply rounded-xl px-8 py-3 font-extrabold;
+    background: #1a1a1a;
+    color: #ffffff;
+    border: 2px solid #1a1a1a;
+    backdrop-filter: none;
   }
   .theme-btn-outline-glass:hover {
     border-color: var(--theme-accent);
@@ -258,7 +320,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .theme-bg-image,
-  .theme-bg-shimmer,
   .theme-gradient-orb,
   .theme-particle,
   .theme-couple-photo,

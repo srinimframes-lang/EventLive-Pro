@@ -123,7 +123,7 @@ export default function Watch() {
           ← Event details
         </Link>
         {event.photographerName && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             {event.photographerLogo && (
               <img
                 src={resolveMediaUrl(event.photographerLogo)}
@@ -132,14 +132,14 @@ export default function Watch() {
               />
             )}
             <span>
-              Captured by <span className="font-semibold text-slate-700">{event.photographerName}</span>
+              Captured by <span className="font-extrabold">{event.photographerName}</span>
             </span>
           </div>
         )}
       </div>
 
       {(coupleTitle || event.coverImage) && (
-        <div className="relative mt-3 overflow-hidden rounded-2xl text-center text-white shadow-lg">
+        <div className="relative mt-3 overflow-hidden rounded-2xl text-center shadow-lg">
           {event.coverImage && (
             <img
               src={resolveMediaUrl(event.coverImage)}
@@ -148,19 +148,19 @@ export default function Watch() {
             />
           )}
           <div
-            className={`relative px-4 py-8 sm:py-12 ${
+            className={`relative px-4 py-10 sm:py-14 ${
               event.coverImage
-                ? 'bg-gradient-to-t from-black/80 via-black/40 to-black/30'
+                ? 'bg-black/60'
                 : 'bg-gradient-to-r from-brand-600 to-brand-800'
             }`}
           >
-            <p className="text-xs uppercase tracking-[0.3em] text-brand-100">
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/90">
               {event.category === 'concert' ? 'Live' : 'Wedding Live'}
             </p>
-            <h1 className="mt-1 font-serif text-3xl font-extrabold drop-shadow sm:text-5xl">
+            <h1 className="mt-2 text-[2rem] font-extrabold leading-tight text-white sm:text-5xl">
               {coupleTitle || event.title}
             </h1>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-brand-50/90">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-base font-bold text-white/90">
               {event.startTime && <span>{formatDateTime(event.startTime)}</span>}
               {event.venue && (
                 <span className="flex items-center gap-1">

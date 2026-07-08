@@ -7,9 +7,18 @@ const STYLES = {
   sharp: 'theme-btn-sharp',
 };
 
-/** Premium CTA button with per-theme style variant. */
-export default function PremiumButton({ buttonStyle = 'pill-glow', children, className = '', as: Tag = 'button', ...props }) {
-  const variant = STYLES[buttonStyle] || STYLES['pill-glow'];
+/** Premium CTA button with per-theme style variant and readable contrast. */
+export default function PremiumButton({
+  buttonStyle = 'pill-glow',
+  children,
+  className = '',
+  heroIsDark = true,
+  as: Tag = 'button',
+  ...props
+}) {
+  const variant = heroIsDark
+    ? (STYLES[buttonStyle] || STYLES['pill-glow'])
+    : 'theme-btn-readable-light-hero';
   return (
     <Tag className={`theme-premium-btn ${variant} ${className}`} {...props}>
       {children}
