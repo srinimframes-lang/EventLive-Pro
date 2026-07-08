@@ -4,6 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
+import PhotographyStudio from '../components/PhotographyStudio.jsx';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 
 export default function EventDetail() {
@@ -139,21 +140,7 @@ export default function EventDetail() {
         </Link>
       )}
 
-      {event.photographerName && (
-        <div className="mt-6 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-          {event.photographerLogo && (
-            <img
-              src={resolveMediaUrl(event.photographerLogo)}
-              alt={event.photographerName}
-              className="h-12 w-12 rounded-lg object-contain"
-            />
-          )}
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Photography</p>
-            <p className="font-semibold text-slate-800">{event.photographerName}</p>
-          </div>
-        </div>
-      )}
+      <PhotographyStudio event={event} />
 
       <div className="card mt-6">
         <h2 className="text-lg font-bold text-slate-900">About this event</h2>

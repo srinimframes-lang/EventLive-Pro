@@ -21,6 +21,19 @@ export const THEME_CATEGORIES = [
 
 export const THEME_REGIONS = ['telangana', 'andhra', 'tamil_nadu', 'kerala'];
 
+export const THEME_LAYOUT_VARIANTS = [
+  'royal-palace',
+  'luxury-gold',
+  'floral-garden',
+  'south-indian-traditional',
+  'modern-minimal',
+  'sunset-romance',
+  'emerald-wedding',
+  'vintage-classic',
+  'crystal-wedding',
+  'night-sky-wedding',
+];
+
 export const THEME_REGION_LABELS = {
   telangana: 'Telangana',
   andhra: 'Andhra Pradesh',
@@ -99,6 +112,12 @@ const themeSchema = new Schema(
     },
     description: { type: String, default: '', trim: true, maxlength: 300 },
     backgroundImage: { type: String, default: '', trim: true },
+    layoutVariant: {
+      type: String,
+      enum: THEME_LAYOUT_VARIANTS,
+      default: 'royal-palace',
+      index: true,
+    },
     colors: { type: colorSchema, default: () => ({}) },
     fonts: { type: fontSchema, default: () => ({}) },
     style: { type: styleSchema, default: () => ({}) },
@@ -126,6 +145,7 @@ themeSchema.methods.toSnapshot = function toSnapshot() {
     category: this.category,
     region: this.region || '',
     backgroundImage: this.backgroundImage,
+    layoutVariant: this.layoutVariant || 'royal-palace',
     colors: { ...this.colors?.toObject?.() || this.colors },
     fonts: { ...this.fonts?.toObject?.() || this.fonts },
     style: { ...this.style?.toObject?.() || this.style },

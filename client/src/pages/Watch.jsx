@@ -14,6 +14,7 @@ import PhotoGallery from '../components/PhotoGallery.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
 import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
+import PhotographyStudio from '../components/PhotographyStudio.jsx';
 
 export default function Watch() {
   const { idOrSlug } = useParams();
@@ -233,6 +234,8 @@ export default function Watch() {
         </div>
         <PhotoGallery photos={event.gallery || []} />
       </section>
+
+      <PhotographyStudio event={event} />
     </div>
   );
 }

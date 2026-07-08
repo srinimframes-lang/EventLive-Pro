@@ -309,6 +309,72 @@
   .player-overlay-subtitle {
     @apply text-sm font-medium leading-relaxed text-white/85;
   }
+
+  /* ── Photography studio section ───────────────────────────── */
+  .studio-card,
+  .studio-card-themed .studio-card-inner {
+    @apply rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-lg sm:p-7;
+  }
+  .themed-watch-surface-dark .studio-card-themed .studio-card-inner {
+    @apply border-white/10 bg-slate-900/90 text-white;
+  }
+  .studio-card-inner {
+    @apply flex flex-col gap-5;
+  }
+  .studio-card-header {
+    @apply flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left;
+  }
+  .studio-logo {
+    @apply h-20 w-20 shrink-0 rounded-xl border border-slate-200/80 bg-white object-contain p-2 shadow-sm sm:h-24 sm:w-24;
+  }
+  .studio-name {
+    @apply text-xl font-extrabold leading-tight text-slate-900 sm:text-2xl;
+  }
+  .themed-watch-surface-dark .studio-name {
+    color: var(--theme-surface-readable);
+  }
+  .studio-photographer {
+    @apply mt-1 text-base font-semibold text-slate-600;
+  }
+  .themed-watch-surface-dark .studio-photographer {
+    color: var(--theme-surface-readable-muted);
+  }
+  .studio-details {
+    @apply grid gap-2 text-sm sm:grid-cols-2;
+  }
+  .studio-details p {
+    @apply flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2;
+  }
+  .studio-detail-label {
+    @apply shrink-0 text-xs font-bold uppercase tracking-wide text-slate-400;
+  }
+  .studio-detail-link {
+    @apply font-semibold text-brand-700 hover:underline;
+  }
+  .themed-watch-surface-dark .studio-detail-link {
+    color: var(--theme-accent);
+  }
+  .studio-social-row {
+    @apply flex flex-wrap items-center justify-center gap-3 border-t border-slate-200/80 pt-4 sm:justify-start;
+  }
+  .themed-watch-surface-dark .studio-social-row {
+    @apply border-white/10;
+  }
+  .studio-social-icon {
+    @apply grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-700 shadow-sm transition hover:bg-brand-50 hover:text-brand-700;
+  }
+  .themed-watch-surface-dark .studio-social-icon {
+    @apply bg-white/10 text-white hover:bg-white/20;
+  }
+  .studio-actions {
+    @apply grid grid-cols-2 gap-2 sm:grid-cols-3;
+  }
+  .studio-action-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800;
+  }
+  .themed-watch-surface-dark .studio-action-btn {
+    @apply border-white/15 bg-white/10 text-white hover:bg-white/20;
+  }
 }
 
 @keyframes theme-gradient-shift {
@@ -581,4 +647,156 @@
 @keyframes theme-gallery-shimmer {
   0%, 100% { background-position: 200% 0; }
   50% { background-position: -200% 0; }
+}
+
+/* ── Premium layout variants ───────────────────────────────── */
+.layout-royal-frame {
+  @apply rounded-lg border-4 p-2 shadow-2xl;
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--theme-accent) 35%, transparent);
+}
+.layout-royal-photo {
+  @apply rounded-md;
+}
+.layout-royal-crown {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+}
+.layout-luxury-player {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.layout-floral-photo {
+  box-shadow: 0 8px 24px rgba(219, 39, 119, 0.2);
+}
+.layout-temple-arch {
+  @apply rounded-t-[3rem] border-x-4 border-t-4;
+  border-color: color-mix(in srgb, var(--theme-accent) 80%, transparent);
+}
+.layout-sunset-wave {
+  @apply absolute bottom-0 left-0 right-0 h-12;
+  background: var(--theme-surface);
+  clip-path: ellipse(80% 100% at 50% 100%);
+}
+.layout-emerald-invite {
+  background-image: linear-gradient(135deg, #fff 0%, #ecfdf5 100%);
+}
+.layout-vintage-paper {
+  @apply rounded-sm border border-amber-200/80 shadow-inner;
+  background: linear-gradient(180deg, #faf5f0 0%, #f5efe6 100%);
+}
+.layout-vintage-letter {
+  @apply rounded border-2 border-dashed border-amber-300/60 bg-amber-50/50;
+}
+.layout-crystal-glass {
+  @apply border border-white/40 bg-white/30 shadow-xl;
+  box-shadow: 0 8px 32px rgba(148, 163, 184, 0.25);
+}
+.layout-night-stars {
+  background-image:
+    radial-gradient(2px 2px at 20% 30%, white, transparent),
+    radial-gradient(2px 2px at 60% 70%, white, transparent),
+    radial-gradient(1px 1px at 50% 50%, white, transparent),
+    radial-gradient(1px 1px at 80% 10%, white, transparent);
+  background-size: 200% 200%;
+  animation: layout-stars-drift 60s linear infinite;
+}
+.layout-night-glow {
+  background: linear-gradient(135deg, var(--theme-accent), transparent);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--theme-accent) 40%, transparent);
+}
+@keyframes layout-stars-drift {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+/* ── Themed gallery variants ───────────────────────────────── */
+.gallery-default {
+  @apply grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4;
+}
+.gallery-default .gallery-item {
+  @apply aspect-square rounded-xl;
+}
+.gallery-masonry-gold {
+  @apply columns-2 gap-3 sm:columns-3;
+}
+.gallery-masonry-gold .gallery-item {
+  @apply mb-3 break-inside-avoid rounded-lg border-2;
+  border-color: var(--theme-accent);
+}
+.gallery-horizontal {
+  @apply flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory;
+}
+.gallery-horizontal .gallery-item {
+  @apply aspect-[4/5] w-48 shrink-0 snap-center rounded-xl;
+}
+.gallery-polaroid .gallery-item {
+  @apply rounded-sm bg-white p-2 pb-8 shadow-lg;
+  transform: rotate(var(--rot, 0deg));
+}
+.gallery-polaroid {
+  @apply grid grid-cols-2 gap-4 sm:grid-cols-3;
+}
+.gallery-polaroid .gallery-item:nth-child(3n+1) { --rot: -2deg; }
+.gallery-polaroid .gallery-item:nth-child(3n+2) { --rot: 1deg; }
+.gallery-polaroid .gallery-item:nth-child(3n) { --rot: -1deg; }
+.gallery-temple-tiles {
+  @apply grid grid-cols-1 gap-4 sm:grid-cols-2;
+}
+.gallery-temple-tiles .gallery-item {
+  @apply aspect-[16/10] rounded-lg border-4;
+  border-color: var(--theme-accent);
+}
+.gallery-minimal {
+  @apply flex flex-col gap-1;
+}
+.gallery-minimal .gallery-item {
+  @apply aspect-[21/9] w-full rounded-none;
+}
+.gallery-circles {
+  @apply grid grid-cols-2 gap-4 sm:grid-cols-3;
+}
+.gallery-circles .gallery-item {
+  @apply aspect-square rounded-full border-4 border-orange-200 shadow-lg;
+}
+.gallery-invitation {
+  @apply grid grid-cols-2 gap-3 sm:grid-cols-3;
+}
+.gallery-invitation .gallery-item {
+  @apply aspect-square rounded-lg border-2 border-emerald-700/30 shadow-md;
+}
+.gallery-vintage {
+  @apply grid grid-cols-1 gap-6 sm:grid-cols-2;
+}
+.gallery-vintage .gallery-item {
+  @apply aspect-[4/3] rounded-sm border-8 border-amber-100 sepia;
+}
+.gallery-bento {
+  @apply grid grid-cols-2 gap-2 sm:grid-cols-4 sm:grid-rows-2;
+}
+.gallery-bento .gallery-item:nth-child(1) {
+  @apply col-span-2 row-span-2 aspect-square rounded-2xl;
+}
+.gallery-bento .gallery-item {
+  @apply aspect-square rounded-xl backdrop-blur-sm bg-white/20;
+}
+.gallery-constellation {
+  @apply grid grid-cols-2 gap-3 sm:grid-cols-3;
+}
+.gallery-constellation .gallery-item {
+  @apply aspect-square rounded-xl ring-1 ring-amber-300/30;
+}
+.gallery-img {
+  @apply transition duration-300 group-hover:scale-105;
+}
+.gallery-caption {
+  @apply pointer-events-none absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 text-xs text-white;
+}
+.gallery-empty {
+  border-color: color-mix(in srgb, var(--theme-primary) 25%, transparent);
+  color: var(--theme-surface-readable-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout-night-stars {
+    animation: none;
+  }
 }

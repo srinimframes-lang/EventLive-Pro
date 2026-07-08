@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { themeService } from '../../services/theme.service.js';
 import { THEME_CATEGORY_LABELS, THEME_CATEGORIES, THEME_REGION_LABELS, THEME_REGIONS } from '../../utils/eventTheme.js';
+import { LAYOUT_LABELS, LAYOUT_VARIANTS } from '../../utils/themeLayouts.js';
 import { resolveMediaUrl } from '../../utils/format.js';
 import ThemePreviewModal from './ThemePreviewModal.jsx';
 import AdminThemeDragList from './AdminThemeDragList.jsx';
@@ -11,6 +12,7 @@ const EMPTY = {
   region: '',
   description: '',
   backgroundImage: '',
+  layoutVariant: 'royal-palace',
   heroLabel: 'Live',
   footerText: '',
   isPremium: true,
@@ -52,6 +54,9 @@ export default function AdminThemes() {
   const [form, setForm] = useState(EMPTY);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploadingBackground, setUploadingBackground] = useState(false);
+  const backgroundInputRef = useRef(null);
+  const pendingBackgroundRef = useRef(null);
 
   const flash = (m) => {
     setNotice(m);
@@ -81,11 +86,13 @@ export default function AdminThemes() {
   }, [themes]);
 
   const startCreate = () => {
+    pendingBackgroundRef.current = null;
     setEditing('new');
     setForm({ ...EMPTY, category: filter || 'wedding' });
   };
 
   const startEdit = (t) => {
+    pendingBackgroundRef.current = null;
     setEditing(t.id);
     setForm({
       name: t.name,
@@ -93,6 +100,7 @@ export default function AdminThemes() {
       region: t.region || '',
       description: t.description || '',
       backgroundImage: t.backgroundImage || '',
+      layoutVariant: t.layoutVariant || 'royal-palace',
       heroLabel: t.heroLabel || 'Live',
       footerText: t.footerText || '',
       isPremium: t.isPremium !== false,
@@ -109,11 +117,20 @@ export default function AdminThemes() {
     setBusy(true);
     setError('');
     try {
+      const { backgroundImage: _bg, ...payload } = form;
       if (editing === 'new') {
-        await themeService.create(form);
+        const created = await themeService.create(payload);
+        if (pendingBackgroundRef.current) {
+          const data = await themeService.uploadBackground(
+            created.id,
+            pendingBackgroundRef.current
+          );
+          pendingBackgroundRef.current = null;
+          setForm((f) => ({ ...f, backgroundImage: data.backgroundImage }));
+        }
         flash('Theme created');
       } else {
-        await themeService.update(editing, form);
+        await themeService.update(editing, payload);
         flash('Theme updated');
       }
       setEditing(null);
@@ -154,8 +171,17 @@ export default function AdminThemes() {
 
   const uploadBg = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || editing === 'new' || !editing) return;
-    setBusy(true);
+    if (!file) return;
+
+    if (editing === 'new' || !editing) {
+      pendingBackgroundRef.current = file;
+      setForm((f) => ({ ...f, backgroundImage: URL.createObjectURL(file) }));
+      if (backgroundInputRef.current) backgroundInputRef.current.value = '';
+      return;
+    }
+
+    setUploadingBackground(true);
+    setError('');
     try {
       const data = await themeService.uploadBackground(editing, file);
       setForm((f) => ({ ...f, backgroundImage: data.backgroundImage }));
@@ -163,8 +189,8 @@ export default function AdminThemes() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusy(false);
-      e.target.value = '';
+      setUploadingBackground(false);
+      if (backgroundInputRef.current) backgroundInputRef.current.value = '';
     }
   };
 
@@ -232,24 +258,57 @@ export default function AdminThemes() {
               ))}
             </select>
           </Field>
+          <Field label="Layout design">
+            <select
+              className="input"
+              value={form.layoutVariant}
+              onChange={(e) => setForm((f) => ({ ...f, layoutVariant: e.target.value }))}
+            >
+              {LAYOUT_VARIANTS.map((v) => (
+                <option key={v} value={v}>
+                  {LAYOUT_LABELS[v]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">Each layout is a unique page structure — not just colors.</p>
+          </Field>
           <Field label="Hero label">
             <input className="input" value={form.heroLabel} onChange={(e) => setForm((f) => ({ ...f, heroLabel: e.target.value }))} />
           </Field>
-          <Field label="Background image URL">
-            <input className="input" value={form.backgroundImage} onChange={(e) => setForm((f) => ({ ...f, backgroundImage: e.target.value }))} />
-            {form.backgroundImage && (
-              <img
-                src={resolveMediaUrl(form.backgroundImage)}
-                alt="Background preview"
-                className="mt-2 h-24 w-full rounded-lg border border-slate-200 object-cover"
-              />
-            )}
-          </Field>
-          {editing !== 'new' && (
-            <Field label="Upload background">
-              <input type="file" accept="image/*" className="input text-sm" onChange={uploadBg} disabled={busy} />
+          <div className="sm:col-span-2">
+            <Field label="Background image">
+              <div className="flex flex-wrap items-start gap-4">
+                {form.backgroundImage ? (
+                  <img
+                    src={resolveMediaUrl(form.backgroundImage)}
+                    alt="Background preview"
+                    className="h-28 w-44 rounded-lg border border-slate-200 object-cover"
+                  />
+                ) : (
+                  <div className="grid h-28 w-44 place-items-center rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400">
+                    No image
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <input
+                    ref={backgroundInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={uploadBg}
+                    disabled={uploadingBackground || busy}
+                    className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    {uploadingBackground
+                      ? 'Uploading…'
+                      : editing === 'new'
+                        ? 'Select an image — it uploads when you save the theme.'
+                        : 'JPG, PNG, or WebP up to 8 MB. Saved to cloud or local storage.'}
+                  </p>
+                </div>
+              </div>
             </Field>
-          )}
+          </div>
           <div className="sm:col-span-2">
             <Field label="Description">
               <textarea className="input" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />

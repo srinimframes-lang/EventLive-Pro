@@ -28,8 +28,17 @@ const EMPTY = {
   tags: '',
   brideName: '',
   groomName: '',
+  studioName: '',
   photographerName: '',
   photographerLogo: '',
+  studioPhone: '',
+  studioWhatsapp: '',
+  studioEmail: '',
+  studioWebsite: '',
+  studioInstagram: '',
+  studioFacebook: '',
+  studioYoutube: '',
+  studioMapsUrl: '',
   coverImage: '',
   theme: '',
 };
@@ -88,8 +97,17 @@ export default function EventForm() {
           tags: (event.tags || []).join(', '),
           brideName: event.brideName || '',
           groomName: event.groomName || '',
+          studioName: event.studioName || '',
           photographerName: event.photographerName || '',
           photographerLogo: event.photographerLogo || '',
+          studioPhone: event.studioPhone || '',
+          studioWhatsapp: event.studioWhatsapp || '',
+          studioEmail: event.studioEmail || '',
+          studioWebsite: event.studioWebsite || '',
+          studioInstagram: event.studioInstagram || '',
+          studioFacebook: event.studioFacebook || '',
+          studioYoutube: event.studioYoutube || '',
+          studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
           theme: event.theme?.id || event.theme || '',
         });
@@ -191,7 +209,16 @@ export default function EventForm() {
         : [],
       brideName: form.brideName,
       groomName: form.groomName,
+      studioName: form.studioName,
       photographerName: form.photographerName,
+      studioPhone: form.studioPhone,
+      studioWhatsapp: form.studioWhatsapp,
+      studioEmail: form.studioEmail,
+      studioWebsite: form.studioWebsite,
+      studioInstagram: form.studioInstagram,
+      studioFacebook: form.studioFacebook,
+      studioYoutube: form.studioYoutube,
+      studioMapsUrl: form.studioMapsUrl,
       streamUrl: form.isOnline ? form.youtubeUrl : '',
       youtubeVideoId,
       streamProvider: youtubeVideoId ? 'youtube' : 'none',
@@ -355,7 +382,7 @@ export default function EventForm() {
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
           title="Choose a theme"
-          subtitle="20 curated themes grouped by event type. Pick one for your live watch page."
+          subtitle="10 premium layout themes — each is a unique wedding website design."
         >
           <ThemeGallery
             themes={allThemes}
@@ -459,19 +486,42 @@ export default function EventForm() {
         </Section>
 
         {/* ── Photography branding ───────────────────────────── */}
-        <Section title="Photography branding" subtitle="Optional studio credit & logo.">
-          <Field label="Photographer / studio name" htmlFor="photographerName">
-            <input id="photographerName" name="photographerName" className="input" maxLength={120}
-              placeholder="e.g. Moments by Studio X" value={form.photographerName} onChange={handleChange} />
-          </Field>
+        <Section
+          title="Photography studio"
+          subtitle="Shown on the public watch page as a “Captured by” section. Each event can have its own studio branding."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Studio name" htmlFor="studioName">
+              <input
+                id="studioName"
+                name="studioName"
+                className="input"
+                maxLength={120}
+                placeholder="e.g. Moments Studio"
+                value={form.studioName}
+                onChange={handleChange}
+              />
+            </Field>
+            <Field label="Photographer name" htmlFor="photographerName">
+              <input
+                id="photographerName"
+                name="photographerName"
+                className="input"
+                maxLength={120}
+                placeholder="e.g. Rahul Sharma"
+                value={form.photographerName}
+                onChange={handleChange}
+              />
+            </Field>
+          </div>
 
           <div>
-            <span className="mb-1 block text-sm font-medium text-slate-700">Logo</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Studio logo</span>
             <div className="flex flex-wrap items-center gap-4">
               {form.photographerLogo ? (
                 <img
                   src={resolveMediaUrl(form.photographerLogo)}
-                  alt="Photography logo"
+                  alt="Studio logo"
                   className="h-16 w-16 rounded-lg border border-slate-200 object-contain p-1"
                 />
               ) : (
@@ -497,6 +547,112 @@ export default function EventForm() {
                 </p>
               </div>
             </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Phone number" htmlFor="studioPhone">
+              <input
+                id="studioPhone"
+                name="studioPhone"
+                type="tel"
+                className="input"
+                maxLength={30}
+                placeholder="+91 98765 43210"
+                value={form.studioPhone}
+                onChange={handleChange}
+              />
+            </Field>
+            <Field label="WhatsApp number" htmlFor="studioWhatsapp">
+              <input
+                id="studioWhatsapp"
+                name="studioWhatsapp"
+                type="tel"
+                className="input"
+                maxLength={30}
+                placeholder="+91 98765 43210"
+                value={form.studioWhatsapp}
+                onChange={handleChange}
+              />
+            </Field>
+          </div>
+
+          <Field label="Email (optional)" htmlFor="studioEmail">
+            <input
+              id="studioEmail"
+              name="studioEmail"
+              type="email"
+              className="input"
+              maxLength={120}
+              placeholder="hello@studio.com"
+              value={form.studioEmail}
+              onChange={handleChange}
+            />
+          </Field>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Website URL" htmlFor="studioWebsite" hint="Full URL or domain, e.g. momentsstudio.com">
+              <input
+                id="studioWebsite"
+                name="studioWebsite"
+                type="url"
+                className="input"
+                maxLength={300}
+                placeholder="https://momentsstudio.com"
+                value={form.studioWebsite}
+                onChange={handleChange}
+              />
+            </Field>
+            <Field label="Google Maps URL" htmlFor="studioMapsUrl">
+              <input
+                id="studioMapsUrl"
+                name="studioMapsUrl"
+                type="url"
+                className="input"
+                maxLength={500}
+                placeholder="https://maps.google.com/…"
+                value={form.studioMapsUrl}
+                onChange={handleChange}
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Instagram URL" htmlFor="studioInstagram">
+              <input
+                id="studioInstagram"
+                name="studioInstagram"
+                type="url"
+                className="input"
+                maxLength={300}
+                placeholder="https://instagram.com/…"
+                value={form.studioInstagram}
+                onChange={handleChange}
+              />
+            </Field>
+            <Field label="Facebook URL" htmlFor="studioFacebook">
+              <input
+                id="studioFacebook"
+                name="studioFacebook"
+                type="url"
+                className="input"
+                maxLength={300}
+                placeholder="https://facebook.com/…"
+                value={form.studioFacebook}
+                onChange={handleChange}
+              />
+            </Field>
+            <Field label="YouTube URL" htmlFor="studioYoutube">
+              <input
+                id="studioYoutube"
+                name="studioYoutube"
+                type="url"
+                className="input"
+                maxLength={300}
+                placeholder="https://youtube.com/@…"
+                value={form.studioYoutube}
+                onChange={handleChange}
+              />
+            </Field>
           </div>
         </Section>
 

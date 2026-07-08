@@ -5,6 +5,7 @@ import { Question } from '../models/Question.js';
 import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { assertCanManageEvent } from '../utils/ownership.js';
+import { extractYouTubeId } from '../utils/youtube.js';
 
 async function findEventOr404(id, res, { withKey = false } = {}) {
   const query = Event.findById(id);
@@ -34,16 +35,22 @@ function derivePlaybackUrl(event) {
  * Public-safe view of an event's streaming configuration (no secret key).
  */
 function publicStreamConfig(event) {
-  const isServer = event.streamProvider === 'rtmp' || event.streamProvider === 'hls';
+  const youtubeVideoId =
+    extractYouTubeId(event.youtubeVideoId) || extractYouTubeId(event.streamUrl) || '';
+  const provider =
+    event.streamProvider === 'youtube' || youtubeVideoId ? 'youtube' : event.streamProvider;
+  const isServer = provider === 'rtmp' || provider === 'hls';
+
   return {
     eventId: event.id,
-    provider: event.streamProvider,
-    youtubeVideoId: event.youtubeVideoId,
+    provider,
+    youtubeVideoId,
+    streamUrl: event.streamUrl || '',
     hlsUrl: event.hlsUrl,
-    // Playback URL the HLS player should use for private-server streams.
     playbackUrl: isServer ? derivePlaybackUrl(event) : event.hlsUrl,
     webrtcUrl: event.webrtcUrl,
     poster: event.coverImage || '',
+    // Server isLive applies to RTMP/HLS; YouTube player ignores this flag.
     isLive: event.isLive,
     streamDisabled: event.streamDisabled,
     autoRecord: event.autoRecord,
@@ -84,7 +91,12 @@ export const updateStreamConfig = asyncHandler(async (req, res) => {
 
   const fields = ['streamProvider', 'youtubeVideoId', 'hlsUrl', 'webrtcUrl'];
   for (const field of fields) {
-    if (req.body[field] !== undefined) event[field] = req.body[field];
+    if (req.body[field] !== undefined) {
+      event[field] =
+        field === 'youtubeVideoId'
+          ? extractYouTubeId(req.body[field]) || String(req.body[field] || '').trim()
+          : req.body[field];
+    }
   }
   if (req.body.autoRecord !== undefined) event.autoRecord = Boolean(req.body.autoRecord);
   await event.save();

@@ -1,4 +1,5 @@
 import { resolveMediaUrl } from '../../utils/format.js';
+import { LAYOUT_LABELS } from '../../utils/themeLayouts.js';
 
 /** Image-first theme card for the simplified gallery. */
 export default function ThemeLivePreviewCard({ theme, selected, onOpen, onUseTheme }) {
@@ -41,6 +42,11 @@ export default function ThemeLivePreviewCard({ theme, selected, onOpen, onUseThe
         </div>
         <div className="px-3 py-2">
           <h4 className="truncate text-sm font-semibold text-slate-900">{theme.name}</h4>
+          {theme.layoutVariant && (
+            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-600">
+              {LAYOUT_LABELS[theme.layoutVariant] || theme.layoutVariant}
+            </p>
+          )}
           {theme.description && (
             <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{theme.description}</p>
           )}

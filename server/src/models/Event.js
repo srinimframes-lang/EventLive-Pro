@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { extractYouTubeId } from '../utils/youtube.js';
 
 const { Schema, model } = mongoose;
 
@@ -154,8 +155,17 @@ const eventSchema = new Schema(
     groomName: { type: String, trim: true, default: '', maxlength: 80 },
 
     // ── Photography branding ──────────────────────────────────
+    studioName: { type: String, trim: true, default: '', maxlength: 120 },
     photographerName: { type: String, trim: true, default: '', maxlength: 120 },
     photographerLogo: { type: String, trim: true, default: '' },
+    studioPhone: { type: String, trim: true, default: '', maxlength: 30 },
+    studioWhatsapp: { type: String, trim: true, default: '', maxlength: 30 },
+    studioEmail: { type: String, trim: true, default: '', maxlength: 120 },
+    studioWebsite: { type: String, trim: true, default: '', maxlength: 300 },
+    studioInstagram: { type: String, trim: true, default: '', maxlength: 300 },
+    studioFacebook: { type: String, trim: true, default: '', maxlength: 300 },
+    studioYoutube: { type: String, trim: true, default: '', maxlength: 300 },
+    studioMapsUrl: { type: String, trim: true, default: '', maxlength: 500 },
 
     // ── Photo gallery ─────────────────────────────────────────
     gallery: {
@@ -215,6 +225,7 @@ const eventSchema = new Schema(
       category: { type: String, default: '' },
       region: { type: String, default: '' },
       backgroundImage: { type: String, default: '' },
+      layoutVariant: { type: String, default: 'royal-palace' },
       colors: {
         primary: { type: String, default: '' },
         secondary: { type: String, default: '' },
@@ -299,6 +310,16 @@ eventSchema.pre('validate', async function ensureSlugAndShortCode() {
 
   if (!this.shortCode) {
     this.shortCode = await this.constructor.generateUniqueShortCode(this);
+  }
+});
+
+// Keep YouTube fields in sync when only streamUrl was saved.
+eventSchema.pre('save', function syncYoutubeFromStreamUrl() {
+  const id = extractYouTubeId(this.youtubeVideoId) || extractYouTubeId(this.streamUrl) || '';
+  if (!id) return;
+  this.youtubeVideoId = id;
+  if (!this.streamProvider || this.streamProvider === 'none') {
+    this.streamProvider = 'youtube';
   }
 });
 

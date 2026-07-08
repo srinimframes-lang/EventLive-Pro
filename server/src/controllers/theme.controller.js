@@ -1,4 +1,4 @@
-import { Theme, THEME_CATEGORIES, THEME_REGIONS } from '../models/Theme.js';
+import { Theme, THEME_CATEGORIES, THEME_REGIONS, THEME_LAYOUT_VARIANTS } from '../models/Theme.js';
 import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
@@ -118,7 +118,11 @@ export const createTheme = asyncHandler(async (req, res) => {
     category: b.category,
     region: b.region && THEME_REGIONS.includes(b.region) ? b.region : undefined,
     description: b.description || '',
-    backgroundImage: b.backgroundImage || '',
+    backgroundImage: '',
+    layoutVariant:
+      b.layoutVariant && THEME_LAYOUT_VARIANTS.includes(b.layoutVariant)
+        ? b.layoutVariant
+        : 'royal-palace',
     colors: b.colors || {},
     fonts: b.fonts || {},
     style: b.style || {},
@@ -143,7 +147,7 @@ export const updateTheme = asyncHandler(async (req, res) => {
     throw new Error('Theme not found');
   }
   const b = req.body || {};
-  const top = ['name', 'category', 'region', 'description', 'backgroundImage', 'heroLabel', 'footerText', 'isPremium', 'isActive', 'sortOrder'];
+  const top = ['name', 'category', 'region', 'description', 'layoutVariant', 'heroLabel', 'footerText', 'isPremium', 'isActive', 'sortOrder'];
   for (const key of top) {
     if (b[key] !== undefined) theme[key] = b[key];
   }
@@ -223,6 +227,7 @@ export const duplicateTheme = asyncHandler(async (req, res) => {
     region: source.region,
     description: source.description,
     backgroundImage: source.backgroundImage,
+    layoutVariant: source.layoutVariant || 'royal-palace',
     colors: source.colors?.toObject?.() || source.colors,
     fonts: source.fonts?.toObject?.() || source.fonts,
     style: source.style?.toObject?.() || source.style,

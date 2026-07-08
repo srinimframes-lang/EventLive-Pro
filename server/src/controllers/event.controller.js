@@ -6,6 +6,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
 import { linkCost } from '../config/credits.js';
 import { snapshotTheme } from '../controllers/theme.controller.js';
+import { extractYouTubeId } from '../utils/youtube.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -23,8 +24,17 @@ const EDITABLE_FIELDS = [
   'tags',
   'brideName',
   'groomName',
+  'studioName',
   'photographerName',
   'photographerLogo',
+  'studioPhone',
+  'studioWhatsapp',
+  'studioEmail',
+  'studioWebsite',
+  'studioInstagram',
+  'studioFacebook',
+  'studioYoutube',
+  'studioMapsUrl',
   'streamProvider',
   'youtubeVideoId',
   'hlsUrl',
@@ -43,6 +53,7 @@ async function applyThemeSelection(target, themeId, res) {
       category: '',
       region: '',
       backgroundImage: '',
+      layoutVariant: 'royal-palace',
       heroLabel: '',
       footerText: '',
       isPremium: false,
@@ -180,6 +191,9 @@ export const createEvent = asyncHandler(async (req, res) => {
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
+  if (payload.youtubeVideoId !== undefined) {
+    payload.youtubeVideoId = extractYouTubeId(payload.youtubeVideoId) || String(payload.youtubeVideoId || '').trim();
+  }
   payload.createdByRole = role;
   const themeId = req.body.theme ?? payload.theme;
   await applyThemeSelection(payload, themeId, res);
@@ -252,6 +266,9 @@ export const updateEvent = asyncHandler(async (req, res) => {
 
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) event[field] = req.body[field];
+  }
+  if (req.body.youtubeVideoId !== undefined) {
+    event.youtubeVideoId = extractYouTubeId(event.youtubeVideoId) || String(event.youtubeVideoId || '').trim();
   }
   if (req.body.theme !== undefined) {
     await applyThemeSelection(event, req.body.theme, res);
