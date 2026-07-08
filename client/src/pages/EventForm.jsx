@@ -7,6 +7,7 @@ import {
 } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
+import { normalizeStudioForm, studioWhatsappError } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 
@@ -189,6 +190,12 @@ export default function EventForm() {
       setError('Please select a professional theme for your live page.');
       return;
     }
+    const studioForm = normalizeStudioForm(form);
+    const whatsappErr = studioWhatsappError(studioForm);
+    if (whatsappErr) {
+      setError(whatsappErr);
+      return;
+    }
     setSubmitting(true);
 
     const youtubeVideoId = form.isOnline ? extractYouTubeId(form.youtubeUrl) : '';
@@ -209,16 +216,16 @@ export default function EventForm() {
         : [],
       brideName: form.brideName,
       groomName: form.groomName,
-      studioName: form.studioName,
-      photographerName: form.photographerName,
-      studioPhone: form.studioPhone,
-      studioWhatsapp: form.studioWhatsapp,
-      studioEmail: form.studioEmail,
-      studioWebsite: form.studioWebsite,
-      studioInstagram: form.studioInstagram,
-      studioFacebook: form.studioFacebook,
-      studioYoutube: form.studioYoutube,
-      studioMapsUrl: form.studioMapsUrl,
+      studioName: studioForm.studioName,
+      photographerName: studioForm.photographerName,
+      studioPhone: studioForm.studioPhone,
+      studioWhatsapp: studioForm.studioWhatsapp,
+      studioEmail: studioForm.studioEmail,
+      studioWebsite: studioForm.studioWebsite,
+      studioInstagram: studioForm.studioInstagram,
+      studioFacebook: studioForm.studioFacebook,
+      studioYoutube: studioForm.studioYoutube,
+      studioMapsUrl: studioForm.studioMapsUrl,
       streamUrl: form.isOnline ? form.youtubeUrl : '',
       youtubeVideoId,
       streamProvider: youtubeVideoId ? 'youtube' : 'none',
@@ -488,7 +495,7 @@ export default function EventForm() {
         {/* ── Photography branding ───────────────────────────── */}
         <Section
           title="Photography studio"
-          subtitle="Shown on the public watch page as a “Captured by” section. Each event can have its own studio branding."
+          subtitle="Optional. Shown on the public watch page as “Captured by”. Only WhatsApp is required when you add studio details — social links and email are optional."
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Studio name" htmlFor="studioName">
@@ -550,7 +557,7 @@ export default function EventForm() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Phone number" htmlFor="studioPhone">
+            <Field label="Phone number (optional)" htmlFor="studioPhone">
               <input
                 id="studioPhone"
                 name="studioPhone"
@@ -562,7 +569,7 @@ export default function EventForm() {
                 onChange={handleChange}
               />
             </Field>
-            <Field label="WhatsApp number" htmlFor="studioWhatsapp">
+            <Field label="WhatsApp number" htmlFor="studioWhatsapp" hint="Required when any other studio field is filled">
               <input
                 id="studioWhatsapp"
                 name="studioWhatsapp"
@@ -580,7 +587,9 @@ export default function EventForm() {
             <input
               id="studioEmail"
               name="studioEmail"
-              type="email"
+              type="text"
+              inputMode="email"
+              autoComplete="email"
               className="input"
               maxLength={120}
               placeholder="hello@studio.com"
@@ -590,11 +599,11 @@ export default function EventForm() {
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Website URL" htmlFor="studioWebsite" hint="Full URL or domain, e.g. momentsstudio.com">
+            <Field label="Website URL (optional)" htmlFor="studioWebsite" hint="Full URL or domain, e.g. momentsstudio.com">
               <input
                 id="studioWebsite"
                 name="studioWebsite"
-                type="url"
+                type="text"
                 className="input"
                 maxLength={300}
                 placeholder="https://momentsstudio.com"
@@ -602,11 +611,11 @@ export default function EventForm() {
                 onChange={handleChange}
               />
             </Field>
-            <Field label="Google Maps URL" htmlFor="studioMapsUrl">
+            <Field label="Google Maps URL (optional)" htmlFor="studioMapsUrl">
               <input
                 id="studioMapsUrl"
                 name="studioMapsUrl"
-                type="url"
+                type="text"
                 className="input"
                 maxLength={500}
                 placeholder="https://maps.google.com/…"
@@ -617,11 +626,11 @@ export default function EventForm() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Instagram URL" htmlFor="studioInstagram">
+            <Field label="Instagram URL (optional)" htmlFor="studioInstagram">
               <input
                 id="studioInstagram"
                 name="studioInstagram"
-                type="url"
+                type="text"
                 className="input"
                 maxLength={300}
                 placeholder="https://instagram.com/…"
@@ -629,11 +638,11 @@ export default function EventForm() {
                 onChange={handleChange}
               />
             </Field>
-            <Field label="Facebook URL" htmlFor="studioFacebook">
+            <Field label="Facebook URL (optional)" htmlFor="studioFacebook">
               <input
                 id="studioFacebook"
                 name="studioFacebook"
-                type="url"
+                type="text"
                 className="input"
                 maxLength={300}
                 placeholder="https://facebook.com/…"
@@ -641,11 +650,11 @@ export default function EventForm() {
                 onChange={handleChange}
               />
             </Field>
-            <Field label="YouTube URL" htmlFor="studioYoutube">
+            <Field label="YouTube URL (optional)" htmlFor="studioYoutube">
               <input
                 id="studioYoutube"
                 name="studioYoutube"
-                type="url"
+                type="text"
                 className="input"
                 maxLength={300}
                 placeholder="https://youtube.com/@…"

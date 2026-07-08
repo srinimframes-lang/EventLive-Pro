@@ -12,7 +12,7 @@
     "dev": "nodemon src/index.js",
     "dev:memdb": "node scripts/dev-memory-db.js",
     "start": "node src/index.js",
-    "test": "node --test src/utils/seo.test.js"
+    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
