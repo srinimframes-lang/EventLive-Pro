@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { bannerService, BANNER_LOCATIONS } from '../../services/banner.service.js';
-import { resolveMediaUrl } from '../../utils/format.js';
+import {
+  BANNER_MEDIA_ACCEPT,
+  bannerMediaTypeFromFile,
+  validateBannerMediaFile,
+} from '../../utils/bannerMedia.js';
+import BannerMediaPreview from '../BannerMediaPreview.jsx';
 
 const EMPTY = {
   companyName: '',
@@ -34,6 +39,7 @@ export default function AdminBanners() {
   const imageInputRef = useRef(null);
   const pendingImageRef = useRef(null);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [previewMediaType, setPreviewMediaType] = useState('image');
 
   const flash = (msg) => {
     setNotice(msg);
@@ -60,6 +66,7 @@ export default function AdminBanners() {
   const startCreate = () => {
     pendingImageRef.current = null;
     setPreviewUrl('');
+    setPreviewMediaType('image');
     setEditing('new');
     setForm(EMPTY);
   };
@@ -67,6 +74,7 @@ export default function AdminBanners() {
   const startEdit = (b) => {
     pendingImageRef.current = null;
     setPreviewUrl(b.imageUrl || '');
+    setPreviewMediaType(b.mediaType === 'video' ? 'video' : 'image');
     setEditing(b.id);
     setForm({
       companyName: b.companyName || '',
@@ -88,6 +96,7 @@ export default function AdminBanners() {
     setEditing(null);
     setForm(EMPTY);
     setPreviewUrl('');
+    setPreviewMediaType('image');
   };
 
   const toggleLocation = (loc) => {
@@ -102,9 +111,19 @@ export default function AdminBanners() {
   const handleImagePick = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const validationError = validateBannerMediaFile(file);
+    if (validationError) {
+      setError(validationError);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+      return;
+    }
+
     pendingImageRef.current = file;
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(URL.createObjectURL(file));
+    setPreviewMediaType(bannerMediaTypeFromFile(file) || 'image');
+    setError('');
   };
 
   const save = async (e) => {
@@ -114,7 +133,7 @@ export default function AdminBanners() {
       return;
     }
     if (editing === 'new' && !pendingImageRef.current) {
-      setError('Banner image is required');
+      setError('Banner image or video is required');
       return;
     }
 
@@ -188,8 +207,8 @@ export default function AdminBanners() {
         <div>
           <h2 className="text-xl font-bold text-slate-900">Banner advertisements</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Manage responsive banner ads for homepage, live player, gallery, and footer. Recommended
-            sizes: 728×90 (desktop), 320×50 or 320×100 (mobile).
+            Manage responsive banner ads for homepage, live player, gallery, and footer. Upload
+            images (JPG, PNG, WebP up to 8 MB) or videos (MP4, WebM up to 10 MB).
           </p>
         </div>
         <button type="button" className="btn-primary" onClick={startCreate} disabled={busy}>
@@ -234,32 +253,25 @@ export default function AdminBanners() {
           </div>
 
           <div>
-            <span className="mb-1 block text-sm font-medium text-slate-700">Banner image *</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Banner media *</span>
             <div className="flex flex-wrap items-start gap-4">
               {(previewUrl || editing !== 'new') && (
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl.startsWith('blob:') ? previewUrl : resolveMediaUrl(previewUrl)}
-                      alt="Banner preview"
-                      className="h-[90px] w-[320px] max-w-full object-contain sm:w-[728px]"
-                    />
-                  ) : (
-                    <div className="grid h-[90px] w-[320px] place-items-center text-xs text-slate-400">
-                      No image
-                    </div>
-                  )}
-                </div>
+                <BannerMediaPreview
+                  src={previewUrl}
+                  mediaType={previewMediaType}
+                />
               )}
               <div>
                 <input
                   ref={imageInputRef}
                   type="file"
-                  accept="image/*"
+                  accept={BANNER_MEDIA_ACCEPT}
                   onChange={handleImagePick}
                   className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700"
                 />
-                <p className="mt-1 text-xs text-slate-400">JPG/PNG/WebP, up to 8 MB</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Images: JPG, PNG, WebP (max 8 MB) · Videos: MP4, WebM (max 10 MB, autoplay muted)
+                </p>
               </div>
             </div>
           </div>
@@ -379,6 +391,7 @@ export default function AdminBanners() {
               <tr>
                 <th className="px-4 py-3">Preview</th>
                 <th className="px-4 py-3">Company</th>
+                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Locations</th>
                 <th className="px-4 py-3">Priority</th>
                 <th className="px-4 py-3">Stats</th>
@@ -391,16 +404,13 @@ export default function AdminBanners() {
                 <tr key={b.id} className="bg-white">
                   <td className="px-4 py-3">
                     {b.imageUrl ? (
-                      <img
-                        src={resolveMediaUrl(b.imageUrl)}
-                        alt=""
-                        className="h-10 w-24 rounded object-contain bg-slate-50"
-                      />
+                      <BannerMediaPreview banner={b} compact className="h-10 w-24 object-contain" />
                     ) : (
                       '—'
                     )}
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{b.companyName}</td>
+                  <td className="px-4 py-3 capitalize text-slate-600">{b.mediaType || 'image'}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {(b.locations || []).map((l) => (
                       <span key={l} className="mr-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-xs">

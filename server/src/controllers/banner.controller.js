@@ -1,6 +1,7 @@
 import { Banner, BANNER_LOCATIONS } from '../models/Banner.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { persistUpload, removeUpload } from '../utils/storage.js';
+import { assertBannerFile } from '../utils/bannerMedia.js';
+import { persistBannerUpload, removeBannerUpload } from '../utils/storage.js';
 
 function activeBannerQuery(location) {
   const now = new Date();
@@ -63,7 +64,7 @@ export const listActiveBanners = asyncHandler(async (req, res) => {
 
   const banners = await Banner.find(activeBannerQuery(location))
     .sort({ priority: -1, createdAt: -1 })
-    .select('companyName imageUrl clickUrl phoneNumber whatsappNumber mobileSize priority')
+    .select('companyName imageUrl mediaType clickUrl phoneNumber whatsappNumber mobileSize priority')
     .lean();
 
   res.status(200).json({ success: true, data: banners });
@@ -121,10 +122,7 @@ export const adminListBanners = asyncHandler(async (_req, res) => {
  * @route POST /api/admin/banners
  */
 export const adminCreateBanner = asyncHandler(async (req, res) => {
-  if (!req.file) {
-    res.status(400);
-    throw new Error('Banner image is required');
-  }
+  const mediaType = assertBannerFile(req.file);
 
   const payload = bannerPayloadFromBody(req.body);
   if (!payload.companyName) {
@@ -132,10 +130,13 @@ export const adminCreateBanner = asyncHandler(async (req, res) => {
     throw new Error('Company name is required');
   }
 
-  payload.imageUrl = await persistUpload(req.file);
+  const { url, mediaType: storedType } = await persistBannerUpload(req.file);
+  payload.imageUrl = url;
+  payload.mediaType = storedType || mediaType;
+
   const banner = await Banner.create(payload);
   // eslint-disable-next-line no-console
-  console.info(`[banners] created id=${banner._id} company=${banner.companyName}`);
+  console.info(`[banners] created id=${banner._id} type=${banner.mediaType} company=${banner.companyName}`);
   res.status(201).json({ success: true, data: banner });
 });
 
@@ -171,16 +172,18 @@ export const adminUploadBannerImage = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Banner not found');
   }
-  if (!req.file) {
-    res.status(400);
-    throw new Error('Image file is required');
-  }
+
+  const mediaType = assertBannerFile(req.file);
 
   const previous = banner.imageUrl;
-  banner.imageUrl = await persistUpload(req.file);
+  const previousType = banner.mediaType;
+  const { url, mediaType: storedType } = await persistBannerUpload(req.file);
+  banner.imageUrl = url;
+  banner.mediaType = storedType || mediaType;
   await banner.save();
+
   if (previous && previous !== banner.imageUrl) {
-    removeUpload(previous).catch(() => {});
+    removeBannerUpload(previous, previousType).catch(() => {});
   }
   res.status(200).json({ success: true, data: banner });
 });
@@ -194,7 +197,9 @@ export const adminDeleteBanner = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Banner not found');
   }
-  if (banner.imageUrl) removeUpload(banner.imageUrl).catch(() => {});
+  if (banner.imageUrl) {
+    removeBannerUpload(banner.imageUrl, banner.mediaType).catch(() => {});
+  }
   // eslint-disable-next-line no-console
   console.info(`[banners] deleted id=${req.params.id}`);
   res.status(200).json({ success: true, data: { id: req.params.id } });

@@ -23,12 +23,21 @@ const lastWeek = new Date(now.getTime() - 7 * 86_400_000);
 const active = await Banner.create({
   companyName: 'Active Co',
   imageUrl: '/uploads/test-banner.jpg',
+  mediaType: 'image',
   clickUrl: 'https://example.com',
   locations: ['homepage', 'footer'],
   enabled: true,
   priority: 10,
   startDate: yesterday,
   endDate: tomorrow,
+});
+
+await Banner.create({
+  companyName: 'Video Ad Co',
+  imageUrl: '/uploads/test-banner.mp4',
+  mediaType: 'video',
+  locations: ['homepage'],
+  enabled: true,
 });
 
 await Banner.create({
@@ -55,8 +64,23 @@ const homepage = await Banner.find({
   ],
 }).sort({ priority: -1 });
 
-if (homepage.length !== 1 || homepage[0].companyName !== 'Active Co') {
-  throw new Error(`Expected 1 active homepage banner, got ${homepage.length}`);
+if (homepage.length !== 2) {
+  throw new Error(`Expected 2 active homepage banners, got ${homepage.length}`);
+}
+
+const videoBanner = homepage.find((b) => b.mediaType === 'video');
+if (!videoBanner || videoBanner.companyName !== 'Video Ad Co') {
+  throw new Error('Video banner not returned in active list');
+}
+
+const { assertBannerFile, mediaTypeFromMime } = await import('../src/utils/bannerMedia.js');
+if (mediaTypeFromMime('video/mp4') !== 'video') throw new Error('video/mp4 type check failed');
+if (mediaTypeFromMime('image/png') !== 'image') throw new Error('image/png type check failed');
+try {
+  assertBannerFile({ mimetype: 'image/gif', size: 1000 });
+  throw new Error('gif should be rejected');
+} catch (err) {
+  if (!/JPG|WebP|MP4/i.test(err.message)) throw err;
 }
 
 const viewed = await Banner.findByIdAndUpdate(active._id, { $inc: { views: 1 } }, { new: true });
@@ -67,7 +91,8 @@ if (viewed.views !== 1 || clicked.clicks !== 1) {
 }
 
 console.log('OK banner system', {
-  active: homepage[0].companyName,
+  image: homepage.find((b) => b.mediaType === 'image')?.companyName,
+  video: videoBanner.companyName,
   views: clicked.views,
   clicks: clicked.clicks,
 });

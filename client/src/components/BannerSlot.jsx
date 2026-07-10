@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { bannerService } from '../services/banner.service.js';
-import { resolveMediaUrl, whatsappLink } from '../utils/format.js';
+import { whatsappLink } from '../utils/format.js';
+import BannerMedia from './BannerMedia.jsx';
 
 const ROTATE_MS = 10_000;
 
@@ -116,12 +117,14 @@ export default function BannerSlot({ location, className = '', compact = false }
           className="group block h-full w-full cursor-pointer"
           aria-label={current.companyName ? `Advertisement: ${current.companyName}` : 'Advertisement'}
         >
-          <img
-            src={resolveMediaUrl(current.imageUrl)}
-            alt={current.companyName || 'Advertisement'}
+          <BannerMedia
+            banner={current}
             className="h-full w-full object-contain object-center transition group-hover:opacity-95"
-            loading="lazy"
-            decoding="async"
+            autoPlay
+            muted
+            loop
+            playsInline
+            alt={current.companyName || 'Advertisement'}
           />
         </button>
       </div>

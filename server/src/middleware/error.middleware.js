@@ -43,8 +43,12 @@ export function errorHandler(err, req, res, next) {
     statusCode = 400;
     message =
       err.code === 'LIMIT_FILE_SIZE'
-        ? 'Image is too large (max 8 MB)'
+        ? 'File is too large (images max 8 MB, videos max 10 MB)'
         : `Upload error: ${err.message}`;
+  }
+
+  if (err.statusCode && err.statusCode >= 400 && err.statusCode < 600) {
+    statusCode = err.statusCode;
   }
 
   // JWT errors

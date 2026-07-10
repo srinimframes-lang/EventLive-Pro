@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { env } from '../config/env.js';
 import { UPLOADS_DIR } from '../middleware/upload.middleware.js';
+import { mediaTypeFromMime, isVideoUrl } from './bannerMedia.js';
 
 // Lazily-configured Cloudinary client (only loaded when credentials exist).
 let cloudinaryClient = null;
@@ -63,6 +64,58 @@ export async function persistUpload(file) {
     }
   }
   return `/uploads/${file.filename}`;
+}
+
+/**
+ * Persist a banner image or video upload.
+ * @param {Express.Multer.File} file
+ * @returns {Promise<{ url: string, mediaType: 'image'|'video' }>}
+ */
+export async function persistBannerUpload(file) {
+  const mediaType = mediaTypeFromMime(file.mimetype) || 'image';
+  const cloudinary = await getCloudinary();
+  if (cloudinary) {
+    try {
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: 'eventlive/banners',
+        resource_type: mediaType === 'video' ? 'video' : 'image',
+        timeout: 120_000,
+      });
+      unlinkLocal(file.path);
+      return { url: result.secure_url, mediaType };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[storage] Cloudinary banner upload failed, using local disk:', err.message);
+    }
+  }
+  return { url: `/uploads/${file.filename}`, mediaType };
+}
+
+/**
+ * Remove a banner media file (image or video).
+ * @param {string} url
+ * @param {'image'|'video'} [mediaType]
+ */
+export async function removeBannerUpload(url, mediaType = 'image') {
+  if (!url) return;
+
+  const isVideo = mediaType === 'video' || isVideoUrl(url);
+
+  if (url.includes('res.cloudinary.com')) {
+    const cloudinary = await getCloudinary();
+    if (!cloudinary) return;
+    const match = url.match(/\/(?:image|video)\/upload\/(?:v\d+\/)?(.+)\.[a-zA-Z0-9]+$/);
+    if (match) {
+      cloudinary.uploader
+        .destroy(match[1], { resource_type: isVideo ? 'video' : 'image' })
+        .catch(() => {});
+    }
+    return;
+  }
+
+  if (url.startsWith('/uploads/')) {
+    unlinkLocal(path.join(UPLOADS_DIR, path.basename(url)));
+  }
 }
 
 /**

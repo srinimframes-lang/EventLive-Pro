@@ -7,7 +7,9 @@ export const BANNER_LOCATIONS = ['homepage', 'live_player', 'gallery', 'footer']
 const bannerSchema = new Schema(
   {
     companyName: { type: String, required: true, trim: true, maxlength: 120 },
+    /** Public URL for banner image or video */
     imageUrl: { type: String, required: true, trim: true },
+    mediaType: { type: String, enum: ['image', 'video'], default: 'image', index: true },
     clickUrl: { type: String, default: '', trim: true, maxlength: 500 },
     phoneNumber: { type: String, default: '', trim: true, maxlength: 30 },
     whatsappNumber: { type: String, default: '', trim: true, maxlength: 30 },

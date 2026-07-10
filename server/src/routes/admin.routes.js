@@ -50,6 +50,7 @@ import {
 } from '../controllers/banner.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
+import { bannerUpload } from '../middleware/bannerUpload.middleware.js';
 
 const router = Router();
 
@@ -103,9 +104,9 @@ router.post('/themes/:id/duplicate', duplicateTheme);
 
 // Banner advertisements
 router.get('/banners', adminListBanners);
-router.post('/banners', upload.single('image'), adminCreateBanner);
+router.post('/banners', bannerUpload.single('image'), adminCreateBanner);
 router.patch('/banners/:id', adminUpdateBanner);
-router.post('/banners/:id/image', upload.single('image'), adminUploadBannerImage);
+router.post('/banners/:id/image', bannerUpload.single('image'), adminUploadBannerImage);
 router.delete('/banners/:id', adminDeleteBanner);
 
 export default router;
