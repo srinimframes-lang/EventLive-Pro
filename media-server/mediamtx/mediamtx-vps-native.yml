@@ -1,0 +1,31 @@
+# MediaMTX native HLS/WebRTC on VPS (no FFmpeg/Caddy stack).
+# Copy to your VPS as mediamtx.yml and point MediaMTX at it.
+#
+# VPS endpoints (EventLivePro defaults):
+#   RTMP ingest : rtmp://200.97.166.42:1935/live/<eventId>
+#   HLS playback: http://200.97.166.42:8888/live/<eventId>/index.m3u8
+#   WebRTC/WHEP : http://200.97.166.42:8889/live/<eventId>/whep
+#
+# Replace BACKEND_URL and MEDIA_SERVER_SECRET with your Render backend values.
+
+logLevel: info
+
+api: yes
+apiAddress: :9997
+
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: '*'
+
+webrtc: yes
+webrtcAddress: :8889
+
+authMethod: http
+authHTTPAddress: BACKEND_URL/api/events/stream/mediamtx-auth?token=MEDIA_SERVER_SECRET
+
+paths:
+  live~^.*$:
+    source: publisher

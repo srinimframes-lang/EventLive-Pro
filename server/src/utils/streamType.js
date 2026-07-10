@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { extractYouTubeId } from './youtube.js';
 
 /** Resolve stream type from request body (`streamType` or legacy `linkType`). */
@@ -40,9 +39,7 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
     if (payload.creditType !== 'none') payload.creditType = 'server';
     payload.youtubeVideoId = '';
     payload.streamUrl = '';
-    if (isCreate && !payload.rtmpStreamKey) {
-      payload.rtmpStreamKey = crypto.randomBytes(16).toString('hex');
-    }
+    // rtmpStreamKey is assigned from the event id in the Event pre-save hook.
     return;
   }
 

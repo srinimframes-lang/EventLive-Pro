@@ -50,6 +50,21 @@ export default function Watch() {
   }, [idOrSlug, navigate]);
 
   const eventId = event?.id;
+
+  // Poll MediaMTX-backed stream status while watching a Premium Server event.
+  useEffect(() => {
+    if (!eventId || !config) return undefined;
+    const isServer = config.provider === 'rtmp' || config.provider === 'hls';
+    if (!isServer) return undefined;
+    const timer = setInterval(async () => {
+      const cfg = await streamService.getConfig(eventId).catch(() => null);
+      if (cfg) {
+        setConfig((prev) => (prev ? { ...prev, ...cfg } : cfg));
+      }
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [eventId, config?.provider]);
+
   const guestName = user?.name || 'Guest';
   const room = useLiveRoom(eventId, { guestName });
 

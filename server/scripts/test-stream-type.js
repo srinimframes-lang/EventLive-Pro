@@ -7,7 +7,8 @@ import mongoose from 'mongoose';
 
 process.env.JWT_SECRET = 'test_secret';
 process.env.NODE_ENV = 'test';
-process.env.HLS_PLAYBACK_BASE = 'https://stream.test/hls';
+process.env.HLS_PLAYBACK_BASE = 'http://200.97.166.42:8888';
+process.env.RTMP_INGEST_URL = 'rtmp://200.97.166.42:1935/live';
 
 const mongod = await MongoMemoryServer.create({ instance: { dbName: 'eventlive' } });
 process.env.MONGODB_URI = mongod.getUri('eventlive');
@@ -63,7 +64,16 @@ if (srvEvent.streamProvider !== 'rtmp') throw new Error('Server event should hav
 if (!srvEvent.rtmpStreamKey) throw new Error('Server event missing rtmpStreamKey');
 const withKey = await Event.findById(srvEvent._id).select('+rtmpStreamKey');
 if (!withKey.rtmpStreamKey) throw new Error('Server rtmpStreamKey not persisted');
-console.log('OK Server event', srvEvent.shortCode, srvEvent.streamProvider);
+if (withKey.rtmpStreamKey !== srvEvent._id.toString()) {
+  throw new Error(`Stream key should equal event id, got ${withKey.rtmpStreamKey}`);
+}
+console.log('OK Server event', srvEvent.shortCode, srvEvent.streamProvider, 'key=', withKey.rtmpStreamKey);
+
+const { deriveHlsPlaybackUrl } = await import('../src/utils/mediaStream.js');
+const playback = deriveHlsPlaybackUrl(withKey);
+const expectedPlayback = `http://200.97.166.42:8888/live/${srvEvent._id}/index.m3u8`;
+if (playback !== expectedPlayback) throw new Error(`Unexpected playback URL: ${playback}`);
+console.log('OK Server playback URL', playback);
 
 // Server provider must win over stale YouTube fields
 const provider = srvEvent.streamProvider === 'rtmp' ? 'rtmp' : 'youtube';

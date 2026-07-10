@@ -49,9 +49,13 @@ export const env = {
   // Base RTMP ingest URL that broadcasters point OBS at. The per-event stream
   // key is appended to this (e.g. rtmp://localhost:1935/live/<streamKey>).
   rtmpIngestUrl: process.env.RTMP_INGEST_URL || 'rtmp://localhost:1935/live',
-  // Public base where the private media server serves HLS playback. Playback
-  // URLs are derived as `${hlsPlaybackBase}/live/<shortCode>/master.m3u8`.
+  // MediaMTX native HLS base (e.g. http://200.97.166.42:8888). Playback URLs:
+  // `${hlsPlaybackBase}/live/<eventId>/index.m3u8`
   hlsPlaybackBase: (process.env.HLS_PLAYBACK_BASE || '').replace(/\/+$/, ''),
+  // MediaMTX WebRTC/WHEP base (e.g. http://200.97.166.42:8889).
+  webrtcPlaybackBase: (process.env.WEBRTC_PLAYBACK_BASE || '').replace(/\/+$/, ''),
+  // Optional MediaMTX REST API for live path probes (e.g. http://200.97.166.42:9997).
+  mediamtxApiUrl: (process.env.MEDIAMTX_API_URL || '').replace(/\/+$/, ''),
   // Shared secret the media server presents to the stream webhooks.
   mediaServerSecret: process.env.MEDIA_SERVER_SECRET || '',
   // Super Admin bootstrap. On first boot the server ensures this account exists

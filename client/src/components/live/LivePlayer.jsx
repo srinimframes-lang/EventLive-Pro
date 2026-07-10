@@ -4,6 +4,7 @@ import { extractYouTubeId } from '../../utils/format.js';
 
 const RETRY_MS = 3000;
 const OFFLINE_MSG = '🔴 Live stream is currently offline.';
+const SERVER_OFFLINE_MSG = 'Live Offline';
 
 const OVERLAY = {
   NONE: 'none',
@@ -215,8 +216,8 @@ function HlsPlayer({ src, poster, isLive = true }) {
     if (hlsRef.current) hlsRef.current.currentLevel = index;
   };
 
-  if (!isLive) return <Offline />;
-  if (!src) return <Offline message="No HLS source configured" />;
+  if (!isLive) return <Offline message={SERVER_OFFLINE_MSG} />;
+  if (!src) return <Offline message={SERVER_OFFLINE_MSG} />;
 
   return (
     <Frame>
@@ -371,9 +372,10 @@ export default function LivePlayer({ config }) {
   const poster = config.poster || '';
   const playback = config.playbackUrl || config.hlsUrl;
   const live = Boolean(isLive);
+  const serverOffline = SERVER_OFFLINE_MSG;
 
   if (!live) {
-    return <Offline message={OFFLINE_MSG} />;
+    return <Offline message={serverOffline} />;
   }
 
   if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} isLive={live} />;

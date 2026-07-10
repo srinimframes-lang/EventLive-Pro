@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { extractYouTubeId } from '../utils/youtube.js';
+import { streamKeyFromEventId } from '../utils/mediaStream.js';
 
 const { Schema, model } = mongoose;
 
@@ -315,6 +316,13 @@ eventSchema.pre('validate', async function ensureSlugAndShortCode() {
   if (!this.shortCode) {
     this.shortCode = await this.constructor.generateUniqueShortCode(this);
   }
+});
+
+// Premium Server Live events use the MongoDB event id as the RTMP stream key.
+eventSchema.pre('save', function ensureRtmpStreamKey() {
+  if (this.streamProvider !== 'rtmp') return;
+  const key = streamKeyFromEventId(this._id);
+  if (key && !this.rtmpStreamKey) this.rtmpStreamKey = key;
 });
 
 // Keep YouTube fields in sync when only streamUrl was saved.

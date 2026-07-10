@@ -168,7 +168,7 @@ export default function EventForm() {
         setServerStream({
           rtmpUrl: keyInfo.fullUrl || '',
           streamKey: keyInfo.streamKey || '',
-          hlsPlayerUrl: cfg?.playbackUrl || cfg?.hlsUrl || '',
+          hlsPlayerUrl: keyInfo.playbackUrl || cfg?.playbackUrl || cfg?.hlsUrl || '',
         });
       })
       .finally(() => active && setServerStreamLoading(false));

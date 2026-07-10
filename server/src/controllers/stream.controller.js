@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { Event } from '../models/Event.js';
 import { ChatMessage } from '../models/ChatMessage.js';
 import { Question } from '../models/Question.js';
@@ -6,6 +5,17 @@ import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { assertCanManageEvent } from '../utils/ownership.js';
 import { extractYouTubeId } from '../utils/youtube.js';
+import {
+  buildRtmpCredentials,
+  deriveHlsPlaybackUrl,
+  deriveWebRtcPlaybackUrl,
+  ensureEventStreamKey,
+  findEventByStreamKey,
+  parseMediaMtxPath,
+  probeMediaMtxPublishing,
+  resolveStreamKey,
+  streamKeyFromEventId,
+} from '../utils/mediaStream.js';
 
 async function findEventOr404(id, res, { withKey = false } = {}) {
   const query = Event.findById(id);
@@ -19,22 +29,9 @@ async function findEventOr404(id, res, { withKey = false } = {}) {
 }
 
 /**
- * Derives the public HLS playback URL for a private-server (rtmp) event:
- * `${HLS_PLAYBACK_BASE}/live/<shortCode>/master.m3u8`. Falls back to any
- * explicitly-set hlsUrl. Returns '' when nothing is available.
- */
-function derivePlaybackUrl(event) {
-  if (event.hlsUrl) return event.hlsUrl;
-  if (env.hlsPlaybackBase && event.shortCode) {
-    return `${env.hlsPlaybackBase}/live/${event.shortCode}/master.m3u8`;
-  }
-  return '';
-}
-
-/**
  * Public-safe view of an event's streaming configuration (no secret key).
  */
-function publicStreamConfig(event) {
+function publicStreamConfig(event, { isPublishing = null } = {}) {
   const youtubeVideoId =
     extractYouTubeId(event.youtubeVideoId) || extractYouTubeId(event.streamUrl) || '';
   const isServerProvider =
@@ -47,18 +44,22 @@ function publicStreamConfig(event) {
       ? 'youtube'
       : event.streamProvider;
   const isServer = provider === 'rtmp' || provider === 'hls';
+  const playbackUrl = isServer ? deriveHlsPlaybackUrl(event) : event.hlsUrl;
+  const webrtcUrl = isServer ? deriveWebRtcPlaybackUrl(event) : event.webrtcUrl;
+  const liveFromProbe = isPublishing === true;
+  const offlineFromProbe = isPublishing === false;
 
   return {
     eventId: event.id,
     provider,
     youtubeVideoId,
     streamUrl: event.streamUrl || '',
-    hlsUrl: event.hlsUrl,
-    playbackUrl: isServer ? derivePlaybackUrl(event) : event.hlsUrl,
-    webrtcUrl: event.webrtcUrl,
+    hlsUrl: event.hlsUrl || playbackUrl,
+    playbackUrl,
+    webrtcUrl,
     poster: event.coverImage || '',
-    // Server isLive applies to RTMP/HLS; YouTube player ignores this flag.
-    isLive: event.isLive,
+    isLive: liveFromProbe ? true : offlineFromProbe ? false : event.isLive,
+    isPublishing: isPublishing === null ? undefined : isPublishing,
     streamDisabled: event.streamDisabled,
     autoRecord: event.autoRecord,
     liveStartedAt: event.liveStartedAt,
@@ -66,6 +67,11 @@ function publicStreamConfig(event) {
     peakViewers: event.peakViewers,
     totalViews: event.totalViews,
   };
+}
+
+async function publishingStatusForEvent(event) {
+  if (event.streamProvider !== 'rtmp' && event.streamProvider !== 'hls') return null;
+  return probeMediaMtxPublishing(resolveStreamKey(event));
 }
 
 /**
@@ -84,7 +90,11 @@ function mediaSecretOk(req) {
  */
 export const getStreamConfig = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res);
-  res.status(200).json({ success: true, data: publicStreamConfig(event) });
+  const isPublishing = await publishingStatusForEvent(event);
+  res.status(200).json({
+    success: true,
+    data: publicStreamConfig(event, { isPublishing }),
+  });
 });
 
 /**
@@ -108,7 +118,8 @@ export const updateStreamConfig = asyncHandler(async (req, res) => {
   if (req.body.autoRecord !== undefined) event.autoRecord = Boolean(req.body.autoRecord);
   await event.save();
 
-  res.status(200).json({ success: true, data: publicStreamConfig(event) });
+  const isPublishing = await publishingStatusForEvent(event);
+  res.status(200).json({ success: true, data: publicStreamConfig(event, { isPublishing }) });
 });
 
 /**
@@ -120,39 +131,44 @@ export const getStreamKey = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res, { withKey: true });
   assertCanManageEvent(event, req.user, res);
 
-  if (!event.rtmpStreamKey) {
-    event.rtmpStreamKey = crypto.randomBytes(16).toString('hex');
-    await event.save();
-  }
+  await ensureEventStreamKey(event);
+  const creds = buildRtmpCredentials(event);
 
   res.status(200).json({
     success: true,
     data: {
-      ingestUrl: env.rtmpIngestUrl,
-      streamKey: event.rtmpStreamKey,
-      fullUrl: `${env.rtmpIngestUrl}/${event.rtmpStreamKey}`,
+      ingestUrl: creds.ingestUrl,
+      streamKey: creds.streamKey,
+      fullUrl: creds.fullUrl,
+      playbackUrl: creds.playbackUrl,
+      webrtcUrl: creds.webrtcUrl,
+      mediamtxPath: creds.mediamtxPath,
     },
   });
 });
 
 /**
  * @route POST /api/events/:id/stream/key/regenerate
- * @desc  Rotate the RTMP stream key (owner/admin)
+ * @desc  Reset the RTMP stream key to the event id (owner/admin)
  * @access Private
  */
 export const regenerateStreamKey = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res, { withKey: true });
   assertCanManageEvent(event, req.user, res);
 
-  event.rtmpStreamKey = crypto.randomBytes(16).toString('hex');
+  event.rtmpStreamKey = streamKeyFromEventId(event._id);
   await event.save();
 
+  const creds = buildRtmpCredentials(event);
   res.status(200).json({
     success: true,
     data: {
-      ingestUrl: env.rtmpIngestUrl,
-      streamKey: event.rtmpStreamKey,
-      fullUrl: `${env.rtmpIngestUrl}/${event.rtmpStreamKey}`,
+      ingestUrl: creds.ingestUrl,
+      streamKey: creds.streamKey,
+      fullUrl: creds.fullUrl,
+      playbackUrl: creds.playbackUrl,
+      webrtcUrl: creds.webrtcUrl,
+      mediamtxPath: creds.mediamtxPath,
     },
   });
 });
@@ -181,7 +197,6 @@ export const setLiveStatus = asyncHandler(async (req, res) => {
   }
   await event.save();
 
-  // Broadcast the status change to everyone in the live room.
   const io = req.app.get('io');
   if (io) {
     io.to(`event:${event.id}`).emit('stream:status', {
@@ -192,14 +207,13 @@ export const setLiveStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  res.status(200).json({ success: true, data: publicStreamConfig(event) });
+  const isPublishing = await publishingStatusForEvent(event);
+  res.status(200).json({ success: true, data: publicStreamConfig(event, { isPublishing }) });
 });
 
 /**
  * @route POST /api/events/:id/stream/disable
  * @desc  Disable/enable a private stream (owner/admin). Body: { disabled: bool }
- *        Disabling blocks new publishes (via the auth webhook) and ends any
- *        current live state.
  * @access Private
  */
 export const setStreamDisabled = asyncHandler(async (req, res) => {
@@ -223,13 +237,13 @@ export const setStreamDisabled = asyncHandler(async (req, res) => {
       streamDisabled: event.streamDisabled,
     });
   }
-  res.status(200).json({ success: true, data: publicStreamConfig(event) });
+  const isPublishing = await publishingStatusForEvent(event);
+  res.status(200).json({ success: true, data: publicStreamConfig(event, { isPublishing }) });
 });
 
 /**
  * @route POST /api/events/:id/stream/restart
  * @desc  Ask connected players to reconnect (owner/admin). Best-effort signal
- *        used after a broadcaster reconnects their encoder.
  * @access Private
  */
 export const restartStream = asyncHandler(async (req, res) => {
@@ -238,7 +252,8 @@ export const restartStream = asyncHandler(async (req, res) => {
 
   const io = req.app.get('io');
   if (io) io.to(`event:${event.id}`).emit('stream:restart', { eventId: event.id });
-  res.status(200).json({ success: true, data: publicStreamConfig(event) });
+  const isPublishing = await publishingStatusForEvent(event);
+  res.status(200).json({ success: true, data: publicStreamConfig(event, { isPublishing }) });
 });
 
 /* ─────────────────── Media-server webhooks (secret-protected) ─────────────── */
@@ -253,12 +268,11 @@ export const authenticateStream = asyncHandler(async (req, res) => {
     res.status(401);
     throw new Error('Unauthorized');
   }
-  const streamKey = String(req.body.streamKey || '').trim();
+  const streamKey = parseMediaMtxPath(req.body.streamKey || '');
   if (!streamKey) {
     return res.status(400).json({ ok: false });
   }
-  const event = await Event.findOne({ rtmpStreamKey: streamKey }).select('+rtmpStreamKey');
-  // Reject unknown keys, disabled streams, and ended/cancelled events (expiry).
+  const event = await findEventByStreamKey(streamKey);
   if (!event || event.streamDisabled || ['ended', 'cancelled'].includes(event.status)) {
     return res.status(403).json({ ok: false });
   }
@@ -267,10 +281,7 @@ export const authenticateStream = asyncHandler(async (req, res) => {
 
 /**
  * @route POST /api/events/stream/mediamtx-auth
- * @desc  MediaMTX external-auth hook. MediaMTX POSTs { action, path, ... } and
- *        expects HTTP 200 to allow, non-2xx to deny. Secured by a `?token=`
- *        query that must match MEDIA_SERVER_SECRET. Reads are always allowed
- *        (public playback); only `publish` is validated against the stream key.
+ * @desc  MediaMTX external-auth hook.
  * @access Media server (token query)
  */
 export const mediamtxAuth = asyncHandler(async (req, res) => {
@@ -279,10 +290,10 @@ export const mediamtxAuth = asyncHandler(async (req, res) => {
   }
   const action = req.body?.action;
   if (action !== 'publish') {
-    return res.status(200).json({ ok: true }); // reads/playback/api → allow
+    return res.status(200).json({ ok: true });
   }
-  const streamKey = String(req.body?.path || '').trim();
-  const event = await Event.findOne({ rtmpStreamKey: streamKey }).select('+rtmpStreamKey');
+  const streamKey = parseMediaMtxPath(req.body?.path || req.body?.streamKey || '');
+  const event = await findEventByStreamKey(streamKey);
   if (!event || event.streamDisabled || ['ended', 'cancelled'].includes(event.status)) {
     return res.status(401).json({ ok: false });
   }
@@ -299,15 +310,16 @@ export const streamStarted = asyncHandler(async (req, res) => {
     res.status(401);
     throw new Error('Unauthorized');
   }
-  const streamKey = String(req.body.streamKey || '').trim();
-  const event = await Event.findOne({ rtmpStreamKey: streamKey }).select('+rtmpStreamKey');
+  const streamKey = parseMediaMtxPath(req.body.streamKey || req.body.path || '');
+  const event = await findEventByStreamKey(streamKey);
   if (!event) return res.status(404).json({ ok: false });
 
   event.isLive = true;
   event.liveStartedAt = new Date();
   event.liveEndedAt = undefined;
   if (event.streamProvider === 'none') event.streamProvider = 'rtmp';
-  if (req.body.playbackUrl) event.hlsUrl = req.body.playbackUrl;
+  const playbackUrl = deriveHlsPlaybackUrl(event);
+  if (playbackUrl) event.hlsUrl = playbackUrl;
   if (['draft', 'published'].includes(event.status)) event.status = 'live';
   await event.save();
 
@@ -332,8 +344,8 @@ export const streamStopped = asyncHandler(async (req, res) => {
     res.status(401);
     throw new Error('Unauthorized');
   }
-  const streamKey = String(req.body.streamKey || '').trim();
-  const event = await Event.findOne({ rtmpStreamKey: streamKey }).select('+rtmpStreamKey');
+  const streamKey = parseMediaMtxPath(req.body.streamKey || req.body.path || '');
+  const event = await findEventByStreamKey(streamKey);
   if (!event) return res.status(404).json({ ok: false });
 
   event.isLive = false;
