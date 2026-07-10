@@ -7,7 +7,7 @@ function img(id) {
 }
 
 /**
- * 10 premium layout themes — each is a structurally unique watch-page design.
+ * 10 premium wedding layout themes + 2 reception themes.
  * Upserted on deploy; all other catalog themes are removed.
  */
 export const CURATED_THEMES = [
@@ -151,6 +151,34 @@ export const CURATED_THEMES = [
     heroLabel: 'Under the Stars',
     footerText: 'Written in the stars',
     sortOrder: 10,
+  },
+  {
+    name: 'Royal Reception Night',
+    slug: 'premium-reception-royal-night',
+    category: 'reception',
+    layoutVariant: 'reception-royal-night',
+    description: 'Black and gold luxury reception with stage spotlights, golden borders, and floating gold particles.',
+    backgroundImage: img('1541535658318-c050d485dfb5'),
+    colors: { primary: '#0a0a0a', secondary: '#1a1a1a', accent: '#d4af37', heroText: '#fff8e7', surface: '#0f0f0f', footerBg: '#000000', footerText: '#d4af37' },
+    fonts: { heading: '"Cinzel", Georgia, serif', body: '"Cormorant Garamond", Georgia, serif' },
+    style: { decoration: 'luxury', buttonStyle: 'pill-glow', iconSet: 'champagne', particleStyle: 'gold-dust', gradientFrom: '#0a0a0a', gradientTo: '#d4af37', goldBorder: true, loadingAnimation: 'gold-shimmer' },
+    heroLabel: 'Royal Reception',
+    footerText: 'An evening of elegance',
+    sortOrder: 11,
+  },
+  {
+    name: 'Crystal Reception',
+    slug: 'premium-reception-crystal',
+    category: 'reception',
+    layoutVariant: 'reception-crystal',
+    description: 'White, silver and royal blue glassmorphism with crystal sparkles, full-width hero banner, and prism gallery.',
+    backgroundImage: img('1464366405410-ae42a5586081'),
+    colors: { primary: '#1e3a8a', secondary: '#64748b', accent: '#e2e8f0', heroText: '#ffffff', surface: '#f8fafc', footerBg: '#1e3a8a', footerText: '#f1f5f9' },
+    fonts: { heading: '"Playfair Display", Georgia, serif', body: '"Raleway", system-ui, sans-serif' },
+    style: { decoration: 'crystal', buttonStyle: 'glass', iconSet: 'diamond', particleStyle: 'crystal-sparkle', gradientFrom: '#1e3a8a', gradientTo: '#e2e8f0', goldBorder: false, loadingAnimation: 'wave' },
+    heroLabel: 'Crystal Reception',
+    footerText: 'Shimmering celebrations',
+    sortOrder: 12,
   },
 ];
 

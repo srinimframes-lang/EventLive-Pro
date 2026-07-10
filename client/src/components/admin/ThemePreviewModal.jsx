@@ -9,19 +9,24 @@ const SAMPLE_PHOTOS = [
 /** Full-page theme preview — uses the same layout components as the live watch page. */
 export default function ThemePreviewModal({ theme, onClose, onApply }) {
   const snap = theme?.themeSnapshot || theme;
+  const isReception = snap?.category === 'reception';
   const previewEvent = {
     id: 'preview',
-    title: 'Sample Wedding Live',
-    brideName: 'Priya',
-    groomName: 'Aarav',
+    title: isReception ? 'Sample Reception Live' : 'Sample Wedding Live',
+    brideName: isReception ? 'Ananya' : 'Priya',
+    groomName: isReception ? 'Vikram' : 'Aarav',
     startTime: new Date().toISOString(),
-    venue: 'Grand Ballroom, Mumbai',
-    description: 'Join us for a beautiful celebration of love and tradition.',
+    venue: isReception ? 'Crystal Ballroom, Mumbai' : 'Grand Ballroom, Mumbai',
+    description: isReception
+      ? 'Join us for an elegant evening of celebration, music, and unforgettable memories.'
+      : 'Join us for a beautiful celebration of love and tradition.',
     gallery: SAMPLE_PHOTOS,
-    coverImage: '',
+    coverImage: snap?.backgroundImage || '',
     themeSnapshot: snap,
     chatEnabled: true,
   };
+
+  const coupleTitle = isReception ? 'Vikram & Ananya' : 'Aarav & Priya';
 
   const mockRoom = {
     viewers: 128,
@@ -52,7 +57,7 @@ export default function ThemePreviewModal({ theme, onClose, onApply }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ThemeLayoutRouter
           event={previewEvent}
-          coupleTitle="Aarav & Priya"
+          coupleTitle={coupleTitle}
           watchUrl="https://eventlivepro.com/live/preview"
           mergedConfig={{ provider: 'youtube', youtubeVideoId: 'M7lc1UVf-VE', isLive: true }}
           room={mockRoom}

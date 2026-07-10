@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-const PARTICLE_COUNTS = { petals: 12, 'gold-dust': 14, neon: 10, bubbles: 10, stars: 12, confetti: 12, bokeh: 8, leaves: 10, dust: 6, none: 0 };
+const PARTICLE_COUNTS = { petals: 12, 'gold-dust': 14, neon: 10, bubbles: 10, stars: 12, confetti: 12, bokeh: 8, leaves: 10, dust: 6, 'crystal-sparkle': 16, none: 0 };
 
 /**
  * Background-only effects — confined to the lower hero zone so particles

@@ -10,6 +10,8 @@ export const LAYOUT_VARIANTS = [
   'vintage-classic',
   'crystal-wedding',
   'night-sky-wedding',
+  'reception-royal-night',
+  'reception-crystal',
 ];
 
 export const LAYOUT_LABELS = {
@@ -23,6 +25,8 @@ export const LAYOUT_LABELS = {
   'vintage-classic': 'Vintage Classic',
   'crystal-wedding': 'Crystal Wedding',
   'night-sky-wedding': 'Night Sky Wedding',
+  'reception-royal-night': 'Royal Reception Night',
+  'reception-crystal': 'Crystal Reception',
 };
 
 export function resolveLayoutVariant(snapshot) {

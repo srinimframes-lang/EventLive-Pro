@@ -32,6 +32,8 @@ export const THEME_LAYOUT_VARIANTS = [
   'vintage-classic',
   'crystal-wedding',
   'night-sky-wedding',
+  'reception-royal-night',
+  'reception-crystal',
 ];
 
 export const THEME_REGION_LABELS = {

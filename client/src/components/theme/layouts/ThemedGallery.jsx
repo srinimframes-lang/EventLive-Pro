@@ -13,6 +13,8 @@ const VARIANTS = {
   vintage: 'gallery-vintage',
   bento: 'gallery-bento',
   constellation: 'gallery-constellation',
+  'reception-golden-stage': 'gallery-reception-golden-stage',
+  'reception-crystal-prism': 'gallery-reception-crystal-prism',
   default: 'gallery-default',
 };
 

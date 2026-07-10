@@ -11,6 +11,7 @@ import {
   SunsetRomanceLayout,
   VintageClassicLayout,
 } from './allLayouts.jsx';
+import { ReceptionCrystalLayout, ReceptionRoyalNightLayout } from './receptionLayouts.jsx';
 
 const LAYOUT_MAP = {
   'royal-palace': RoyalPalaceLayout,
@@ -23,6 +24,8 @@ const LAYOUT_MAP = {
   'vintage-classic': VintageClassicLayout,
   'crystal-wedding': CrystalWeddingLayout,
   'night-sky-wedding': NightSkyWeddingLayout,
+  'reception-royal-night': ReceptionRoyalNightLayout,
+  'reception-crystal': ReceptionCrystalLayout,
 };
 
 export function getThemeLayoutComponent(snapshot) {
