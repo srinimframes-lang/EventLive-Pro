@@ -914,7 +914,7 @@ export default function EventForm() {
               ? 'Saving…'
               : isEdit
                 ? 'Save changes'
-                : showCreditPicker
+                : showCreditCosts
                   ? `Create link (${cost} credit${cost > 1 ? 's' : ''})`
                   : 'Create event'}
           </button>
