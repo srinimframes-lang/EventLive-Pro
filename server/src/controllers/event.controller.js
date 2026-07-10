@@ -12,6 +12,7 @@ import {
   normalizeStudioFields,
 } from '../utils/studioFields.js';
 import { syncEventQrCode } from '../utils/eventQr.js';
+import { loadVerifiedEvent, scheduleEventQrSync } from '../utils/eventSave.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -198,6 +199,7 @@ export const getEvent = asyncHandler(async (req, res) => {
  */
 export const createEvent = asyncHandler(async (req, res) => {
   const role = req.user.role;
+  const userId = req.user._id?.toString();
 
   const payload = {};
   for (const field of EDITABLE_FIELDS) {
@@ -211,58 +213,67 @@ export const createEvent = asyncHandler(async (req, res) => {
   const themeId = req.body.theme ?? payload.theme;
   await applyThemeSelection(payload, themeId, res);
 
-  // ── Admin: unlimited, no credits consumed ───────────────────────────
-  if (role === 'admin') {
-    payload.organizer = req.body.organizer || req.user._id;
-    payload.creditType = 'none';
-    const event = await Event.create(payload);
-    await syncEventQrCode(event._id);
-    const populated = await Event.findById(event._id).populate('organizer', 'name email');
-    return res.status(201).json({ success: true, data: populated });
-  }
-
-  // ── Everyone else: pay with credits (YouTube = 1, Server = 5) ────────
-  const linkType = req.body.linkType === 'server' ? 'server' : 'youtube';
-  const cost = linkCost(linkType);
-  payload.organizer = req.user._id;
-  payload.creditType = linkType;
-
-  const updated = await changeBalance({
-    userId: req.user._id,
-    amount: -cost,
-    reason: 'event_deduct',
-    createdBy: req.user._id,
-    note: `Create ${linkType} live link`,
-  });
-  if (!updated) {
-    res.status(402); // Payment Required
-    throw new Error(
-      `You need ${cost} credit${cost > 1 ? 's' : ''} to create a ${linkType === 'server' ? 'Server' : 'YouTube'} live link. Please buy more credits.`
-    );
-  }
-
-  // Create the event; refund the credits if persistence fails.
-  let event;
   try {
-    event = await Event.create(payload);
-  } catch (err) {
-    await changeBalance({
+    // ── Admin: unlimited, no credits consumed ───────────────────────────
+    if (role === 'admin') {
+      payload.organizer = req.body.organizer || req.user._id;
+      payload.creditType = 'none';
+      const event = await Event.create(payload);
+      const populated = await loadVerifiedEvent(event._id);
+      scheduleEventQrSync(event._id);
+      // eslint-disable-next-line no-console
+      console.info(`[events] created admin user=${userId} id=${event._id} shortCode=${event.shortCode}`);
+      return res.status(201).json({ success: true, data: populated });
+    }
+
+    // ── Everyone else: pay with credits (YouTube = 1, Server = 5) ────────
+    const linkType = req.body.linkType === 'server' ? 'server' : 'youtube';
+    const cost = linkCost(linkType);
+    payload.organizer = req.user._id;
+    payload.creditType = linkType;
+
+    const updated = await changeBalance({
       userId: req.user._id,
-      amount: cost,
-      reason: 'refund',
+      amount: -cost,
+      reason: 'event_deduct',
       createdBy: req.user._id,
-      note: 'Refund: link creation failed',
+      note: `Create ${linkType} live link`,
     });
+    if (!updated) {
+      res.status(402); // Payment Required
+      throw new Error(
+        `You need ${cost} credit${cost > 1 ? 's' : ''} to create a ${linkType === 'server' ? 'Server' : 'YouTube'} live link. Please buy more credits.`
+      );
+    }
+
+    let event;
+    try {
+      event = await Event.create(payload);
+    } catch (err) {
+      await changeBalance({
+        userId: req.user._id,
+        amount: cost,
+        reason: 'refund',
+        createdBy: req.user._id,
+        note: 'Refund: link creation failed',
+      });
+      throw err;
+    }
+
+    const populated = await loadVerifiedEvent(event._id);
+    scheduleEventQrSync(event._id);
+    // eslint-disable-next-line no-console
+    console.info(`[events] created user=${userId} id=${event._id} shortCode=${event.shortCode}`);
+    return res.status(201).json({
+      success: true,
+      data: populated,
+      creditBalance: updated.creditBalance,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[events] create failed user=${userId}:`, err.message);
     throw err;
   }
-
-  await syncEventQrCode(event._id);
-  const populated = await Event.findById(event._id).populate('organizer', 'name email');
-  return res.status(201).json({
-    success: true,
-    data: populated,
-    creditBalance: updated.creditBalance,
-  });
 });
 
 /**
@@ -290,11 +301,18 @@ export const updateEvent = asyncHandler(async (req, res) => {
     await applyThemeSelection(event, req.body.theme, res);
   }
 
-  await event.save();
-  await syncEventQrCode(event._id);
-  const populated = await Event.findById(event._id).populate('organizer', 'name email');
-
-  res.status(200).json({ success: true, data: populated });
+  try {
+    await event.save();
+    const populated = await loadVerifiedEvent(event._id);
+    scheduleEventQrSync(event._id);
+    // eslint-disable-next-line no-console
+    console.info(`[events] updated user=${req.user._id} id=${event._id}`);
+    res.status(200).json({ success: true, data: populated });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[events] update failed id=${req.params.id} user=${req.user._id}:`, err.message);
+    throw err;
+  }
 });
 
 /**

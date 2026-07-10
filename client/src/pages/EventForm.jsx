@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   eventService,
@@ -11,6 +11,8 @@ import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 import EventQrCard from '../components/EventQrCard.jsx';
+import ToastBanner from '../components/ToastBanner.jsx';
+import { useToast } from '../hooks/useToast.js';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
 
@@ -60,6 +62,8 @@ export default function EventForm() {
   const coverInputRef = useRef(null);
   const pendingCoverRef = useRef(null);
   const pendingLogoRef = useRef(null);
+  const saveInFlightRef = useRef(false);
+  const { toast, showToast, clearToast } = useToast();
 
   // Non-admins spend credits to create a link (YouTube = 1, Server = 5).
   const [linkType, setLinkType] = useState(
@@ -194,10 +198,21 @@ export default function EventForm() {
     }
   };
 
+  const handleQrUpdated = useCallback((data) => {
+    setForm((f) => ({
+      ...f,
+      qrCodeImage: data.qrCodeImage,
+      qrCodeTargetUrl: data.qrCodeTargetUrl,
+    }));
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saveInFlightRef.current || submitting || uploadingLogo || uploadingCover) return;
+
     setError('');
     const studioForm = normalizeStudioForm(form);
+    saveInFlightRef.current = true;
     setSubmitting(true);
 
     const youtubeVideoId = form.isOnline ? extractYouTubeId(form.youtubeUrl) : '';
@@ -251,8 +266,9 @@ export default function EventForm() {
     pendingCoverRef.current = null;
     pendingLogoRef.current = null;
 
+    let saved = null;
     try {
-      const saved = isEdit
+      saved = isEdit
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
 
@@ -266,25 +282,38 @@ export default function EventForm() {
         }));
       }
 
-      if (!isAdmin) refreshUser().catch(() => {});
-
-      navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, {
-        replace: true,
-      });
-
-      // Upload pending media after navigation so a slow upload never blocks the save button.
       if (!isEdit && saved?.id) {
-        Promise.all([
-          pendingCover ? eventService.uploadCover(saved.id, pendingCover).catch(() => null) : null,
-          pendingLogo ? eventService.uploadLogo(saved.id, pendingLogo).catch(() => null) : null,
-        ]).catch(() => {});
+        const uploads = [];
+        if (pendingCover) uploads.push(eventService.uploadCover(saved.id, pendingCover));
+        if (pendingLogo) uploads.push(eventService.uploadLogo(saved.id, pendingLogo));
+        if (uploads.length) await Promise.all(uploads);
       }
+
+      if (!isAdmin) await refreshUser().catch(() => {});
     } catch (err) {
       pendingCoverRef.current = pendingCover;
       pendingLogoRef.current = pendingLogo;
-      setError(err.message || 'Failed to save event. Please try again.');
+      const message = err.message || 'Failed to save event. Please try again.';
+      // eslint-disable-next-line no-console
+      console.error('[EventForm] save failed:', {
+        isEdit,
+        status: err.status,
+        code: err.code,
+        message: err.message,
+        response: err.response?.data,
+      });
+      setError(message);
+      showToast(message);
+      return;
     } finally {
+      saveInFlightRef.current = false;
       setSubmitting(false);
+    }
+
+    if (saved) {
+      navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, {
+        replace: true,
+      });
     }
   };
 
@@ -314,13 +343,8 @@ export default function EventForm() {
               qrCodeImage: form.qrCodeImage,
               qrCodeTargetUrl: form.qrCodeTargetUrl,
             }}
-            onQrUpdated={(data) =>
-              setForm((f) => ({
-                ...f,
-                qrCodeImage: data.qrCodeImage,
-                qrCodeTargetUrl: data.qrCodeTargetUrl,
-              }))
-            }
+            suspendAutoSync={submitting}
+            onQrUpdated={handleQrUpdated}
           />
         </div>
       )}
@@ -736,7 +760,7 @@ export default function EventForm() {
           <button
             type="submit"
             className="btn-primary w-full sm:w-auto"
-            disabled={submitting || insufficient}
+            disabled={submitting || uploadingLogo || uploadingCover || insufficient}
           >
             {submitting
               ? 'Saving…'
@@ -751,6 +775,7 @@ export default function EventForm() {
           </button>
         </div>
       </form>
+      <ToastBanner toast={toast} onClose={clearToast} />
     </div>
   );
 }

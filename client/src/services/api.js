@@ -22,11 +22,28 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const method = error.config?.method?.toUpperCase() || 'REQUEST';
+    const url = error.config?.url || '';
+    const status = error.response?.status;
+    const serverMessage = error.response?.data?.message;
     const message =
       error.code === 'ECONNABORTED'
         ? 'Request timed out. The server may be waking up — please try again.'
-        : error.response?.data?.message || error.message || 'Something went wrong';
-    return Promise.reject(new Error(message));
+        : serverMessage || error.message || 'Something went wrong';
+
+    // eslint-disable-next-line no-console
+    console.error('[API]', method, url, {
+      status,
+      code: error.code,
+      message: serverMessage || error.message,
+      data: error.response?.data,
+    });
+
+    const err = new Error(message);
+    err.status = status;
+    err.code = error.code;
+    err.response = error.response;
+    return Promise.reject(err);
   }
 );
 

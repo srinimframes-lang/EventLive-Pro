@@ -5,7 +5,12 @@ import { eventService } from '../services/event.service.js';
 /**
  * Admin QR card — live URL, stored QR image, share & download actions.
  */
-export default function EventQrCard({ event, onQrUpdated, className = '' }) {
+export default function EventQrCard({
+  event,
+  onQrUpdated,
+  suspendAutoSync = false,
+  className = '',
+}) {
   const [qrImage, setQrImage] = useState(event?.qrCodeImage || '');
   const [targetUrl, setTargetUrl] = useState(event?.qrCodeTargetUrl || '');
   const [syncing, setSyncing] = useState(false);
@@ -45,13 +50,13 @@ export default function EventQrCard({ event, onQrUpdated, className = '' }) {
   }, [event?.qrCodeImage, event?.qrCodeTargetUrl]);
 
   useEffect(() => {
-    if (!event?.id || !liveUrl || syncingRef.current) return;
+    if (suspendAutoSync || !event?.id || !liveUrl || syncingRef.current) return;
     if (targetUrl === liveUrl && qrImage) return;
     syncingRef.current = true;
     syncQr().finally(() => {
       syncingRef.current = false;
     });
-  }, [event?.id, liveUrl, targetUrl, qrImage, syncQr]);
+  }, [suspendAutoSync, event?.id, liveUrl, targetUrl, qrImage, syncQr]);
 
   const copyLink = async () => {
     try {
