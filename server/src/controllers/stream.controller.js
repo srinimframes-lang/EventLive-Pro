@@ -37,8 +37,15 @@ function derivePlaybackUrl(event) {
 function publicStreamConfig(event) {
   const youtubeVideoId =
     extractYouTubeId(event.youtubeVideoId) || extractYouTubeId(event.streamUrl) || '';
-  const provider =
-    event.streamProvider === 'youtube' || youtubeVideoId ? 'youtube' : event.streamProvider;
+  const isServerProvider =
+    event.streamProvider === 'rtmp' ||
+    event.streamProvider === 'hls' ||
+    event.streamProvider === 'webrtc';
+  const provider = isServerProvider
+    ? event.streamProvider
+    : event.streamProvider === 'youtube' || youtubeVideoId
+      ? 'youtube'
+      : event.streamProvider;
   const isServer = provider === 'rtmp' || provider === 'hls';
 
   return {

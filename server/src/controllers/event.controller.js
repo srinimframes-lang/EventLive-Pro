@@ -13,6 +13,11 @@ import {
 } from '../utils/studioFields.js';
 import { syncEventQrCode } from '../utils/eventQr.js';
 import { loadVerifiedEvent, scheduleEventQrSync } from '../utils/eventSave.js';
+import {
+  applyStreamTypeSelection,
+  resolveStreamType,
+  validateOnlineStreamPayload,
+} from '../utils/streamType.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -213,6 +218,14 @@ export const createEvent = asyncHandler(async (req, res) => {
   const themeId = req.body.theme ?? payload.theme;
   await applyThemeSelection(payload, themeId, res);
 
+  const streamType = resolveStreamType(req.body, payload);
+  const streamError = validateOnlineStreamPayload(payload, streamType);
+  if (streamError) {
+    res.status(400);
+    throw new Error(streamError);
+  }
+  if (streamType) applyStreamTypeSelection(payload, streamType, { isCreate: true });
+
   try {
     // ── Admin: unlimited, no credits consumed ───────────────────────────
     if (role === 'admin') {
@@ -227,7 +240,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     }
 
     // ── Everyone else: pay with credits (YouTube = 1, Server = 5) ────────
-    const linkType = req.body.linkType === 'server' ? 'server' : 'youtube';
+    const linkType = streamType || (req.body.linkType === 'server' ? 'server' : 'youtube');
     const cost = linkCost(linkType);
     payload.organizer = req.user._id;
     payload.creditType = linkType;
@@ -299,6 +312,19 @@ export const updateEvent = asyncHandler(async (req, res) => {
   }
   if (req.body.theme !== undefined) {
     await applyThemeSelection(event, req.body.theme, res);
+  }
+
+  const streamType = resolveStreamType(req.body, event);
+  const streamError = validateOnlineStreamPayload(
+    { isOnline: event.isOnline, youtubeVideoId: event.youtubeVideoId, streamUrl: event.streamUrl },
+    streamType
+  );
+  if (streamType) {
+    if (streamError) {
+      res.status(400);
+      throw new Error(streamError);
+    }
+    applyStreamTypeSelection(event, streamType);
   }
 
   try {

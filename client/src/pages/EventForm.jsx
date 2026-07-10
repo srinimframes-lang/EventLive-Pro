@@ -13,6 +13,7 @@ import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 import EventQrCard from '../components/EventQrCard.jsx';
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
+import { streamService } from '../services/stream.service.js';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
 
@@ -27,6 +28,7 @@ const EMPTY = {
   location: 'Online',
   venue: '',
   youtubeUrl: '',
+  hlsUrl: '',
   chatEnabled: true,
   capacity: 0,
   tags: '',
@@ -65,14 +67,17 @@ export default function EventForm() {
   const saveInFlightRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
-  // Non-admins spend credits to create a link (YouTube = 1, Server = 5).
-  const [linkType, setLinkType] = useState(
+  // Stream type: YouTube Live (1 credit) or Premium Server Live (5 credits).
+  const [streamType, setStreamType] = useState(
     searchParams.get('type') === 'server' ? 'server' : 'youtube'
   );
   const balance = user?.creditBalance ?? 0;
-  const cost = LINK_COSTS[linkType] || 1;
-  const showCreditPicker = !isAdmin && !isEdit;
-  const insufficient = showCreditPicker && balance < cost;
+  const cost = LINK_COSTS[streamType] || 1;
+  const showCreditCosts = !isAdmin && !isEdit;
+  const insufficient = showCreditCosts && balance < cost;
+
+  const [serverStream, setServerStream] = useState(null);
+  const [serverStreamLoading, setServerStreamLoading] = useState(false);
 
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(isEdit);
@@ -103,6 +108,7 @@ export default function EventForm() {
           youtubeUrl: event.youtubeVideoId
             ? `https://youtu.be/${event.youtubeVideoId}`
             : event.streamUrl || '',
+          hlsUrl: event.hlsUrl || '',
           chatEnabled: event.chatEnabled ?? true,
           capacity: event.capacity || 0,
           tags: (event.tags || []).join(', '),
@@ -127,6 +133,17 @@ export default function EventForm() {
           qrCodeTargetUrl: event.qrCodeTargetUrl || '',
           brandDomain: event.brandDomain || '',
         });
+        const provider = event.streamProvider || '';
+        const credit = event.creditType || '';
+        if (
+          provider === 'rtmp' ||
+          provider === 'hls' ||
+          credit === 'server'
+        ) {
+          setStreamType('server');
+        } else {
+          setStreamType('youtube');
+        }
       })
       .catch((err) => active && setError(err.message))
       .finally(() => active && setLoading(false));
@@ -134,6 +151,31 @@ export default function EventForm() {
       active = false;
     };
   }, [id, isEdit]);
+
+  useEffect(() => {
+    if (!isEdit || !id || streamType !== 'server' || !form.isOnline) {
+      setServerStream(null);
+      return undefined;
+    }
+    let active = true;
+    setServerStreamLoading(true);
+    Promise.all([
+      streamService.getKey(id).catch(() => null),
+      streamService.getConfig(id).catch(() => null),
+    ])
+      .then(([keyInfo, cfg]) => {
+        if (!active || !keyInfo) return;
+        setServerStream({
+          rtmpUrl: keyInfo.fullUrl || '',
+          streamKey: keyInfo.streamKey || '',
+          hlsPlayerUrl: cfg?.playbackUrl || cfg?.hlsUrl || '',
+        });
+      })
+      .finally(() => active && setServerStreamLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [isEdit, id, streamType, form.isOnline]);
 
   useEffect(() => {
     let active = true;
@@ -215,7 +257,22 @@ export default function EventForm() {
     saveInFlightRef.current = true;
     setSubmitting(true);
 
-    const youtubeVideoId = form.isOnline ? extractYouTubeId(form.youtubeUrl) : '';
+    if (form.isOnline && !streamType) {
+      setError('Please select a stream type.');
+      saveInFlightRef.current = false;
+      setSubmitting(false);
+      return;
+    }
+
+    const youtubeVideoId =
+      form.isOnline && streamType === 'youtube' ? extractYouTubeId(form.youtubeUrl) : '';
+
+    if (form.isOnline && streamType === 'youtube' && !youtubeVideoId) {
+      setError('A valid YouTube Live URL is required for YouTube Live events.');
+      saveInFlightRef.current = false;
+      setSubmitting(false);
+      return;
+    }
 
     const payload = {
       title: form.title.trim(),
@@ -230,11 +287,23 @@ export default function EventForm() {
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
       brideName: form.brideName?.trim() || '',
       groomName: form.groomName?.trim() || '',
-      streamUrl: form.isOnline ? form.youtubeUrl?.trim() || '' : '',
-      youtubeVideoId,
-      streamProvider: youtubeVideoId ? 'youtube' : 'none',
       chatEnabled: form.chatEnabled,
     };
+
+    if (form.isOnline) {
+      payload.streamType = streamType;
+      payload.linkType = streamType;
+      if (streamType === 'youtube') {
+        payload.streamUrl = form.youtubeUrl?.trim() || '';
+        payload.youtubeVideoId = youtubeVideoId;
+        payload.streamProvider = 'youtube';
+      } else {
+        payload.streamProvider = 'rtmp';
+        payload.youtubeVideoId = '';
+        payload.streamUrl = '';
+        if (form.hlsUrl?.trim()) payload.hlsUrl = form.hlsUrl.trim();
+      }
+    }
 
     if (form.tags?.trim()) {
       payload.tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
@@ -257,9 +326,6 @@ export default function EventForm() {
     }
 
     if (form.theme) payload.theme = form.theme;
-
-    // Non-admins spend credits per new link.
-    if (showCreditPicker) payload.linkType = linkType;
 
     const pendingCover = pendingCoverRef.current;
     const pendingLogo = pendingLogoRef.current;
@@ -362,61 +428,6 @@ export default function EventForm() {
               </>
             )}
           </div>
-        )}
-
-        {/* ── Credit selection (non-admins) ──────────────────── */}
-        {showCreditPicker && (
-          <Section
-            title="Link type"
-            subtitle={`Your balance: ${balance} credit${balance === 1 ? '' : 's'}. Credits are deducted when the link is created.`}
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label
-                className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
-                  linkType === 'youtube' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'
-                }`}
-              >
-                <span>
-                  <input
-                    type="radio"
-                    name="linkType"
-                    className="mr-2"
-                    checked={linkType === 'youtube'}
-                    onChange={() => setLinkType('youtube')}
-                  />
-                  YouTube Live Link
-                </span>
-                <span className="text-sm font-semibold text-slate-600">1 credit</span>
-              </label>
-              <label
-                className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
-                  linkType === 'server' ? 'border-gold-500 bg-gold-50' : 'border-slate-200'
-                }`}
-              >
-                <span>
-                  <input
-                    type="radio"
-                    name="linkType"
-                    className="mr-2"
-                    checked={linkType === 'server'}
-                    onChange={() => setLinkType('server')}
-                  />
-                  Server Live Link
-                </span>
-                <span className="text-sm font-semibold text-slate-600">5 credits</span>
-              </label>
-            </div>
-            {insufficient && (
-              <p className="text-sm text-amber-700">
-                You need {cost - balance} more credit{cost - balance === 1 ? '' : 's'} for a{' '}
-                {linkType === 'server' ? 'Server' : 'YouTube'} link.{' '}
-                <Link to="/dashboard#buy-credits" className="font-semibold underline">
-                  Buy credits
-                </Link>
-                .
-              </p>
-            )}
-          </Section>
         )}
 
         {/* ── Basics ─────────────────────────────────────────── */}
@@ -540,22 +551,159 @@ export default function EventForm() {
           </label>
 
           {form.isOnline ? (
-            <Field
-              label="YouTube Live link"
-              htmlFor="youtubeUrl"
-              hint="Paste the YouTube Live URL or video ID. It will be embedded directly on the in-app watch page."
-            >
-              <input id="youtubeUrl" name="youtubeUrl" type="text"
-                placeholder="https://youtube.com/live/…  or  https://youtu.be/…"
-                className="input" value={form.youtubeUrl} onChange={handleChange} />
-              {form.isOnline && form.youtubeUrl && (
-                <p className="mt-1 text-xs text-slate-400">
-                  {extractYouTubeId(form.youtubeUrl)
-                    ? `Detected video ID: ${extractYouTubeId(form.youtubeUrl)}`
-                    : 'Could not detect a YouTube video ID yet.'}
+            <>
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">
+                  Stream type <span className="text-red-500">*</span>
                 </p>
+                {showCreditCosts && (
+                  <p className="mb-3 text-xs text-slate-500">
+                    Your balance: {balance} credit{balance === 1 ? '' : 's'}. Credits are deducted
+                    when the event is created.
+                  </p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label
+                    className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
+                      streamType === 'youtube' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'
+                    }`}
+                  >
+                    <span>
+                      <input
+                        type="radio"
+                        name="streamType"
+                        className="mr-2"
+                        checked={streamType === 'youtube'}
+                        onChange={() => setStreamType('youtube')}
+                        required
+                      />
+                      YouTube Live
+                    </span>
+                    {showCreditCosts && (
+                      <span className="text-sm font-semibold text-slate-600">1 credit</span>
+                    )}
+                  </label>
+                  <label
+                    className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 ${
+                      streamType === 'server' ? 'border-gold-500 bg-gold-50' : 'border-slate-200'
+                    }`}
+                  >
+                    <span>
+                      <input
+                        type="radio"
+                        name="streamType"
+                        className="mr-2"
+                        checked={streamType === 'server'}
+                        onChange={() => setStreamType('server')}
+                        required
+                      />
+                      Premium Server Live
+                    </span>
+                    {showCreditCosts && (
+                      <span className="text-sm font-semibold text-slate-600">5 credits</span>
+                    )}
+                  </label>
+                </div>
+                {insufficient && (
+                  <p className="mt-2 text-sm text-amber-700">
+                    You need {cost - balance} more credit{cost - balance === 1 ? '' : 's'} for{' '}
+                    {streamType === 'server' ? 'Premium Server Live' : 'YouTube Live'}.{' '}
+                    <Link to="/dashboard#buy-credits" className="font-semibold underline">
+                      Buy credits
+                    </Link>
+                    .
+                  </p>
+                )}
+              </div>
+
+              {streamType === 'youtube' ? (
+                <Field
+                  label="YouTube Live URL"
+                  htmlFor="youtubeUrl"
+                  hint="Paste the YouTube Live URL or video ID. It will be embedded on the watch page."
+                >
+                  <input
+                    id="youtubeUrl"
+                    name="youtubeUrl"
+                    type="text"
+                    required
+                    placeholder="https://youtube.com/live/…  or  https://youtu.be/…"
+                    className="input"
+                    value={form.youtubeUrl}
+                    onChange={handleChange}
+                  />
+                  {form.youtubeUrl && (
+                    <p className="mt-1 text-xs text-slate-400">
+                      {extractYouTubeId(form.youtubeUrl)
+                        ? `Detected video ID: ${extractYouTubeId(form.youtubeUrl)}`
+                        : 'Could not detect a YouTube video ID yet.'}
+                    </p>
+                  )}
+                </Field>
+              ) : (
+                <div className="space-y-4 rounded-xl border border-gold-200 bg-gold-50/50 p-4">
+                  <p className="text-sm text-slate-600">
+                    Stream to our premium RTMP server. Use these credentials in OBS or your encoder.
+                  </p>
+                  {isEdit && serverStreamLoading && (
+                    <p className="text-sm text-slate-500">Loading stream credentials…</p>
+                  )}
+                  {isEdit && serverStream && !serverStreamLoading && (
+                    <>
+                      <Field label="RTMP URL" htmlFor="rtmpUrl">
+                        <input
+                          id="rtmpUrl"
+                          readOnly
+                          className="input font-mono text-xs"
+                          value={serverStream.rtmpUrl}
+                        />
+                      </Field>
+                      <Field label="Stream Key" htmlFor="streamKey">
+                        <input
+                          id="streamKey"
+                          readOnly
+                          className="input font-mono text-xs"
+                          value={serverStream.streamKey}
+                        />
+                      </Field>
+                      <Field
+                        label="HLS Player URL"
+                        htmlFor="hlsPlayerUrl"
+                        hint="Used on the public watch page for playback."
+                      >
+                        <input
+                          id="hlsPlayerUrl"
+                          readOnly
+                          className="input font-mono text-xs"
+                          value={serverStream.hlsPlayerUrl}
+                        />
+                      </Field>
+                    </>
+                  )}
+                  {!isEdit && (
+                    <p className="text-sm text-slate-500">
+                      RTMP URL, stream key, and HLS player URL will be generated when you save this
+                      event.
+                    </p>
+                  )}
+                  <Field
+                    label="Custom HLS URL (optional)"
+                    htmlFor="hlsUrl"
+                    hint="Override the default HLS playback URL if needed."
+                  >
+                    <input
+                      id="hlsUrl"
+                      name="hlsUrl"
+                      type="text"
+                      placeholder="https://…/master.m3u8"
+                      className="input font-mono text-xs"
+                      value={form.hlsUrl}
+                      onChange={handleChange}
+                    />
+                  </Field>
+                </div>
               )}
-            </Field>
+            </>
           ) : (
             <Field label="Venue / location" htmlFor="location">
               <input id="location" name="location" className="input"

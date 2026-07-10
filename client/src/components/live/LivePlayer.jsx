@@ -359,7 +359,9 @@ export default function LivePlayer({ config }) {
   }
 
   const videoId = resolveYoutubeVideoId(config);
-  const isYoutube = config.provider === 'youtube' || Boolean(videoId);
+  const isServerProvider =
+    config.provider === 'rtmp' || config.provider === 'hls' || config.provider === 'webrtc';
+  const isYoutube = !isServerProvider && (config.provider === 'youtube' || Boolean(videoId));
 
   if (isYoutube) {
     return <YouTubePlayer videoId={videoId} />;
