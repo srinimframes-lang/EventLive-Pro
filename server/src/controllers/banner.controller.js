@@ -1,6 +1,7 @@
 import { Banner, BANNER_LOCATIONS } from '../models/Banner.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { assertBannerFile } from '../utils/bannerMedia.js';
+import { normalizeFitMode, normalizeSizePreset } from '../utils/bannerSizes.js';
 import { persistBannerUpload, removeBannerUpload } from '../utils/storage.js';
 
 function activeBannerQuery(location) {
@@ -42,7 +43,16 @@ function bannerPayloadFromBody(body) {
   if (body.clickUrl !== undefined) payload.clickUrl = String(body.clickUrl).trim();
   if (body.phoneNumber !== undefined) payload.phoneNumber = String(body.phoneNumber).trim();
   if (body.whatsappNumber !== undefined) payload.whatsappNumber = String(body.whatsappNumber).trim();
-  if (body.mobileSize !== undefined) payload.mobileSize = body.mobileSize === '100' ? '100' : '50';
+  if (body.sizePreset !== undefined) {
+    payload.sizePreset = normalizeSizePreset(body.sizePreset, body.mobileSize);
+  }
+  if (body.mobileSize !== undefined) {
+    payload.mobileSize = body.mobileSize === '100' ? '100' : '50';
+    if (body.sizePreset === undefined) {
+      payload.sizePreset = normalizeSizePreset(undefined, payload.mobileSize);
+    }
+  }
+  if (body.fitMode !== undefined) payload.fitMode = normalizeFitMode(body.fitMode);
   if (body.locations !== undefined) payload.locations = parseLocations(body.locations);
   if (body.startDate !== undefined) payload.startDate = parseDate(body.startDate);
   if (body.endDate !== undefined) payload.endDate = parseDate(body.endDate);
@@ -64,7 +74,7 @@ export const listActiveBanners = asyncHandler(async (req, res) => {
 
   const banners = await Banner.find(activeBannerQuery(location))
     .sort({ priority: -1, createdAt: -1 })
-    .select('companyName imageUrl mediaType clickUrl phoneNumber whatsappNumber mobileSize priority')
+    .select('companyName imageUrl mediaType sizePreset fitMode mobileSize clickUrl phoneNumber whatsappNumber priority')
     .lean();
 
   res.status(200).json({ success: true, data: banners });

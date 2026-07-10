@@ -8,6 +8,7 @@ import { isBannerVideo } from '../utils/bannerMedia.js';
 export default function BannerMedia({
   banner,
   className = '',
+  objectFit = 'contain',
   autoPlay = false,
   muted = true,
   loop = false,
@@ -35,12 +36,15 @@ export default function BannerMedia({
 
   if (!src) return null;
 
+  const fitStyle = { objectFit };
+
   if (isVideo) {
     return (
       <video
         ref={videoRef}
         src={src}
         className={className}
+        style={fitStyle}
         autoPlay={autoPlay}
         muted={muted}
         loop={loop}
@@ -57,6 +61,7 @@ export default function BannerMedia({
       src={src}
       alt={alt}
       className={className}
+      style={fitStyle}
       loading="lazy"
       decoding="async"
     />

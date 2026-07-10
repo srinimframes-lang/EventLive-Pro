@@ -36,6 +36,8 @@ await Banner.create({
   companyName: 'Video Ad Co',
   imageUrl: '/uploads/test-banner.mp4',
   mediaType: 'video',
+  sizePreset: '728x90',
+  fitMode: 'contain',
   locations: ['homepage'],
   enabled: true,
 });
@@ -72,6 +74,12 @@ const videoBanner = homepage.find((b) => b.mediaType === 'video');
 if (!videoBanner || videoBanner.companyName !== 'Video Ad Co') {
   throw new Error('Video banner not returned in active list');
 }
+
+const { normalizeSizePreset, normalizeFitMode } = await import('../src/utils/bannerSizes.js');
+if (normalizeSizePreset('970x250') !== '970x250') throw new Error('size preset failed');
+if (normalizeSizePreset(undefined, '100') !== '320x100') throw new Error('legacy mobileSize map failed');
+if (normalizeFitMode('cover') !== 'cover') throw new Error('fit mode failed');
+if (videoBanner.sizePreset !== '728x90') throw new Error('video banner sizePreset missing');
 
 const { assertBannerFile, mediaTypeFromMime } = await import('../src/utils/bannerMedia.js');
 if (mediaTypeFromMime('video/mp4') !== 'video') throw new Error('video/mp4 type check failed');

@@ -941,3 +941,14 @@
   90% { opacity: 0.6; }
   100% { transform: translateY(-120px) rotate(180deg); opacity: 0; }
 }
+
+/* ── Banner ad frames (aspect-ratio sizing) ───────────────── */
+.banner-slot {
+  width: 100%;
+}
+.banner-frame__box {
+  background: #fff;
+}
+.banner-frame__media {
+  display: block;
+}

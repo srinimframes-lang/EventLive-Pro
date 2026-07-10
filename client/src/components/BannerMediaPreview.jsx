@@ -1,58 +1,42 @@
+import { resolveMediaUrl } from '../utils/format.js';
 import { isBannerVideo } from '../utils/bannerMedia.js';
+import { resolveBannerFitMode } from '../utils/bannerSizes.js';
 import BannerMedia from './BannerMedia.jsx';
 
 /**
- * Admin / inline preview for banner image or video.
+ * Compact admin table thumbnail.
  */
-export default function BannerMediaPreview({
-  banner,
-  src,
-  mediaType,
-  className,
-  compact = false,
-}) {
-  const resolvedSrc = src || banner?.imageUrl;
+export default function BannerMediaPreview({ banner, src, mediaType }) {
   const previewBanner = {
-    imageUrl: resolvedSrc,
+    ...banner,
+    imageUrl: src || banner?.imageUrl,
     mediaType: mediaType || banner?.mediaType,
   };
 
-  const mediaClass =
-    className ||
-    (compact ? 'h-10 w-24 object-contain' : 'h-[90px] w-[320px] max-w-full object-contain sm:w-[728px]');
-
   if (!previewBanner.imageUrl) {
     return (
-      <div
-        className={`grid place-items-center text-xs text-slate-400 ${
-          compact ? 'h-10 w-24' : 'h-[90px] w-[320px]'
-        }`}
-      >
-        No media
-      </div>
+      <div className="grid h-10 w-24 place-items-center text-[10px] text-slate-400">No media</div>
     );
   }
 
   const isVideo = isBannerVideo(previewBanner);
+  const fit = resolveBannerFitMode(previewBanner);
 
   return (
-    <div
-      className={`relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50 ${
-        compact ? 'inline-block' : ''
-      }`}
-    >
+    <div className="relative h-10 w-24 overflow-hidden rounded border border-slate-200 bg-slate-50">
       <BannerMedia
         banner={previewBanner}
-        className={mediaClass}
+        className="h-full w-full"
+        objectFit={fit}
         autoPlay={isVideo}
         loop={isVideo}
         muted
         playsInline
-        alt="Banner preview"
+        alt=""
       />
       {isVideo && (
-        <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 py-0.5 text-[9px] font-semibold uppercase text-white">
-          Video
+        <span className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-0.5 text-[8px] text-white">
+          ▶
         </span>
       )}
     </div>

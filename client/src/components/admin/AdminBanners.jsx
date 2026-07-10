@@ -5,6 +5,8 @@ import {
   bannerMediaTypeFromFile,
   validateBannerMediaFile,
 } from '../../utils/bannerMedia.js';
+import { BANNER_SIZE_PRESETS, detectClosestSizePreset } from '../../utils/bannerSizes.js';
+import BannerLivePreview from '../BannerLivePreview.jsx';
 import BannerMediaPreview from '../BannerMediaPreview.jsx';
 
 const EMPTY = {
@@ -12,7 +14,8 @@ const EMPTY = {
   clickUrl: '',
   phoneNumber: '',
   whatsappNumber: '',
-  mobileSize: '50',
+  sizePreset: '728x90',
+  fitMode: 'contain',
   locations: [],
   startDate: '',
   endDate: '',
@@ -40,6 +43,7 @@ export default function AdminBanners() {
   const pendingImageRef = useRef(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewMediaType, setPreviewMediaType] = useState('image');
+  const [detectedSize, setDetectedSize] = useState(null);
 
   const flash = (msg) => {
     setNotice(msg);
@@ -67,6 +71,7 @@ export default function AdminBanners() {
     pendingImageRef.current = null;
     setPreviewUrl('');
     setPreviewMediaType('image');
+    setDetectedSize(null);
     setEditing('new');
     setForm(EMPTY);
   };
@@ -81,7 +86,8 @@ export default function AdminBanners() {
       clickUrl: b.clickUrl || '',
       phoneNumber: b.phoneNumber || '',
       whatsappNumber: b.whatsappNumber || '',
-      mobileSize: b.mobileSize === '100' ? '100' : '50',
+      sizePreset: b.sizePreset || (b.mobileSize === '100' ? '320x100' : b.mobileSize === '50' ? '320x50' : '728x90'),
+      fitMode: b.fitMode === 'cover' ? 'cover' : 'contain',
       locations: b.locations || [],
       startDate: toDateInput(b.startDate),
       endDate: toDateInput(b.endDate),
@@ -106,9 +112,39 @@ export default function AdminBanners() {
         ? f.locations.filter((l) => l !== loc)
         : [...f.locations, loc],
     }));
+    setPreviewMediaType('image');
+    setDetectedSize(null);
   };
 
-  const handleImagePick = (e) => {
+  const readFileDimensions = (file, blobUrl) =>
+    new Promise((resolve) => {
+      if (bannerMediaTypeFromFile(file) === 'video') {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+          resolve(
+            video.videoWidth && video.videoHeight
+              ? { width: video.videoWidth, height: video.videoHeight }
+              : null
+          );
+        };
+        video.onerror = () => resolve(null);
+        video.src = blobUrl;
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        resolve(
+          img.naturalWidth && img.naturalHeight
+            ? { width: img.naturalWidth, height: img.naturalHeight }
+            : null
+        );
+      };
+      img.onerror = () => resolve(null);
+      img.src = blobUrl;
+    });
+
+  const handleImagePick = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -121,9 +157,19 @@ export default function AdminBanners() {
 
     pendingImageRef.current = file;
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(URL.createObjectURL(file));
+    const blobUrl = URL.createObjectURL(file);
+    setPreviewUrl(blobUrl);
     setPreviewMediaType(bannerMediaTypeFromFile(file) || 'image');
     setError('');
+
+    const dims = await readFileDimensions(file, blobUrl);
+    if (dims) {
+      setDetectedSize(dims);
+      const closest = detectClosestSizePreset(dims.width, dims.height);
+      setForm((f) => ({ ...f, sizePreset: closest }));
+    } else {
+      setDetectedSize(null);
+    }
   };
 
   const save = async (e) => {
@@ -147,7 +193,8 @@ export default function AdminBanners() {
         fd.append('clickUrl', form.clickUrl.trim());
         fd.append('phoneNumber', form.phoneNumber.trim());
         fd.append('whatsappNumber', form.whatsappNumber.trim());
-        fd.append('mobileSize', form.mobileSize);
+        fd.append('sizePreset', form.sizePreset);
+        fd.append('fitMode', form.fitMode);
         fd.append('locations', JSON.stringify(form.locations));
         fd.append('startDate', form.startDate || '');
         fd.append('endDate', form.endDate || '');
@@ -161,7 +208,8 @@ export default function AdminBanners() {
           clickUrl: form.clickUrl.trim(),
           phoneNumber: form.phoneNumber.trim(),
           whatsappNumber: form.whatsappNumber.trim(),
-          mobileSize: form.mobileSize,
+          sizePreset: form.sizePreset,
+          fitMode: form.fitMode,
           locations: form.locations,
           startDate: form.startDate || null,
           endDate: form.endDate || null,
@@ -255,12 +303,6 @@ export default function AdminBanners() {
           <div>
             <span className="mb-1 block text-sm font-medium text-slate-700">Banner media *</span>
             <div className="flex flex-wrap items-start gap-4">
-              {(previewUrl || editing !== 'new') && (
-                <BannerMediaPreview
-                  src={previewUrl}
-                  mediaType={previewMediaType}
-                />
-              )}
               <div>
                 <input
                   ref={imageInputRef}
@@ -270,14 +312,59 @@ export default function AdminBanners() {
                   className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700"
                 />
                 <p className="mt-1 text-xs text-slate-400">
-                  Images: JPG, PNG, WebP (max 8 MB) · Videos: MP4, WebM (max 10 MB, autoplay muted)
+                  Images: JPG, PNG, WebP (max 8 MB) · Videos: MP4, WebM (max 10 MB)
                 </p>
+                {detectedSize && (
+                  <p className="mt-1 text-xs text-emerald-700">
+                    Detected: {detectedSize.width}×{detectedSize.height} px
+                  </p>
+                )}
               </div>
             </div>
           </div>
 
+          {(previewUrl || editing !== 'new') && (
+            <BannerLivePreview
+              banner={form}
+              src={previewUrl}
+              mediaType={previewMediaType}
+              naturalSize={detectedSize}
+            />
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
+              <span className="mb-1 block font-medium text-slate-700">Banner size</span>
+              <select
+                className="input"
+                value={form.sizePreset}
+                onChange={(e) => setForm((f) => ({ ...f, sizePreset: e.target.value }))}
+              >
+                {Object.entries(BANNER_SIZE_PRESETS).map(([key, spec]) => (
+                  <option key={key} value={key}>
+                    {spec.label}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-xs text-slate-400">
+                Sets aspect ratio — banner scales to full width up to this size
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-slate-700">Display fit</span>
+              <select
+                className="input"
+                value={form.fitMode}
+                onChange={(e) => setForm((f) => ({ ...f, fitMode: e.target.value }))}
+              >
+                <option value="contain">Contain (logos — no crop)</option>
+                <option value="cover">Cover (full-bleed banners)</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm sm:col-span-2">
               <span className="mb-1 block font-medium text-slate-700">Click URL</span>
               <input
                 className="input"
@@ -286,17 +373,6 @@ export default function AdminBanners() {
                 value={form.clickUrl}
                 onChange={(e) => setForm((f) => ({ ...f, clickUrl: e.target.value }))}
               />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Mobile banner height</span>
-              <select
-                className="input"
-                value={form.mobileSize}
-                onChange={(e) => setForm((f) => ({ ...f, mobileSize: e.target.value }))}
-              >
-                <option value="50">320 × 50</option>
-                <option value="100">320 × 100</option>
-              </select>
             </label>
           </div>
 
@@ -391,7 +467,7 @@ export default function AdminBanners() {
               <tr>
                 <th className="px-4 py-3">Preview</th>
                 <th className="px-4 py-3">Company</th>
-                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Size</th>
                 <th className="px-4 py-3">Locations</th>
                 <th className="px-4 py-3">Priority</th>
                 <th className="px-4 py-3">Stats</th>
@@ -404,13 +480,15 @@ export default function AdminBanners() {
                 <tr key={b.id} className="bg-white">
                   <td className="px-4 py-3">
                     {b.imageUrl ? (
-                      <BannerMediaPreview banner={b} compact className="h-10 w-24 object-contain" />
+                      <BannerMediaPreview banner={b} />
                     ) : (
                       '—'
                     )}
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{b.companyName}</td>
-                  <td className="px-4 py-3 capitalize text-slate-600">{b.mediaType || 'image'}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {b.sizePreset || (b.mobileSize === '100' ? '320x100' : '320x50')}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">
                     {(b.locations || []).map((l) => (
                       <span key={l} className="mr-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-xs">
