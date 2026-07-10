@@ -10,6 +10,7 @@ import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/for
 import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
+import EventQrCard from '../components/EventQrCard.jsx';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
 
@@ -42,6 +43,11 @@ const EMPTY = {
   studioMapsUrl: '',
   coverImage: '',
   theme: '',
+  shortCode: '',
+  slug: '',
+  qrCodeImage: '',
+  qrCodeTargetUrl: '',
+  brandDomain: '',
 };
 
 export default function EventForm() {
@@ -111,6 +117,11 @@ export default function EventForm() {
           studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
           theme: event.theme?.id || event.theme || '',
+          shortCode: event.shortCode || '',
+          slug: event.slug || '',
+          qrCodeImage: event.qrCodeImage || '',
+          qrCodeTargetUrl: event.qrCodeTargetUrl || '',
+          brandDomain: event.brandDomain || '',
         });
       })
       .catch((err) => active && setError(err.message))
@@ -245,6 +256,16 @@ export default function EventForm() {
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
 
+      if (saved) {
+        setForm((f) => ({
+          ...f,
+          shortCode: saved.shortCode || f.shortCode,
+          slug: saved.slug || f.slug,
+          qrCodeImage: saved.qrCodeImage || f.qrCodeImage,
+          qrCodeTargetUrl: saved.qrCodeTargetUrl || f.qrCodeTargetUrl,
+        }));
+      }
+
       if (!isAdmin) refreshUser().catch(() => {});
 
       navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, {
@@ -278,6 +299,31 @@ export default function EventForm() {
         Fill in the details below. Fields marked with sections help you set up a
         beautiful live wedding broadcast.
       </p>
+
+      {isEdit && id && (
+        <div className="mt-6">
+          <EventQrCard
+            event={{
+              id,
+              title: form.title,
+              brideName: form.brideName,
+              groomName: form.groomName,
+              shortCode: form.shortCode,
+              slug: form.slug,
+              brandDomain: form.brandDomain,
+              qrCodeImage: form.qrCodeImage,
+              qrCodeTargetUrl: form.qrCodeTargetUrl,
+            }}
+            onQrUpdated={(data) =>
+              setForm((f) => ({
+                ...f,
+                qrCodeImage: data.qrCodeImage,
+                qrCodeTargetUrl: data.qrCodeTargetUrl,
+              }))
+            }
+          />
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-6">
         {error && (

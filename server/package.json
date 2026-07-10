@@ -12,7 +12,7 @@
     "dev": "nodemon src/index.js",
     "dev:memdb": "node scripts/dev-memory-db.js",
     "start": "node src/index.js",
-    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js"
+    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -27,6 +27,7 @@
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

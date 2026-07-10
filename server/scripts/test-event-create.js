@@ -50,7 +50,11 @@ const payload = normalizeStudioFields({
 });
 
 const event = await Event.create(payload);
-console.log('OK', event.title, event.shortCode, event.slug);
+console.log('OK', event.title, event.shortCode, event.slug, event.qrCodeImage ? 'qr:yes' : 'qr:no');
+
+const { syncEventQrCode } = await import('../src/utils/eventQr.js');
+const qr = await syncEventQrCode(event._id);
+console.log('QR', qr?.targetUrl, qr?.qrCodeImage);
 
 await mongoose.disconnect();
 await mongod.stop();

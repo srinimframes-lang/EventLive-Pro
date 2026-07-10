@@ -7,6 +7,7 @@ import PhotoGallery from '../components/PhotoGallery.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
 import EventSeo from '../components/seo/EventSeo.jsx';
 import { coverImageAlt } from '../utils/seo.js';
+import EventQrCard from '../components/EventQrCard.jsx';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 
 export default function EventDetail() {
@@ -119,6 +120,12 @@ export default function EventDetail() {
           )}
         </div>
       </div>
+
+      {canManage && (
+        <div className="mt-6">
+          <EventQrCard event={event} />
+        </div>
+      )}
 
       {event.coverImage && (
         <img

@@ -11,6 +11,7 @@ import { extractYouTubeId } from '../utils/youtube.js';
 import {
   normalizeStudioFields,
 } from '../utils/studioFields.js';
+import { syncEventQrCode } from '../utils/eventQr.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -215,7 +216,8 @@ export const createEvent = asyncHandler(async (req, res) => {
     payload.organizer = req.body.organizer || req.user._id;
     payload.creditType = 'none';
     const event = await Event.create(payload);
-    const populated = await event.populate('organizer', 'name email');
+    await syncEventQrCode(event._id);
+    const populated = await Event.findById(event._id).populate('organizer', 'name email');
     return res.status(201).json({ success: true, data: populated });
   }
 
@@ -254,7 +256,8 @@ export const createEvent = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const populated = await event.populate('organizer', 'name email');
+  await syncEventQrCode(event._id);
+  const populated = await Event.findById(event._id).populate('organizer', 'name email');
   return res.status(201).json({
     success: true,
     data: populated,
@@ -288,9 +291,38 @@ export const updateEvent = asyncHandler(async (req, res) => {
   }
 
   await event.save();
-  const populated = await event.populate('organizer', 'name email');
+  await syncEventQrCode(event._id);
+  const populated = await Event.findById(event._id).populate('organizer', 'name email');
 
   res.status(200).json({ success: true, data: populated });
+});
+
+/**
+ * @route POST /api/events/:id/qr/sync
+ * @desc  Regenerate QR when the public live URL changed (owner/admin)
+ * @access Private
+ */
+export const syncEventQr = asyncHandler(async (req, res) => {
+  const event = await Event.findById(req.params.id);
+  if (!event) {
+    res.status(404);
+    throw new Error('Event not found');
+  }
+  assertCanModify(event, req.user, res);
+
+  const result = await syncEventQrCode(event._id);
+  if (!result) {
+    res.status(400);
+    throw new Error('Could not generate QR code for this event yet');
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      qrCodeImage: result.qrCodeImage,
+      qrCodeTargetUrl: result.targetUrl,
+    },
+  });
 });
 
 /**

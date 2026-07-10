@@ -54,6 +54,12 @@ export const eventService = {
     const { data } = await api.post(`/api/events/${id}/cover`, fd);
     return data.data;
   },
+
+  /** Regenerate QR when the public live URL changed. */
+  async syncQr(id) {
+    const { data } = await api.post(`/api/events/${id}/qr/sync`);
+    return data.data;
+  },
 };
 
 export const EVENT_CATEGORIES = [

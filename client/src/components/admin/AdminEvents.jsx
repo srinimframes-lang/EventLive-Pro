@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { eventService } from '../../services/event.service.js';
-import { formatDateTime, watchPath } from '../../utils/format.js';
+import EventQrCard from '../EventQrCard.jsx';
+import { formatDateTime, buildWatchUrl } from '../../utils/format.js';
 
 export default function AdminEvents() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+  const [expandedQrId, setExpandedQrId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -20,7 +22,7 @@ export default function AdminEvents() {
 
   useEffect(load, []);
 
-  const liveLink = (ev) => `${window.location.origin}${watchPath(ev)}`;
+  const liveLink = (ev) => buildWatchUrl(ev, window.location.origin);
 
   const copyLink = async (ev) => {
     try {
@@ -86,6 +88,13 @@ export default function AdminEvents() {
                   <button type="button" className="btn-outline" onClick={() => copyLink(ev)}>
                     {copiedId === ev.id ? 'Copied!' : 'Copy live link'}
                   </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setExpandedQrId(expandedQrId === ev.id ? null : ev.id)}
+                  >
+                    {expandedQrId === ev.id ? 'Hide QR' : 'QR code'}
+                  </button>
                   <Link to={`/events/${ev.id}/studio`} className="btn-outline">
                     Studio
                   </Link>
@@ -104,6 +113,11 @@ export default function AdminEvents() {
                     Delete
                   </button>
                 </div>
+                {expandedQrId === ev.id && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <EventQrCard event={ev} className="!shadow-none !p-0 border-0" />
+                  </div>
+                )}
               </div>
             );
           })}

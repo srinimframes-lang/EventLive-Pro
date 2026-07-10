@@ -269,6 +269,10 @@ const eventSchema = new Schema(
       type: [String],
       default: [],
     },
+
+    // ── Shareable QR (public live URL) ─────────────────────────
+    qrCodeImage: { type: String, trim: true, default: '' },
+    qrCodeTargetUrl: { type: String, trim: true, default: '' },
   },
   { timestamps: true }
 );

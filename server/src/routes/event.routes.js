@@ -5,6 +5,7 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  syncEventQr,
 } from '../controllers/event.controller.js';
 import {
   getStreamConfig,
@@ -61,6 +62,7 @@ router.post('/:id/gallery', protect, upload.array('photos', 20), uploadGallery);
 router.delete('/:id/gallery/:photoId', protect, deleteGalleryPhoto);
 router.post('/:id/logo', protect, upload.single('logo'), uploadLogo);
 router.post('/:id/cover', protect, upload.single('cover'), uploadCover);
+router.post('/:id/qr/sync', protect, syncEventQr);
 
 router
   .route('/:id')
