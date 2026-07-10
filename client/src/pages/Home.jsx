@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { packageService } from '../services/package.service.js';
 import SiteSeo from '../components/seo/SiteSeo.jsx';
+import BannerSlot from '../components/BannerSlot.jsx';
 import { truncate } from '../utils/seo.js';
+import { whatsappLink, formatCurrency } from '../utils/format.js';
 
 const steps = [
   { n: '01', title: 'Choose a package', desc: 'Pick the wedding streaming package that fits your celebration.' },
@@ -85,6 +87,10 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <div className="mx-auto max-w-6xl px-4 pb-4">
+        <BannerSlot location="homepage" />
+      </div>
 
       {/* Packages */}
       {packages.length > 0 && (

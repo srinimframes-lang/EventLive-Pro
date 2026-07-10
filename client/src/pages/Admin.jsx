@@ -6,6 +6,7 @@ import AdminEvents from '../components/admin/AdminEvents.jsx';
 import AdminSettings from '../components/admin/AdminSettings.jsx';
 import AdminDomains from '../components/admin/AdminDomains.jsx';
 import AdminThemes from '../components/admin/AdminThemes.jsx';
+import AdminBanners from '../components/admin/AdminBanners.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'payments', label: 'Payments' },
   { id: 'events', label: 'Events' },
   { id: 'themes', label: 'Themes' },
+  { id: 'banners', label: 'Banners' },
   { id: 'whitelabel', label: 'White Label' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -48,6 +50,7 @@ export default function Admin() {
         {tab === 'payments' && <AdminPayments />}
         {tab === 'events' && <AdminEvents />}
         {tab === 'themes' && <AdminThemes />}
+        {tab === 'banners' && <AdminBanners />}
         {tab === 'whitelabel' && <AdminDomains />}
         {tab === 'settings' && <AdminSettings />}
       </div>

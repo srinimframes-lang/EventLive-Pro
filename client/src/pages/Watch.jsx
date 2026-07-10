@@ -11,6 +11,7 @@ import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
+import BannerSlot from '../components/BannerSlot.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
 import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
@@ -173,6 +174,7 @@ export default function Watch() {
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <LivePlayer key={room.playerNonce} config={mergedConfig} />
+          <BannerSlot location="live_player" className="mt-3" />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{event.title}</h2>
             <ViewerCount count={room.viewers} isLive={mergedConfig?.isLive} />
@@ -224,6 +226,7 @@ export default function Watch() {
       </div>
 
       <section className="mt-8">
+        <BannerSlot location="gallery" className="mb-4" />
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Photo gallery</h2>
           <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>

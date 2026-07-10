@@ -4,6 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
+import BannerSlot from '../components/BannerSlot.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
 import EventSeo from '../components/seo/EventSeo.jsx';
 import { coverImageAlt } from '../utils/seo.js';
@@ -171,6 +172,7 @@ export default function EventDetail() {
 
       {event.gallery?.length > 0 && (
         <div className="mt-6">
+          <BannerSlot location="gallery" className="mb-4" />
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900">Photo gallery</h2>
             <span className="text-sm text-slate-500">{event.gallery.length} photos</span>

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { whatsappLink } from '../utils/format.js';
+import BannerSlot from './BannerSlot.jsx';
 
 export default function Footer() {
   const { settings } = useSettings();
@@ -55,8 +56,13 @@ export default function Footer() {
           </ul>
         </div>
       </div>
-      <div className="border-t border-slate-100 py-4 text-center text-xs text-slate-400">
-        © {new Date().getFullYear()} {settings.companyName}. All rights reserved.
+      <div className="border-t border-slate-100 py-4">
+        <div className="mx-auto max-w-6xl px-4 pb-4">
+          <BannerSlot location="footer" />
+        </div>
+        <p className="text-center text-xs text-slate-400">
+          © {new Date().getFullYear()} {settings.companyName}. All rights reserved.
+        </p>
       </div>
     </footer>
   );

@@ -5,6 +5,7 @@ import QAPanel from '../live/QAPanel.jsx';
 import ViewerCount from '../live/ViewerCount.jsx';
 import ShareButtons from '../ShareButtons.jsx';
 import PhotographyStudio from '../PhotographyStudio.jsx';
+import BannerSlot from '../BannerSlot.jsx';
 import PremiumButton from './PremiumButton.jsx';
 import GlassCard from './GlassCard.jsx';
 import ThemeEffects from './ThemeEffects.jsx';
@@ -46,13 +47,22 @@ export function WatchMeta({ event, className = '' }) {
 
 export function WatchPlayerBlock({ mergedConfig, playerNonce, surfaceDark, className = '', bare = false }) {
   const player = <LivePlayer key={playerNonce} config={mergedConfig} />;
+  const ad = <BannerSlot location="live_player" className="mt-3" />;
   if (bare) {
-    return <div className={className}>{player}</div>;
+    return (
+      <div className={className}>
+        {player}
+        {ad}
+      </div>
+    );
   }
   return (
-    <GlassCard className={`overflow-hidden p-0 ${className}`} dark={surfaceDark} solid>
-      {player}
-    </GlassCard>
+    <>
+      <GlassCard className={`overflow-hidden p-0 ${className}`} dark={surfaceDark} solid>
+        {player}
+      </GlassCard>
+      {ad}
+    </>
   );
 }
 
@@ -122,6 +132,7 @@ export function WatchDescription({ event, surfaceDark, className = '' }) {
 export function WatchGallerySection({ event, surfaceDark, galleryVariant }) {
   return (
     <section className="mt-10 sm:mt-12">
+      <BannerSlot location="gallery" className="mb-4" />
       <div className="mb-4 flex items-center justify-between">
         <h2
           className="text-xl font-extrabold sm:text-2xl"
@@ -147,6 +158,7 @@ export function WatchFooter({ snap, title, event, className = '' }) {
         color: 'var(--theme-footer-readable)',
       }}
     >
+      <BannerSlot location="footer" className="mb-6" />
       <p style={{ fontFamily: 'var(--theme-font-heading)' }} className="text-xl font-extrabold sm:text-2xl">
         {title}
       </p>

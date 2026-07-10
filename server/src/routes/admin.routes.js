@@ -41,6 +41,13 @@ import {
   reseedRegionalThemes,
   reorderThemes,
 } from '../controllers/theme.controller.js';
+import {
+  adminListBanners,
+  adminCreateBanner,
+  adminUpdateBanner,
+  adminUploadBannerImage,
+  adminDeleteBanner,
+} from '../controllers/banner.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 
@@ -93,5 +100,12 @@ router.post('/themes/:id/background', upload.single('background'), uploadThemeBa
 router.post('/themes/reseed-regional', reseedRegionalThemes);
 router.put('/themes/reorder', reorderThemes);
 router.post('/themes/:id/duplicate', duplicateTheme);
+
+// Banner advertisements
+router.get('/banners', adminListBanners);
+router.post('/banners', upload.single('image'), adminCreateBanner);
+router.patch('/banners/:id', adminUpdateBanner);
+router.post('/banners/:id/image', upload.single('image'), adminUploadBannerImage);
+router.delete('/banners/:id', adminDeleteBanner);
 
 export default router;
