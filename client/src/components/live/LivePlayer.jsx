@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { extractYouTubeId } from '../../utils/format.js';
+import { securePlaybackUrl } from '../../utils/streamPlayback.js';
+import VideoJsHlsPlayer from './VideoJsHlsPlayer.jsx';
 
 const RETRY_MS = 3000;
 const OFFLINE_MSG = '🔴 Live stream is currently offline.';
@@ -82,7 +84,7 @@ function resolveYoutubeVideoId(config) {
   );
 }
 
-function HlsPlayer({ src, poster, isLive = true }) {
+function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const retryTimer = useRef(null);
@@ -90,6 +92,8 @@ function HlsPlayer({ src, poster, isLive = true }) {
   const [levels, setLevels] = useState([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
+  const hasPlayedRef = useRef(false);
+  const [showOffline, setShowOffline] = useState(false);
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current) {
@@ -107,10 +111,12 @@ function HlsPlayer({ src, poster, isLive = true }) {
   }, [clearRetry]);
 
   useEffect(() => {
-    if (!isLive) return undefined;
+    if (!detectPublish && !isLive) return undefined;
     const video = videoRef.current;
     if (!video || !src) return undefined;
 
+    setShowOffline(false);
+    hasPlayedRef.current = false;
     setOverlay(OVERLAY.BUFFERING);
 
     const hlsConfig = {
@@ -159,6 +165,7 @@ function HlsPlayer({ src, poster, isLive = true }) {
         setOverlay(OVERLAY.RECONNECTING);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
+            if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
             try {
               hls.startLoad();
             } catch {
@@ -176,21 +183,28 @@ function HlsPlayer({ src, poster, isLive = true }) {
           default:
             hls.destroy();
             hlsRef.current = null;
+            if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
             scheduleRetry();
         }
       });
     } else {
+      if (detectPublish) setShowOffline(true);
       scheduleRetry();
     }
 
     const onPlaying = () => {
       clearRetry();
+      hasPlayedRef.current = true;
+      setShowOffline(false);
       setOverlay(OVERLAY.NONE);
     };
     const onWaiting = () => setOverlay(OVERLAY.BUFFERING);
     const onStalled = () => setOverlay(OVERLAY.BUFFERING);
     const onVideoError = () => {
-      if (useNative) scheduleRetry();
+      if (useNative) {
+        if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
+        scheduleRetry();
+      }
     };
 
     video.addEventListener('playing', onPlaying);
@@ -209,18 +223,24 @@ function HlsPlayer({ src, poster, isLive = true }) {
         hlsRef.current = null;
       }
     };
-  }, [src, reloadKey, isLive, scheduleRetry, clearRetry]);
+  }, [src, reloadKey, isLive, detectPublish, scheduleRetry, clearRetry]);
 
   const pickLevel = (index) => {
     setCurrentLevel(index);
     if (hlsRef.current) hlsRef.current.currentLevel = index;
   };
 
-  if (!isLive) return <Offline message={SERVER_OFFLINE_MSG} />;
+  if (!detectPublish && !isLive) return <Offline message={SERVER_OFFLINE_MSG} />;
   if (!src) return <Offline message={SERVER_OFFLINE_MSG} />;
 
   return (
     <Frame>
+      {showOffline && overlay === OVERLAY.NONE && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/75 px-6 text-center text-white">
+          <p className="text-lg font-bold leading-snug sm:text-xl">{SERVER_OFFLINE_MSG}</p>
+          <p className="mt-2 text-sm text-white/70">Waiting for the broadcaster to go live…</p>
+        </div>
+      )}
       <video
         ref={videoRef}
         className="absolute inset-0 h-full w-full bg-black object-contain"
@@ -370,24 +390,28 @@ export default function LivePlayer({ config }) {
 
   const { provider, isLive } = config;
   const poster = config.poster || '';
-  const playback = config.playbackUrl || config.hlsUrl;
+  const playback = securePlaybackUrl(config.playbackUrl || config.hlsUrl);
   const live = Boolean(isLive);
-  const serverOffline = SERVER_OFFLINE_MSG;
+  const isMediaMtx = provider === 'rtmp' || provider === 'hls';
+
+  if (isMediaMtx) {
+    if (!playback) return <Offline message="Waiting for live stream..." />;
+    return (
+      <VideoJsHlsPlayer
+        src={playback}
+        poster={poster}
+        isLive={live}
+        detectPublish
+      />
+    );
+  }
 
   if (!live) {
-    return <Offline message={serverOffline} />;
+    return <Offline message={OFFLINE_MSG} />;
   }
 
   if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} isLive={live} />;
   if (provider === 'webrtc') return <WebRtcPlayer url={config.webrtcUrl} isLive={live} />;
-  if (provider === 'rtmp') {
-    if (playback) return <HlsPlayer src={playback} poster={poster} isLive={live} />;
-    return (
-      <Frame>
-        <PlayerOverlay state={OVERLAY.RECONNECTING} />
-      </Frame>
-    );
-  }
 
   return <Offline message="Live stream is not configured yet." />;
 }

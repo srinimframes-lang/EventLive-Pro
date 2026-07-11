@@ -1,0 +1,81 @@
+/* Premium Server Live — Video.js dark theme */
+.vjs-hls-player-shell .video-js.vjs-elpro-live {
+  width: 100%;
+  height: 100%;
+  font-family: inherit;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-tech {
+  object-fit: contain;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live {
+  background-color: #0f172a;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-control-bar {
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85));
+  height: 3.25em;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-big-play-button {
+  border: none;
+  border-radius: 9999px;
+  width: 3.25em;
+  height: 3.25em;
+  line-height: 3.25em;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  margin-top: -1.625em;
+  margin-left: -1.625em;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live:hover .vjs-big-play-button,
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-big-play-button:focus {
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-live-control {
+  align-items: center;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-live-display {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-quality-menu .vjs-icon-placeholder::before {
+  content: 'HD';
+  font-size: 0.72em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live.vjs-user-inactive.vjs-playing .vjs-control-bar {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.vjs-hls-player-shell .video-js.vjs-elpro-live.vjs-user-active .vjs-control-bar,
+.vjs-hls-player-shell .video-js.vjs-elpro-live:hover .vjs-control-bar {
+  opacity: 1;
+}
+
+.vjs-player-overlay {
+  z-index: 15;
+}
+
+@media (max-width: 640px) {
+  .vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-control-bar {
+    height: 2.75em;
+  }
+
+  .vjs-hls-player-shell .video-js.vjs-elpro-live .vjs-big-play-button {
+    width: 2.75em;
+    height: 2.75em;
+    line-height: 2.75em;
+    margin-top: -1.375em;
+    margin-left: -1.375em;
+  }
+}

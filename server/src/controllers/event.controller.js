@@ -18,6 +18,7 @@ import {
   resolveStreamType,
   validateOnlineStreamPayload,
 } from '../utils/streamType.js';
+import { freshServerStreamUrls } from '../utils/mediaStream.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -179,6 +180,12 @@ export const getEvent = asyncHandler(async (req, res) => {
   // White-label: surface the organizer's active custom domain so share/watch
   // links can be built on it (falls back to the platform domain when absent).
   const data = event.toJSON();
+
+  const streamUrls = freshServerStreamUrls(event);
+  if (streamUrls) {
+    data.rtmpPublishUrl = streamUrls.fullUrl;
+    data.hlsUrl = streamUrls.playbackUrl;
+  }
 
   // Repair: theme ref saved but snapshot missing (legacy bug) — backfill once.
   if (data.theme && !data.themeSnapshot?.name) {

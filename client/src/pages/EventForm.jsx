@@ -109,6 +109,7 @@ export default function EventForm() {
             ? `https://youtu.be/${event.youtubeVideoId}`
             : event.streamUrl || '',
           hlsUrl: event.hlsUrl || '',
+          rtmpPublishUrl: event.rtmpPublishUrl || '',
           chatEnabled: event.chatEnabled ?? true,
           capacity: event.capacity || 0,
           tags: (event.tags || []).join(', '),
@@ -353,6 +354,18 @@ export default function EventForm() {
         if (pendingCover) uploads.push(eventService.uploadCover(saved.id, pendingCover));
         if (pendingLogo) uploads.push(eventService.uploadLogo(saved.id, pendingLogo));
         if (uploads.length) await Promise.all(uploads);
+        if (streamType === 'server') {
+          try {
+            const keyInfo = await streamService.getKey(saved.id);
+            setServerStream({
+              rtmpUrl: keyInfo.fullUrl || '',
+              streamKey: keyInfo.streamKey || '',
+              hlsPlayerUrl: keyInfo.playbackUrl || '',
+            });
+          } catch {
+            /* credentials available on edit page */
+          }
+        }
       }
 
       if (!isAdmin) await refreshUser().catch(() => {});
@@ -667,9 +680,9 @@ export default function EventForm() {
                         />
                       </Field>
                       <Field
-                        label="HLS Player URL"
+                        label="HLS Playback URL"
                         htmlFor="hlsPlayerUrl"
-                        hint="Used on the public watch page for playback."
+                        hint="Used on the public watch page for MediaMTX playback."
                       >
                         <input
                           id="hlsPlayerUrl"
@@ -680,7 +693,35 @@ export default function EventForm() {
                       </Field>
                     </>
                   )}
-                  {!isEdit && (
+                  {!isEdit && serverStream && (
+                    <>
+                      <Field label="RTMP URL" htmlFor="rtmpUrlNew">
+                        <input
+                          id="rtmpUrlNew"
+                          readOnly
+                          className="input font-mono text-xs"
+                          value={serverStream.rtmpUrl}
+                        />
+                      </Field>
+                      <Field label="Stream Key" htmlFor="streamKeyNew">
+                        <input
+                          id="streamKeyNew"
+                          readOnly
+                          className="input font-mono text-xs"
+                          value={serverStream.streamKey}
+                        />
+                      </Field>
+                      <Field label="HLS Playback URL" htmlFor="hlsPlayerUrlNew">
+                        <input
+                          id="hlsPlayerUrlNew"
+                          readOnly
+                          className="input font-mono text-xs"
+                          value={serverStream.hlsPlayerUrl}
+                        />
+                      </Field>
+                    </>
+                  )}
+                  {!isEdit && !serverStream && (
                     <p className="text-sm text-slate-500">
                       RTMP URL, stream key, and HLS player URL will be generated when you save this
                       event.

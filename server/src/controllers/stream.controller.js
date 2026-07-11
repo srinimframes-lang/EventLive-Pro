@@ -11,6 +11,7 @@ import {
   deriveWebRtcPlaybackUrl,
   ensureEventStreamKey,
   findEventByStreamKey,
+  normalizePlaybackUrl,
   parseMediaMtxPath,
   probeMediaMtxPublishing,
   resolveStreamKey,
@@ -44,7 +45,9 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
       ? 'youtube'
       : event.streamProvider;
   const isServer = provider === 'rtmp' || provider === 'hls';
-  const playbackUrl = isServer ? deriveHlsPlaybackUrl(event) : event.hlsUrl;
+  const playbackUrl = isServer
+    ? normalizePlaybackUrl(deriveHlsPlaybackUrl(event))
+    : event.hlsUrl;
   const webrtcUrl = isServer ? deriveWebRtcPlaybackUrl(event) : event.webrtcUrl;
   const liveFromProbe = isPublishing === true;
   const offlineFromProbe = isPublishing === false;
@@ -54,7 +57,7 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     provider,
     youtubeVideoId,
     streamUrl: event.streamUrl || '',
-    hlsUrl: event.hlsUrl || playbackUrl,
+    hlsUrl: isServer ? playbackUrl : event.hlsUrl,
     playbackUrl,
     webrtcUrl,
     poster: event.coverImage || '',

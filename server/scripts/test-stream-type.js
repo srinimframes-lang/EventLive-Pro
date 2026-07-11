@@ -7,8 +7,9 @@ import mongoose from 'mongoose';
 
 process.env.JWT_SECRET = 'test_secret';
 process.env.NODE_ENV = 'test';
-process.env.HLS_PLAYBACK_BASE = 'http://200.97.166.42:8888';
-process.env.RTMP_INGEST_URL = 'rtmp://200.97.166.42:1935/live';
+process.env.REQUIRE_SECURE_PLAYBACK = 'true';
+process.env.HLS_PLAYBACK_BASE = 'https://stream.eventlivepro.com';
+process.env.RTMP_INGEST_URL = 'rtmp://stream.eventlivepro.com:1935/live';
 
 const mongod = await MongoMemoryServer.create({ instance: { dbName: 'eventlive' } });
 process.env.MONGODB_URI = mongod.getUri('eventlive');
@@ -67,11 +68,17 @@ if (!withKey.rtmpStreamKey) throw new Error('Server rtmpStreamKey not persisted'
 if (withKey.rtmpStreamKey !== srvEvent._id.toString()) {
   throw new Error(`Stream key should equal event id, got ${withKey.rtmpStreamKey}`);
 }
-console.log('OK Server event', srvEvent.shortCode, srvEvent.streamProvider, 'key=', withKey.rtmpStreamKey);
+if (!withKey.rtmpPublishUrl?.includes(withKey.rtmpStreamKey)) {
+  throw new Error(`Missing stored RTMP URL: ${withKey.rtmpPublishUrl}`);
+}
+if (!withKey.hlsUrl?.includes(withKey.rtmpStreamKey)) {
+  throw new Error(`Missing stored playback URL: ${withKey.hlsUrl}`);
+}
+console.log('OK Server event', srvEvent.shortCode, 'rtmp=', withKey.rtmpPublishUrl);
 
 const { deriveHlsPlaybackUrl } = await import('../src/utils/mediaStream.js');
 const playback = deriveHlsPlaybackUrl(withKey);
-const expectedPlayback = `http://200.97.166.42:8888/live/${srvEvent._id}/index.m3u8`;
+const expectedPlayback = `https://stream.eventlivepro.com/live/${srvEvent._id}/index.m3u8`;
 if (playback !== expectedPlayback) throw new Error(`Unexpected playback URL: ${playback}`);
 console.log('OK Server playback URL', playback);
 

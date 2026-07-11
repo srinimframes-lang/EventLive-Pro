@@ -17,7 +17,8 @@
     "react-dom": "^18.3.1",
     "react-helmet-async": "^3.0.0",
     "react-router-dom": "^6.28.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "video.js": "^8.23.9"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",

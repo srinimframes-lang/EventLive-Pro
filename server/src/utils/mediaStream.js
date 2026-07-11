@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
 import { Event } from '../models/Event.js';
-import { env } from '../config/env.js';
+import {
+  env,
+  MEDIAMTX_VPS_HOST,
+  STREAM_PUBLIC_DOMAIN,
+  normalizeRtmpIngestUrl,
+} from '../config/env.js';
+
+export { MEDIAMTX_VPS_HOST, STREAM_PUBLIC_DOMAIN };
 
 /** Deterministic stream key derived from the MongoDB event id. */
 export function streamKeyFromEventId(eventId) {
@@ -24,17 +31,53 @@ export function resolveStreamKey(event) {
   return event.rtmpStreamKey || streamKeyFromEventId(event._id || event.id);
 }
 
-/** MediaMTX native HLS: http://host:8888/live/<streamKey>/index.m3u8 */
-export function deriveHlsPlaybackUrl(event) {
-  if (event.hlsUrl) return event.hlsUrl;
-  const key = resolveStreamKey(event);
+/** Build canonical HLS URL for a stream key using the configured (HTTPS) base. */
+export function buildHlsPlaybackUrl(streamKey) {
+  const key = String(streamKey || '').trim();
   if (!env.hlsPlaybackBase || !key) return '';
   return `${env.hlsPlaybackBase}/live/${key}/index.m3u8`;
 }
 
-/** MediaMTX WebRTC/WHEP: http://host:8889/live/<streamKey>/whep */
+/**
+ * Upgrade legacy http:// IP:port playback URLs to the configured HTTPS base so
+ * https://eventlivepro.com watch pages never hit mixed-content blocks.
+ */
+export function normalizePlaybackUrl(url) {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return '';
+
+  if (!env.requireSecurePlayback) return trimmed;
+  if (trimmed.startsWith('https://')) return trimmed;
+
+  if (trimmed.startsWith('http://')) {
+    const pathMatch = trimmed.match(/(\/live\/[^/]+\/index\.m3u8)$/);
+    if (pathMatch && env.hlsPlaybackBase) {
+      return `${env.hlsPlaybackBase}${pathMatch[1]}`;
+    }
+    if (env.hlsPlaybackBase) {
+      return trimmed.replace(/^http:\/\/[^/]+/, env.hlsPlaybackBase);
+    }
+  }
+
+  return trimmed;
+}
+
+/** MediaMTX native HLS via HTTPS reverse proxy. */
+export function deriveHlsPlaybackUrl(event) {
+  const key = resolveStreamKey(event);
+  if (event.hlsUrl) return normalizePlaybackUrl(event.hlsUrl);
+  return buildHlsPlaybackUrl(key);
+}
+
+/** MediaMTX WebRTC/WHEP via HTTPS reverse proxy. */
 export function deriveWebRtcPlaybackUrl(event) {
-  if (event.webrtcUrl) return event.webrtcUrl;
+  if (event.webrtcUrl) {
+    const trimmed = String(event.webrtcUrl).trim();
+    if (env.requireSecurePlayback && trimmed.startsWith('http://') && env.webrtcPlaybackBase) {
+      return trimmed.replace(/^http:\/\/[^/]+/, env.webrtcPlaybackBase);
+    }
+    return trimmed;
+  }
   const key = resolveStreamKey(event);
   if (!env.webrtcPlaybackBase || !key) return '';
   return `${env.webrtcPlaybackBase}/${mediamtxPathName(key)}/whep`;
@@ -42,16 +85,33 @@ export function deriveWebRtcPlaybackUrl(event) {
 
 export function buildRtmpCredentials(event) {
   const streamKey = resolveStreamKey(event);
-  const ingestUrl = env.rtmpIngestUrl.replace(/\/+$/, '');
-  const withKey = { ...(event.toObject?.() || event), rtmpStreamKey: streamKey };
+  const ingestUrl = normalizeRtmpIngestUrl(env.rtmpIngestUrl);
   return {
     ingestUrl,
     streamKey,
     fullUrl: `${ingestUrl}/${streamKey}`,
-    playbackUrl: deriveHlsPlaybackUrl(withKey),
-    webrtcUrl: deriveWebRtcPlaybackUrl(withKey),
+    playbackUrl: buildHlsPlaybackUrl(streamKey),
+    webrtcUrl: deriveWebRtcPlaybackUrl({ ...(event.toObject?.() || event), rtmpStreamKey: streamKey }),
     mediamtxPath: mediamtxPathName(streamKey),
   };
+}
+
+/** Always return canonical Premium Server URLs (ignores stale DB values). */
+export function freshServerStreamUrls(event) {
+  if (event.streamProvider !== 'rtmp') return null;
+  return buildRtmpCredentials(event);
+}
+
+/** Persist RTMP URL, stream key, and HTTPS HLS playback URL on Premium Server events. */
+export function syncServerStreamFields(event) {
+  if (event.streamProvider !== 'rtmp') return null;
+  const key = streamKeyFromEventId(event._id || event.id);
+  if (!key) return null;
+  const creds = buildRtmpCredentials({ ...(event.toObject?.() || event), rtmpStreamKey: key });
+  event.rtmpStreamKey = creds.streamKey;
+  event.rtmpPublishUrl = creds.fullUrl;
+  event.hlsUrl = creds.playbackUrl;
+  return creds;
 }
 
 /** Best-effort probe of MediaMTX path readiness (null = unknown). */
@@ -81,11 +141,8 @@ export async function findEventByStreamKey(rawKey) {
 }
 
 export async function ensureEventStreamKey(event) {
-  const expected = streamKeyFromEventId(event._id || event.id);
-  if (!expected) return expected;
-  if (event.rtmpStreamKey !== expected) {
-    event.rtmpStreamKey = expected;
-    await event.save();
-  }
-  return expected;
+  const creds = syncServerStreamFields(event);
+  if (!creds) return '';
+  await event.save();
+  return creds.streamKey;
 }

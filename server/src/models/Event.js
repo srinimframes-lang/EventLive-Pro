@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { extractYouTubeId } from '../utils/youtube.js';
-import { streamKeyFromEventId } from '../utils/mediaStream.js';
+import { streamKeyFromEventId, syncServerStreamFields } from '../utils/mediaStream.js';
 
 const { Schema, model } = mongoose;
 
@@ -199,6 +199,8 @@ const eventSchema = new Schema(
     createdByRole: { type: String, default: '' },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
+    // Full OBS publish URL for Premium Server Live (rtmp://host:1935/live/<eventId>).
+    rtmpPublishUrl: { type: String, trim: true, default: '' },
     // Private-server controls (Phase 2). Additive — defaults keep prior behaviour.
     streamDisabled: { type: Boolean, default: false }, // admin can block publishing
     autoRecord: { type: Boolean, default: false }, // record the private-server stream
@@ -318,11 +320,10 @@ eventSchema.pre('validate', async function ensureSlugAndShortCode() {
   }
 });
 
-// Premium Server Live events use the MongoDB event id as the RTMP stream key.
-eventSchema.pre('save', function ensureRtmpStreamKey() {
+// Premium Server Live: persist RTMP URL, stream key, and playback URL from event id.
+eventSchema.pre('save', function ensureServerStreamFields() {
   if (this.streamProvider !== 'rtmp') return;
-  const key = streamKeyFromEventId(this._id);
-  if (key && !this.rtmpStreamKey) this.rtmpStreamKey = key;
+  syncServerStreamFields(this);
 });
 
 // Keep YouTube fields in sync when only streamUrl was saved.

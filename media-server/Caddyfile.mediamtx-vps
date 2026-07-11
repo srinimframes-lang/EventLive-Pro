@@ -1,0 +1,38 @@
+# Caddy HTTPS reverse proxy for MediaMTX native HLS on the VPS.
+#
+# DNS: stream.eventlivepro.com  A  →  200.97.166.42
+#
+# Install Caddy on the VPS, then:
+#   sudo cp Caddyfile.mediamtx-vps /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# MediaMTX must be listening on localhost:8888 (HLS).
+# Browser playback URL (stored in EventLive Pro):
+#   https://stream.eventlivepro.com/live/<eventId>/index.m3u8
+
+{
+	email admin@eventlivepro.com
+}
+
+stream.eventlivepro.com {
+	encode gzip
+
+	@options method OPTIONS
+	handle @options {
+		header Access-Control-Allow-Origin "https://eventlivepro.com https://www.eventlivepro.com"
+		header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+		header Access-Control-Allow-Headers "*"
+		respond 204
+	}
+
+	handle {
+		reverse_proxy localhost:8888
+		header Access-Control-Allow-Origin "https://eventlivepro.com https://www.eventlivepro.com"
+		header Cache-Control "no-store"
+	}
+}
+
+# Optional WebRTC/WHEP on the same domain (MediaMTX port 8889):
+# handle_path /live/*/whep {
+# 	reverse_proxy localhost:8889
+# }
