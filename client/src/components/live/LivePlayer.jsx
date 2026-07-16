@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { extractYouTubeId } from '../../utils/format.js';
-import { securePlaybackUrl } from '../../utils/streamPlayback.js';
-import VideoJsHlsPlayer from './VideoJsHlsPlayer.jsx';
+import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
 
 const RETRY_MS = 3000;
 const OFFLINE_MSG = '🔴 Live stream is currently offline.';
-const SERVER_OFFLINE_MSG = 'Live Offline';
+const SERVER_WAITING_MSG = 'Waiting for Live...';
 
 const OVERLAY = {
   NONE: 'none',
@@ -230,21 +229,22 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     if (hlsRef.current) hlsRef.current.currentLevel = index;
   };
 
-  if (!detectPublish && !isLive) return <Offline message={SERVER_OFFLINE_MSG} />;
-  if (!src) return <Offline message={SERVER_OFFLINE_MSG} />;
+  if (!detectPublish && !isLive) return <Offline message={SERVER_WAITING_MSG} />;
+  if (!src) return <Offline message={SERVER_WAITING_MSG} />;
 
   return (
     <Frame>
       {showOffline && overlay === OVERLAY.NONE && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/75 px-6 text-center text-white">
-          <p className="text-lg font-bold leading-snug sm:text-xl">{SERVER_OFFLINE_MSG}</p>
-          <p className="mt-2 text-sm text-white/70">Waiting for the broadcaster to go live…</p>
+          <div className="mb-4 h-11 w-11 animate-pulse rounded-full border-2 border-white/30 border-t-white" aria-hidden />
+          <p className="text-lg font-bold leading-snug sm:text-xl">{SERVER_WAITING_MSG}</p>
         </div>
       )}
       <video
         ref={videoRef}
         className="absolute inset-0 h-full w-full bg-black object-contain"
         controls
+        controlsList="nodownload"
         autoPlay
         playsInline
         muted
@@ -390,14 +390,14 @@ export default function LivePlayer({ config }) {
 
   const { provider, isLive } = config;
   const poster = config.poster || '';
-  const playback = securePlaybackUrl(config.playbackUrl || config.hlsUrl);
   const live = Boolean(isLive);
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
 
   if (isMediaMtx) {
-    if (!playback) return <Offline message="Waiting for live stream..." />;
+    const playback = resolveServerPlaybackUrl(config);
+    if (!playback) return <Offline message={SERVER_WAITING_MSG} />;
     return (
-      <VideoJsHlsPlayer
+      <HlsPlayer
         src={playback}
         poster={poster}
         isLive={live}
@@ -410,6 +410,7 @@ export default function LivePlayer({ config }) {
     return <Offline message={OFFLINE_MSG} />;
   }
 
+  const playback = resolveServerPlaybackUrl(config) || config.playbackUrl || config.hlsUrl;
   if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} isLive={live} />;
   if (provider === 'webrtc') return <WebRtcPlayer url={config.webrtcUrl} isLive={live} />;
 
