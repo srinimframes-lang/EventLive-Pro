@@ -5,8 +5,10 @@ HLS** with FFmpeg (240p/360p/480p/720p, hard-capped at 1000 kbps), and serves th
 playlists over **automatic HTTPS**. It talks to the main EventLive backend only
 over HTTP, so it does **not** touch the existing app, database, or deployment.
 
-> ⚠️ Runs on a **dedicated VPS with Docker** (not Vercel/Render). It needs RTMP
-> port `1935` and HTTP/S `80`/`443` open.
+> ⚠️ Runs on a **dedicated VPS** (not Vercel/Render). It needs RTMP
+> port `1935` and HTTP/S `80`/`443` open. On the current VPS, **Nginx**
+> terminates TLS for `stream.eventlivepro.com` and MediaMTX binds HLS to
+> localhost — see `nginx/README.md`.
 
 There are two ways to run it:
 
@@ -20,7 +22,8 @@ There are two ways to run it:
 ## A. One-click Docker Compose (MediaMTX + Caddy)
 
 ### What you get
-- **MediaMTX** RTMP ingest at `rtmp://<domain>:1935/<streamKey>`.
+- **MediaMTX** RTMP ingest with OBS Server
+  `rtmp://<domain>:1935/live` and a separate event stream key.
 - **FFmpeg** adaptive HLS — 240p/360p/480p/720p with a master playlist.
 - **Hard 1000 kbps output cap** on every rendition, whatever the customer pushes
   (500 / 800 / 1500 / 4000 / 8000 kbps all transcode down). `veryfast` preset.
@@ -71,8 +74,8 @@ RTMP_INGEST_URL     = rtmp://stream.eventlivepro.com/live   # shown in Studio
 HLS_PLAYBACK_BASE   = https://stream.eventlivepro.com
 ```
 
-> Note: the broadcaster publishes to `rtmp://<domain>:1935/<streamKey>` (the key is
-> the path). `RTMP_INGEST_URL` is just what Studio displays as the server URL.
+> Keep the two OBS fields separate. Server is `rtmp://<domain>:1935/live`;
+> Stream Key is the event key. Do not append the key to the Server field.
 
 ### Firewall
 Open TCP `1935` (RTMP), `80` + `443` (HTTPS), and UDP `443` (HTTP/3).
@@ -83,7 +86,7 @@ sudo ufw allow 1935/tcp && sudo ufw allow 80,443/tcp && sudo ufw allow 443/udp
 
 ### Broadcaster setup (OBS)
 - Service: **Custom**
-- Server: `rtmp://stream.eventlivepro.com:1935`
+- Server: `rtmp://stream.eventlivepro.com:1935/live`
 - Stream Key: the key shown on the event's **Studio** page
 - Recommended: 720p, 1500–2500 kbps (server caps output at 1000 kbps).
 

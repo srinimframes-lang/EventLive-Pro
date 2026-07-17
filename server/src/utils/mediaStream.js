@@ -114,10 +114,8 @@ export function syncServerStreamFields(event) {
   return creds;
 }
 
-/** Best-effort probe of MediaMTX path readiness (null = unknown). */
-export async function probeMediaMtxPublishing(streamKey) {
-  if (!env.mediamtxApiUrl || !streamKey) return null;
-  const pathName = mediamtxPathName(streamKey);
+async function probeMediaMtxPathReady(pathName) {
+  if (!env.mediamtxApiUrl || !pathName) return null;
   try {
     const res = await fetch(
       `${env.mediamtxApiUrl}/v3/paths/get/${encodeURIComponent(pathName)}`,
@@ -130,6 +128,21 @@ export async function probeMediaMtxPublishing(streamKey) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Best-effort probe of MediaMTX path readiness (null = unknown).
+ * Also accepts OBS misconfiguration that publishes to live/<key>/<key>.
+ */
+export async function probeMediaMtxPublishing(streamKey) {
+  if (!env.mediamtxApiUrl || !streamKey) return null;
+  const key = String(streamKey || '').trim();
+  const canonical = await probeMediaMtxPathReady(mediamtxPathName(key));
+  if (canonical === true) return true;
+  const nested = await probeMediaMtxPathReady(`${mediamtxPathName(key)}/${key}`);
+  if (nested === true) return true;
+  if (canonical === false && nested === false) return false;
+  return null;
 }
 
 export async function findEventByStreamKey(rawKey) {

@@ -169,10 +169,10 @@ export default function AdminEvents() {
                     {streamInfo[ev.id] && (
                       <div className="space-y-2 text-sm">
                         <StreamField
-                          label="RTMP URL"
-                          value={streamInfo[ev.id].fullUrl}
+                          label="OBS Server URL"
+                          value={streamInfo[ev.id].ingestUrl}
                           copied={copiedId === `${ev.id}-rtmp`}
-                          onCopy={() => copyText(streamInfo[ev.id].fullUrl, ev.id, 'rtmp')}
+                          onCopy={() => copyText(streamInfo[ev.id].ingestUrl, ev.id, 'rtmp')}
                         />
                         <StreamField
                           label="Stream Key"

@@ -1,32 +1,60 @@
 # MediaMTX native HLS/WebRTC on VPS (no FFmpeg/Caddy stack).
-# Copy to your VPS as mediamtx.yml and point MediaMTX at it.
+# Deployed on the VPS as /opt/mediamtx.yml (PM2 process "mediamtx").
 #
-# VPS endpoints (EventLivePro defaults):
-#   RTMP ingest : rtmp://200.97.166.42:1935/live/<eventId>
+# Endpoints:
+#   RTMP ingest : rtmp://stream.eventlivepro.com:1935/live/<eventId>
 #   HLS playback: https://stream.eventlivepro.com/live/<eventId>/index.m3u8
-#   (Caddy reverse-proxies HTTPS → MediaMTX :8888 — see Caddyfile.mediamtx-vps)
 #   WebRTC/WHEP : https://stream.eventlivepro.com/live/<eventId>/whep
 #
-# Replace BACKEND_URL and MEDIA_SERVER_SECRET with your Render backend values.
+# HLS / WebRTC / API listen on localhost only. Nginx terminates TLS on
+# stream.eventlivepro.com and reverse-proxies — browsers never hit the VPS IP.
 
 logLevel: info
+logDestinations: [stdout]
 
+# Control API — localhost only (backend probe via MEDIAMTX_API_URL).
 api: yes
-apiAddress: :9997
+apiAddress: 127.0.0.1:9997
 
+metrics: no
+pprof: no
+playback: no
+rtsp: no
+srt: no
+
+# OBS publishes here (public). DNS: stream.eventlivepro.com → VPS.
 rtmp: yes
 rtmpAddress: :1935
+rtmpEncryption: "no"
 
+# Browser playback goes through Nginx → these localhost listeners.
 hls: yes
-hlsAddress: :8888
+hlsAddress: 127.0.0.1:8888
+# CORS is enforced by Nginx on stream.eventlivepro.com (single Origin).
 hlsAllowOrigin: '*'
+hlsAlwaysRemux: yes
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
 
 webrtc: yes
-webrtcAddress: :8889
+webrtcAddress: 127.0.0.1:8889
+webrtcAllowOrigin: '*'
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts: [stream.eventlivepro.com]
 
+# Publish auth against EventLive backend (reads/playback stay open for HLS).
+# Replace MEDIA_SERVER_SECRET with the same value as server/.env MEDIA_SERVER_SECRET.
 authMethod: http
-authHTTPAddress: BACKEND_URL/api/events/stream/mediamtx-auth?token=MEDIA_SERVER_SECRET
+authHTTPAddress: http://127.0.0.1:5000/api/events/stream/mediamtx-auth?token=MEDIA_SERVER_SECRET
+authHTTPExclude:
+  - action: read
+  - action: playback
+  - action: api
+  - action: metrics
+  - action: pprof
 
 paths:
-  live~^.*$:
+  all_others:
     source: publisher

@@ -167,7 +167,7 @@ export default function EventForm() {
       .then(([keyInfo, cfg]) => {
         if (!active || !keyInfo) return;
         setServerStream({
-          rtmpUrl: keyInfo.fullUrl || '',
+          rtmpUrl: keyInfo.ingestUrl || '',
           streamKey: keyInfo.streamKey || '',
           hlsPlayerUrl: keyInfo.playbackUrl || cfg?.playbackUrl || cfg?.hlsUrl || '',
         });
@@ -358,7 +358,7 @@ export default function EventForm() {
           try {
             const keyInfo = await streamService.getKey(saved.id);
             setServerStream({
-              rtmpUrl: keyInfo.fullUrl || '',
+              rtmpUrl: keyInfo.ingestUrl || '',
               streamKey: keyInfo.streamKey || '',
               hlsPlayerUrl: keyInfo.playbackUrl || '',
             });
@@ -663,7 +663,7 @@ export default function EventForm() {
                   )}
                   {isEdit && serverStream && !serverStreamLoading && (
                     <>
-                      <Field label="RTMP URL" htmlFor="rtmpUrl">
+                      <Field label="OBS Server URL" htmlFor="rtmpUrl">
                         <input
                           id="rtmpUrl"
                           readOnly
@@ -695,7 +695,7 @@ export default function EventForm() {
                   )}
                   {!isEdit && serverStream && (
                     <>
-                      <Field label="RTMP URL" htmlFor="rtmpUrlNew">
+                      <Field label="OBS Server URL" htmlFor="rtmpUrlNew">
                         <input
                           id="rtmpUrlNew"
                           readOnly

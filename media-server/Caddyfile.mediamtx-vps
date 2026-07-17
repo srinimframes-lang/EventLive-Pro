@@ -1,4 +1,5 @@
-# Caddy HTTPS reverse proxy for MediaMTX native HLS on the VPS.
+# Legacy Caddy HTTPS reverse proxy for MediaMTX native HLS on the VPS.
+# Production on this VPS now uses Nginx — see media-server/nginx/.
 #
 # DNS: stream.eventlivepro.com  A  →  200.97.166.42
 #
