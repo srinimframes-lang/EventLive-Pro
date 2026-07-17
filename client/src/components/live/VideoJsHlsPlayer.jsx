@@ -111,6 +111,15 @@ function PlayerOverlay({ state }) {
   );
 }
 
+function isActivelyPlaying(video) {
+  return Boolean(
+    video &&
+      !video.paused &&
+      !video.ended &&
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+  );
+}
+
 /**
  * Professional Video.js shell with Hls.js for Premium Server Live (MediaMTX).
  */
@@ -146,13 +155,32 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
     hideOverlay();
   }, [hideOverlay]);
 
+  const getVideoEl = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return null;
+    try {
+      return player.tech({ IWillNotUseThisInPlugins: true }).el();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** Never cover a playing video — only show stall/reconnect UI when playback is actually stopped. */
+  const showOverlayIfNotPlaying = useCallback(
+    (state) => {
+      if (hasPlayedRef.current && isActivelyPlaying(getVideoEl())) return;
+      setOverlay(state);
+    },
+    [getVideoEl]
+  );
+
   const scheduleRetry = useCallback(() => {
     clearRetry();
-    setOverlay(OVERLAY.RECONNECTING);
+    showOverlayIfNotPlaying(OVERLAY.RECONNECTING);
     retryTimer.current = setTimeout(() => {
       setReloadKey((k) => k + 1);
     }, RETRY_MS);
-  }, [clearRetry]);
+  }, [clearRetry, showOverlayIfNotPlaying]);
 
   useEffect(() => {
     registerQualityMenu();
@@ -206,7 +234,10 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
     });
 
     const onPlaying = () => markPlaying();
-    const onCanPlay = () => hideOverlay();
+    const onLoadedData = () => markPlaying();
+    const onTimeUpdate = () => {
+      if (videoEl.currentTime > 0) markPlaying();
+    };
     const onError = () => {
       if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
       scheduleRetry();
@@ -223,13 +254,15 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
     };
 
     player.on('playing', onPlaying);
-    player.on('canplay', onCanPlay);
+    player.on('loadeddata', onLoadedData);
+    player.on('timeupdate', onTimeUpdate);
     player.on('error', onError);
     player.on('hlsqualitychange', onQualityChange);
 
     return () => {
       player.off('playing', onPlaying);
-      player.off('canplay', onCanPlay);
+      player.off('loadeddata', onLoadedData);
+      player.off('timeupdate', onTimeUpdate);
       player.off('error', onError);
       player.off('hlsqualitychange', onQualityChange);
       clearRetry();
@@ -275,14 +308,23 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       const videoEl = player.tech({ IWillNotUseThisInPlugins: true }).el();
       const hlsConfig = {
         enableWorker: true,
-        lowLatencyMode: true,
+        // Stable VOD-like live buffering — LL-HLS is too fragile on mobile networks.
+        lowLatencyMode: false,
         backBufferLength: 30,
-        maxBufferLength: 20,
+        maxBufferLength: 60,
+        maxMaxBufferLength: 120,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
         startLevel: -1,
-        maxMaxBufferLength: 60,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingMaxRetry: 4,
-        fragLoadingMaxRetry: 4,
+        // OBS often ships ~8s GOPs → ~1.5MB .ts segments; allow slow mobile downloads.
+        fragLoadingTimeOut: 30000,
+        manifestLoadingTimeOut: 15000,
+        levelLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 6,
+        levelLoadingMaxRetry: 6,
+        fragLoadingMaxRetry: 8,
+        fragLoadingRetryDelay: 1000,
+        manifestLoadingRetryDelay: 1000,
       };
 
       const updateQualityMenu = (levels, currentLevel) => {
@@ -294,6 +336,7 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       };
 
       let useNative = false;
+      let frameCallbackId = null;
 
       if (videoEl.canPlayType('application/vnd.apple.mpegurl') && !Hls.isSupported()) {
         useNative = true;
@@ -311,12 +354,7 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
             height: l.height || 0,
           }));
           updateQualityMenu(levels, hls.currentLevel);
-          hideOverlay();
           player.play()?.catch(() => {});
-        });
-
-        hls.on(Hls.Events.LEVEL_LOADED, () => {
-          hideOverlay();
         });
 
         hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
@@ -330,19 +368,29 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
         });
 
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          // Only surface real buffering / network problems — ignore routine LL-HLS noise.
           if (!data.fatal) {
-            if (
-              data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-              data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL ||
-              data.type === Hls.ErrorTypes.NETWORK_ERROR
-            ) {
-              setOverlay(OVERLAY.BUFFERING);
+            // Never flash overlay for non-fatal stalls/network blips.
+            return;
+          }
+
+          if (hasPlayedRef.current && isActivelyPlaying(videoEl)) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              try {
+                hls.startLoad();
+              } catch {
+                /* ignore */
+              }
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              try {
+                hls.recoverMediaError();
+              } catch {
+                /* ignore */
+              }
             }
             return;
           }
 
-          setOverlay(OVERLAY.RECONNECTING);
+          showOverlayIfNotPlaying(OVERLAY.RECONNECTING);
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
@@ -373,13 +421,25 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       }
 
       const onPlaying = () => markPlaying();
-      const onCanPlay = () => hideOverlay();
+      const onLoadedData = () => markPlaying();
+      const onTimeUpdate = () => {
+        if (videoEl.currentTime > 0) markPlaying();
+      };
       videoEl.addEventListener('playing', onPlaying);
-      videoEl.addEventListener('canplay', onCanPlay);
+      videoEl.addEventListener('loadeddata', onLoadedData);
+      videoEl.addEventListener('timeupdate', onTimeUpdate);
+
+      if (typeof videoEl.requestVideoFrameCallback === 'function') {
+        frameCallbackId = videoEl.requestVideoFrameCallback(() => markPlaying());
+      }
 
       cleanupStream = () => {
         videoEl.removeEventListener('playing', onPlaying);
-        videoEl.removeEventListener('canplay', onCanPlay);
+        videoEl.removeEventListener('loadeddata', onLoadedData);
+        videoEl.removeEventListener('timeupdate', onTimeUpdate);
+        if (frameCallbackId != null && typeof videoEl.cancelVideoFrameCallback === 'function') {
+          videoEl.cancelVideoFrameCallback(frameCallbackId);
+        }
         if (hlsRef.current) {
           hlsRef.current.destroy();
           hlsRef.current = null;
@@ -398,7 +458,7 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       cancelled = true;
       cleanupStream();
     };
-  }, [src, reloadKey, isLive, detectPublish, scheduleRetry, hideOverlay, markPlaying]);
+  }, [src, reloadKey, isLive, detectPublish, scheduleRetry, hideOverlay, markPlaying, showOverlayIfNotPlaying]);
 
   if (!detectPublish && !isLive) {
     return (

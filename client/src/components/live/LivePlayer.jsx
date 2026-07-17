@@ -83,6 +83,15 @@ function resolveYoutubeVideoId(config) {
   );
 }
 
+function isActivelyPlaying(video) {
+  return Boolean(
+    video &&
+      !video.paused &&
+      !video.ended &&
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+  );
+}
+
 function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
@@ -101,13 +110,33 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     }
   }, []);
 
+  const hideOverlay = useCallback(() => {
+    clearRetry();
+    setShowOffline(false);
+    setOverlay(OVERLAY.NONE);
+  }, [clearRetry]);
+
+  const markPlaying = useCallback(() => {
+    hasPlayedRef.current = true;
+    hideOverlay();
+  }, [hideOverlay]);
+
+  /** Never cover a playing video — only show stall/reconnect UI when playback is actually stopped. */
+  const showOverlayIfNotPlaying = useCallback(
+    (state) => {
+      if (hasPlayedRef.current && isActivelyPlaying(videoRef.current)) return;
+      setOverlay(state);
+    },
+    []
+  );
+
   const scheduleRetry = useCallback(() => {
     clearRetry();
-    setOverlay(OVERLAY.RECONNECTING);
+    showOverlayIfNotPlaying(OVERLAY.RECONNECTING);
     retryTimer.current = setTimeout(() => {
       setReloadKey((k) => k + 1);
     }, RETRY_MS);
-  }, [clearRetry]);
+  }, [clearRetry, showOverlayIfNotPlaying]);
 
   useEffect(() => {
     if (!detectPublish && !isLive) return undefined;
@@ -120,18 +149,28 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
 
     const hlsConfig = {
       enableWorker: true,
-      lowLatencyMode: true,
+      // Stable VOD-like live buffering — LL-HLS is too fragile on mobile networks.
+      lowLatencyMode: false,
       backBufferLength: 30,
-      maxBufferLength: 20,
+      maxBufferLength: 60,
+      maxMaxBufferLength: 120,
+      liveSyncDurationCount: 3,
+      liveMaxLatencyDurationCount: 10,
       startLevel: -1,
-      maxMaxBufferLength: 60,
-      manifestLoadingMaxRetry: 4,
-      levelLoadingMaxRetry: 4,
-      fragLoadingMaxRetry: 4,
+      // OBS often ships ~8s GOPs → ~1.5MB .ts segments; allow slow mobile downloads.
+      fragLoadingTimeOut: 30000,
+      manifestLoadingTimeOut: 15000,
+      levelLoadingTimeOut: 15000,
+      manifestLoadingMaxRetry: 6,
+      levelLoadingMaxRetry: 6,
+      fragLoadingMaxRetry: 8,
+      fragLoadingRetryDelay: 1000,
+      manifestLoadingRetryDelay: 1000,
     };
 
     let hls;
     let useNative = false;
+    let frameCallbackId = null;
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       useNative = true;
@@ -146,31 +185,34 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
         const lvls = (data.levels || []).map((l, index) => ({ index, height: l.height || 0 }));
         setLevels(lvls);
-        clearRetry();
-        setShowOffline(false);
-        setOverlay(OVERLAY.NONE);
         video.play?.().catch(() => {});
-      });
-      hls.on(Hls.Events.LEVEL_LOADED, () => {
-        clearRetry();
-        setShowOffline(false);
-        setOverlay(OVERLAY.NONE);
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
         if (hlsRef.current) setCurrentLevel(hlsRef.current.autoLevelEnabled ? -1 : data.level);
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) {
-          if (
-            data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-            data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL ||
-            data.type === Hls.ErrorTypes.NETWORK_ERROR
-          ) {
-            setOverlay(OVERLAY.BUFFERING);
+          // Never flash overlay for non-fatal stalls/network blips once frames exist.
+          return;
+        }
+        if (hasPlayedRef.current && isActivelyPlaying(video)) {
+          // Keep recovering under the video; do not cover it.
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            try {
+              hls.startLoad();
+            } catch {
+              /* ignore */
+            }
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            try {
+              hls.recoverMediaError();
+            } catch {
+              /* ignore */
+            }
           }
           return;
         }
-        setOverlay(OVERLAY.RECONNECTING);
+        showOverlayIfNotPlaying(OVERLAY.RECONNECTING);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
@@ -200,16 +242,12 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       scheduleRetry();
     }
 
-    const onPlaying = () => {
-      clearRetry();
-      hasPlayedRef.current = true;
-      setShowOffline(false);
-      setOverlay(OVERLAY.NONE);
+    const onPlaying = () => markPlaying();
+    const onLoadedData = () => {
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) markPlaying();
     };
-    const onCanPlay = () => {
-      clearRetry();
-      setShowOffline(false);
-      setOverlay(OVERLAY.NONE);
+    const onTimeUpdate = () => {
+      if (video.currentTime > 0) markPlaying();
     };
     const onVideoError = () => {
       if (useNative) {
@@ -219,20 +257,38 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     };
 
     video.addEventListener('playing', onPlaying);
-    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('loadeddata', onLoadedData);
+    video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('error', onVideoError);
+
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      frameCallbackId = video.requestVideoFrameCallback(() => markPlaying());
+    }
 
     return () => {
       video.removeEventListener('playing', onPlaying);
-      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('loadeddata', onLoadedData);
+      video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('error', onVideoError);
+      if (frameCallbackId != null && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameCallbackId);
+      }
       clearRetry();
       if (hls) {
         hls.destroy();
         hlsRef.current = null;
       }
     };
-  }, [src, reloadKey, isLive, detectPublish, scheduleRetry, clearRetry]);
+  }, [
+    src,
+    reloadKey,
+    isLive,
+    detectPublish,
+    scheduleRetry,
+    clearRetry,
+    markPlaying,
+    showOverlayIfNotPlaying,
+  ]);
 
   const pickLevel = (index) => {
     setCurrentLevel(index);
@@ -346,7 +402,10 @@ function WebRtcPlayer({ url, isLive = true }) {
     })();
 
     const onPlaying = () => setOverlay(OVERLAY.NONE);
-    const onWaiting = () => setOverlay(OVERLAY.BUFFERING);
+    const onWaiting = () => {
+      if (isActivelyPlaying(video)) return;
+      setOverlay(OVERLAY.BUFFERING);
+    };
     video.addEventListener('playing', onPlaying);
     video.addEventListener('waiting', onWaiting);
 
