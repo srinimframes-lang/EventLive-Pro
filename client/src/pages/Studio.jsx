@@ -368,6 +368,11 @@ export default function Studio() {
               Point OBS (or any RTMP encoder) at the server URL and stream key below.
               Output is transcoded to adaptive HLS (240p–720p, capped at 1000&nbsp;kbps).
             </p>
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              For smooth mobile playback set OBS Keyframe Interval to <strong>2</strong> seconds
+              (Settings → Output → Streaming). Longer keyframes create huge HLS segments and cause
+              “Network is slow” / reconnect loops.
+            </p>
 
             {config?.streamDisabled && (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">

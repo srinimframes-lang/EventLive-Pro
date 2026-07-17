@@ -70,7 +70,13 @@ export function useLiveRoom(eventId, { guestName } = {}) {
         sortQuestions(prev.map((q) => (q.id === updated.id ? updated : q)))
       );
     });
-    socket.on('stream:status', (status) => setLiveStatus(status));
+    socket.on('stream:status', (status) => {
+      setLiveStatus(status);
+      // Remount player when switching into recorded replay after live ends.
+      if (status && status.isLive === false && status.recordingUrl) {
+        setPlayerNonce((n) => n + 1);
+      }
+    });
     socket.on('stream:restart', () => setPlayerNonce((n) => n + 1));
 
     return () => {

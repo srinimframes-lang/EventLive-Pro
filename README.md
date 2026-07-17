@@ -273,6 +273,30 @@ Run from the repository root:
 | `JWT_SECRET`              | —                                        | Secret used to sign JWTs (required)  |
 | `JWT_EXPIRES_IN`          | `7d`                                     | Token lifetime                       |
 | `JWT_COOKIE_EXPIRES_DAYS` | `7`                                      | Cookie lifetime in days              |
+| `R2_ACCOUNT_ID`           | —                                        | Cloudflare account id (R2 recordings) |
+| `R2_ACCESS_KEY_ID`        | —                                        | R2 API token access key              |
+| `R2_SECRET_ACCESS_KEY`    | —                                        | R2 API token secret                  |
+| `R2_BUCKET`               | `eventliveprorecordings`                 | R2 bucket for stream recordings      |
+| `R2_ENDPOINT`             | derived from account id                  | Override S3 endpoint if needed       |
+| `R2_PUBLIC_BASE`          | —                                        | Optional public r2.dev/custom domain |
+
+### Recorded Replay storage (Cloudflare R2)
+
+When a live stream ends, MediaMTX finalizes the MP4 into
+`/root/EventLive-Pro/recordings/<eventId>/` and registers it with the backend
+(`POST /api/events/stream/recording-ready`). If the `R2_*` variables are set,
+the backend then:
+
+1. Uploads the MP4 to the R2 bucket under `recordings/<eventId>/<file>.mp4`.
+2. Verifies the upload (`HeadObject` size check) **before** touching the local file.
+3. Saves the R2 object key + URL on the event in MongoDB.
+4. Deletes the local VPS copy to free disk space.
+
+Playback and downloads keep using the same API routes
+(`/api/events/:id/stream/recording[…]`), which redirect to R2 (public base or a
+presigned URL). Live streaming itself is unchanged. Upload success/failure is
+logged with the `[r2]` prefix in the backend logs. If R2 is not configured the
+MP4 simply stays on local disk and playback works exactly as before.
 
 ### `client/.env`
 

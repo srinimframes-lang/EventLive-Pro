@@ -658,6 +658,11 @@ export default function EventForm() {
                   <p className="text-sm text-slate-600">
                     Stream to our premium RTMP server. Use these credentials in OBS or your encoder.
                   </p>
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    OBS Settings → Output → Streaming: Keyframe Interval = <strong>2</strong> (seconds),
+                    Rate Control CBR, bitrate 1500–2500 kbps for 720p. Put only the Stream Key in OBS —
+                    do not paste the full RTMP URL into the key field.
+                  </p>
                   {isEdit && serverStreamLoading && (
                     <p className="text-sm text-slate-500">Loading stream credentials…</p>
                   )}

@@ -29,6 +29,28 @@ export const streamService = {
     const { data } = await api.post(`/api/events/${eventId}/stream/restart`);
     return data.data;
   },
+  async getRecordingMeta(eventId) {
+    const { data } = await api.get(`/api/events/${eventId}/stream/recording/meta`);
+    return data.data;
+  },
+  async hideRecording(eventId) {
+    const { data } = await api.post(`/api/events/${eventId}/stream/recording/hide`);
+    return data.data;
+  },
+  async restoreRecording(eventId) {
+    const { data } = await api.post(`/api/events/${eventId}/stream/recording/restore`);
+    return data.data;
+  },
+  async deleteRecording(eventId) {
+    const { data } = await api.delete(`/api/events/${eventId}/stream/recording`);
+    return data.data;
+  },
+  recordingPlayUrl(eventId) {
+    return `/api/events/${eventId}/stream/recording`;
+  },
+  recordingDownloadUrl(eventId) {
+    return `/api/events/${eventId}/stream/recording/download`;
+  },
   async getChatHistory(eventId, limit = 50) {
     const { data } = await api.get(`/api/events/${eventId}/chat`, { params: { limit } });
     return data.data;

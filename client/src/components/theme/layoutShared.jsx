@@ -106,6 +106,11 @@ export function WatchChatBlock({
 }
 
 export function WatchPlayerHeader({ event, title, watchUrl, mergedConfig, room }) {
+  const isRecorded = Boolean(
+    mergedConfig &&
+      !mergedConfig.isLive &&
+      (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
+  );
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
       <h2
@@ -114,7 +119,11 @@ export function WatchPlayerHeader({ event, title, watchUrl, mergedConfig, room }
       >
         {event.title}
       </h2>
-      <ViewerCount count={room?.viewers || 0} isLive={mergedConfig?.isLive} />
+      <ViewerCount
+        count={room?.viewers || 0}
+        isLive={mergedConfig?.isLive}
+        isRecorded={isRecorded}
+      />
       <ShareButtons url={watchUrl} title={title} />
     </div>
   );

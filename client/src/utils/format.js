@@ -154,6 +154,9 @@ export function resolveMediaUrl(url) {
     return url;
   }
   const path = url.startsWith('/') ? url : `/${url}`;
-  if (path.startsWith('/uploads')) return `${MEDIA_ORIGIN}${path}`;
+  // Backend-served assets (uploads + recording play/download APIs).
+  if (path.startsWith('/uploads') || path.startsWith('/api/')) {
+    return `${MEDIA_ORIGIN}${path}`;
+  }
   return path;
 }

@@ -19,6 +19,13 @@ import {
   mediamtxAuth,
   streamStarted,
   streamStopped,
+  recordingReady,
+  playRecording,
+  downloadRecording,
+  getRecordingMeta,
+  hideRecording,
+  restoreRecording,
+  deleteRecordingPermanently,
   getChatHistory,
   listQuestions,
 } from '../controllers/stream.controller.js';
@@ -45,6 +52,7 @@ router.post('/stream/auth', authenticateStream);
 router.post('/stream/mediamtx-auth', mediamtxAuth);
 router.post('/stream/started', streamStarted);
 router.post('/stream/stopped', streamStopped);
+router.post('/stream/recording-ready', recordingReady);
 
 // ── Live streaming sub-resources (multi-segment, so no slug conflict) ──
 router.get('/:id/stream', getStreamConfig);
@@ -54,6 +62,12 @@ router.post('/:id/stream/key/regenerate', protect, regenerateStreamKey);
 router.post('/:id/stream/live', protect, setLiveStatus);
 router.post('/:id/stream/disable', protect, setStreamDisabled);
 router.post('/:id/stream/restart', protect, restartStream);
+router.get('/:id/stream/recording', optionalAuth, playRecording);
+router.get('/:id/stream/recording/download', protect, downloadRecording);
+router.get('/:id/stream/recording/meta', protect, getRecordingMeta);
+router.post('/:id/stream/recording/hide', protect, hideRecording);
+router.post('/:id/stream/recording/restore', protect, restoreRecording);
+router.delete('/:id/stream/recording', protect, deleteRecordingPermanently);
 router.get('/:id/chat', getChatHistory);
 router.get('/:id/questions', listQuestions);
 

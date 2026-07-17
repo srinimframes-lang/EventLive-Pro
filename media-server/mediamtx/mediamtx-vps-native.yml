@@ -1,18 +1,22 @@
-# MediaMTX native HLS/WebRTC on VPS (no FFmpeg/Caddy stack).
+# MediaMTX native HLS on VPS (stable mobile playback).
 # Deployed on the VPS as /opt/mediamtx.yml (PM2 process "mediamtx").
 #
 # Endpoints:
 #   RTMP ingest : rtmp://stream.eventlivepro.com:1935/live/<eventId>
 #   HLS playback: https://stream.eventlivepro.com/live/<eventId>/index.m3u8
-#   WebRTC/WHEP : https://stream.eventlivepro.com/live/<eventId>/whep
 #
-# HLS / WebRTC / API listen on localhost only. Nginx terminates TLS on
-# stream.eventlivepro.com and reverse-proxies — browsers never hit the VPS IP.
+# OBS recommended settings (must match HLS segment duration):
+#   Encoder: x264 or NVENC H.264
+#   Rate control: CBR
+#   Bitrate: 2500–3500 kbps (1080p) or 1500–2500 kbps (720p)
+#   Keyframe interval (GOP): 2 seconds
+#   Audio: AAC 128–160 kbps
+#
+# HLS / WebRTC / API listen on localhost only. Nginx terminates TLS.
 
 logLevel: info
 logDestinations: [stdout]
 
-# Control API — localhost only (backend probe via MEDIAMTX_API_URL).
 api: yes
 apiAddress: 127.0.0.1:9997
 
@@ -22,20 +26,20 @@ playback: no
 rtsp: no
 srt: no
 
-# OBS publishes here (public). DNS: stream.eventlivepro.com → VPS.
 rtmp: yes
 rtmpAddress: :1935
 rtmpEncryption: "no"
 
-# Browser playback goes through Nginx → these localhost listeners.
+# Standard MPEG-TS HLS — stable on mobile Chrome / iOS (not LL-HLS).
 hls: yes
 hlsAddress: 127.0.0.1:8888
-# CORS is enforced by Nginx on stream.eventlivepro.com (single Origin).
 hlsAllowOrigin: '*'
 hlsAlwaysRemux: yes
-hlsVariant: lowLatency
-hlsSegmentCount: 7
-hlsSegmentDuration: 1s
+hlsVariant: mpegts
+hlsSegmentCount: 12
+hlsSegmentDuration: 2s
+hlsSegmentMaxSize: 50M
+hlsMuxerCloseAfter: 30s
 
 webrtc: yes
 webrtcAddress: 127.0.0.1:8889
@@ -44,8 +48,7 @@ webrtcLocalUDPAddress: :8189
 webrtcIPsFromInterfaces: no
 webrtcAdditionalHosts: [stream.eventlivepro.com]
 
-# Publish auth against EventLive backend (reads/playback stay open for HLS).
-# Replace MEDIA_SERVER_SECRET with the same value as server/.env MEDIA_SERVER_SECRET.
+# Replace MEDIA_SERVER_SECRET with server/.env MEDIA_SERVER_SECRET.
 authMethod: http
 authHTTPAddress: http://127.0.0.1:5000/api/events/stream/mediamtx-auth?token=MEDIA_SERVER_SECRET
 authHTTPExclude:
@@ -54,6 +57,18 @@ authHTTPExclude:
   - action: api
   - action: metrics
   - action: pprof
+
+# Automatic recording: starts when OBS publishes, stops when the stream ends.
+# Native format is fMP4 (.mp4); finalize-recording.sh remuxes to standard MP4
+# under recordings/<eventId>/.
+pathDefaults:
+  record: yes
+  recordPath: /root/EventLive-Pro/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 1s
+  recordSegmentDuration: 24h
+  recordDeleteAfter: 0s
+  runOnRecordSegmentComplete: /root/EventLive-Pro/media-server/scripts/finalize-recording.sh
 
 paths:
   all_others:

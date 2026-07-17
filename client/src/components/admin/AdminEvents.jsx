@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { eventService } from '../../services/event.service.js';
 import { streamService } from '../../services/stream.service.js';
+import api from '../../services/api.js';
 import EventQrCard from '../EventQrCard.jsx';
 import { formatDateTime, buildWatchUrl } from '../../utils/format.js';
 
@@ -13,7 +14,9 @@ export default function AdminEvents() {
   const [expandedQrId, setExpandedQrId] = useState(null);
   const [expandedStreamId, setExpandedStreamId] = useState(null);
   const [streamInfo, setStreamInfo] = useState({});
+  const [recordingMeta, setRecordingMeta] = useState({});
   const [streamLoadingId, setStreamLoadingId] = useState(null);
+  const [recordingBusyId, setRecordingBusyId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -59,15 +62,73 @@ export default function AdminEvents() {
       return;
     }
     setExpandedStreamId(ev.id);
-    if (streamInfo[ev.id]) return;
     setStreamLoadingId(ev.id);
     try {
-      const key = await streamService.getKey(ev.id);
+      const [key, meta] = await Promise.all([
+        streamInfo[ev.id] ? Promise.resolve(streamInfo[ev.id]) : streamService.getKey(ev.id),
+        streamService.getRecordingMeta(ev.id).catch(() => null),
+      ]);
       setStreamInfo((prev) => ({ ...prev, [ev.id]: key }));
+      if (meta) setRecordingMeta((prev) => ({ ...prev, [ev.id]: meta }));
     } catch (e) {
       setError(e.message);
     } finally {
       setStreamLoadingId(null);
+    }
+  };
+
+  const refreshRecordingMeta = async (ev) => {
+    const meta = await streamService.getRecordingMeta(ev.id).catch(() => null);
+    if (meta) setRecordingMeta((prev) => ({ ...prev, [ev.id]: meta }));
+    return meta;
+  };
+
+  const runRecordingAction = async (ev, action) => {
+    setRecordingBusyId(ev.id);
+    setError('');
+    try {
+      if (action === 'hide') await streamService.hideRecording(ev.id);
+      if (action === 'restore') await streamService.restoreRecording(ev.id);
+      if (action === 'play') {
+        const res = await api.get(streamService.recordingPlayUrl(ev.id), {
+          responseType: 'blob',
+        });
+        const url = URL.createObjectURL(res.data);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return;
+      }
+      if (action === 'download') {
+        const res = await api.get(streamService.recordingDownloadUrl(ev.id), {
+          responseType: 'blob',
+        });
+        const filename =
+          recordingMeta[ev.id]?.recordingFilename || `recording-${ev.id}.mp4`;
+        const url = URL.createObjectURL(res.data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      if (action === 'delete') {
+        if (
+          !window.confirm(
+            `Permanently delete the recording for "${ev.title}"? The MP4 will be removed from the server.`
+          )
+        ) {
+          return;
+        }
+        await streamService.deleteRecording(ev.id);
+      }
+      await refreshRecordingMeta(ev);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRecordingBusyId(null);
     }
   };
 
@@ -101,6 +162,9 @@ export default function AdminEvents() {
           {events.map((ev) => {
             const couple =
               ev.brideName && ev.groomName ? `${ev.brideName} & ${ev.groomName}` : null;
+            const rec = recordingMeta[ev.id];
+            const showRecordedBadge =
+              rec?.hasRecording && !rec.recordingHidden && !rec.recordingExpired;
             return (
               <div key={ev.id} className="card">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -115,10 +179,14 @@ export default function AdminEvents() {
                   </div>
                   <span
                     className={`badge ${
-                      ev.isLive ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                      ev.isLive
+                        ? 'bg-red-100 text-red-700'
+                        : showRecordedBadge
+                          ? 'bg-indigo-100 text-indigo-700'
+                          : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {ev.isLive ? 'LIVE' : ev.status}
+                    {ev.isLive ? 'LIVE' : showRecordedBadge ? 'RECORDED' : ev.status}
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -143,12 +211,7 @@ export default function AdminEvents() {
                   <Link to={`/events/${ev.id}/edit`} className="btn-outline">
                     Edit
                   </Link>
-                  <a
-                    href={liveLink(ev)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-outline"
-                  >
+                  <a href={liveLink(ev)} target="_blank" rel="noreferrer" className="btn-outline">
                     Watch
                   </a>
                   <button type="button" className="btn-outline text-red-600" onClick={() => remove(ev)}>
@@ -188,6 +251,72 @@ export default function AdminEvents() {
                         />
                       </div>
                     )}
+
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-sm font-semibold text-slate-800">Recorded replay</p>
+                      {!rec?.hasRecording ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          No recording on file yet. An MP4 is saved automatically when the live stream
+                          ends.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-xs text-slate-600">
+                            File: <code className="break-all">{rec.recordingFilename}</code>
+                            {rec.recordingPublicUntil && (
+                              <> · Public until {formatDateTime(rec.recordingPublicUntil)}</>
+                            )}
+                            {rec.recordingHidden && ' · Hidden by admin'}
+                            {rec.recordingExpired && !rec.recordingHidden && ' · Expired (hidden from public)'}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="btn-outline text-xs"
+                              disabled={recordingBusyId === ev.id}
+                              onClick={() => runRecordingAction(ev, 'play')}
+                            >
+                              Play Recording
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-outline text-xs"
+                              disabled={recordingBusyId === ev.id}
+                              onClick={() => runRecordingAction(ev, 'download')}
+                            >
+                              Download Recording
+                            </button>
+                            {rec.recordingHidden || rec.recordingExpired ? (
+                              <button
+                                type="button"
+                                className="btn-outline text-xs"
+                                disabled={recordingBusyId === ev.id}
+                                onClick={() => runRecordingAction(ev, 'restore')}
+                              >
+                                Restore Recording
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn-outline text-xs"
+                                disabled={recordingBusyId === ev.id}
+                                onClick={() => runRecordingAction(ev, 'hide')}
+                              >
+                                Hide Recording
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn-outline text-xs text-red-600"
+                              disabled={recordingBusyId === ev.id}
+                              onClick={() => runRecordingAction(ev, 'delete')}
+                            >
+                              Delete Permanently
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

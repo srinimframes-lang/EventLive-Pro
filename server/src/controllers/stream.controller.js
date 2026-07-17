@@ -3,7 +3,7 @@ import { ChatMessage } from '../models/ChatMessage.js';
 import { Question } from '../models/Question.js';
 import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { assertCanManageEvent } from '../utils/ownership.js';
+import { assertCanManageEvent, canManageEvent } from '../utils/ownership.js';
 import { extractYouTubeId } from '../utils/youtube.js';
 import {
   buildRtmpCredentials,
@@ -17,7 +17,24 @@ import {
   resolveStreamKey,
   streamKeyFromEventId,
 } from '../utils/mediaStream.js';
-
+import {
+  addDays,
+  applyRecordingToEvent,
+  buildAdminRecordingUrl,
+  buildPublicRecordingUrl,
+  getRecordingState,
+  RECORDING_PUBLIC_DAYS,
+  resolveRecordingAbsolutePath,
+} from '../utils/recording.js';
+import {
+  deleteRecordingFromR2,
+  isR2Configured,
+  presignRecordingUrl,
+  r2PublicUrl,
+  uploadRecordingToR2,
+} from '../utils/r2.js';
+import fs from 'fs';
+import path from 'path';
 async function findEventOr404(id, res, { withKey = false } = {}) {
   const query = Event.findById(id);
   if (withKey) query.select('+rtmpStreamKey');
@@ -51,6 +68,10 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const webrtcUrl = isServer ? deriveWebRtcPlaybackUrl(event) : event.webrtcUrl;
   const liveFromProbe = isPublishing === true;
   const offlineFromProbe = isPublishing === false;
+  const isLive = liveFromProbe ? true : offlineFromProbe ? false : event.isLive;
+  const rec = getRecordingState(event);
+  const recordingUrl = isLive ? '' : buildPublicRecordingUrl(event);
+  const playbackMode = isLive ? 'live' : recordingUrl ? 'recorded' : 'offline';
 
   return {
     eventId: event.id,
@@ -61,7 +82,7 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     playbackUrl,
     webrtcUrl,
     poster: event.coverImage || '',
-    isLive: liveFromProbe ? true : offlineFromProbe ? false : event.isLive,
+    isLive,
     isPublishing: isPublishing === null ? undefined : isPublishing,
     streamDisabled: event.streamDisabled,
     autoRecord: event.autoRecord,
@@ -69,6 +90,24 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     liveEndedAt: event.liveEndedAt,
     peakViewers: event.peakViewers,
     totalViews: event.totalViews,
+    // Recorded replay
+    playbackMode,
+    recordingUrl,
+    hasRecording: rec.hasRecording,
+    recordingAvailable: Boolean(recordingUrl),
+    recordingPublicUntil: rec.recordingPublicUntil,
+    recordingRecordedAt: rec.recordingRecordedAt,
+    recordingDurationSec: rec.recordingDurationSec,
+  };
+}
+
+/** Admin-only recording metadata (includes hidden/expired files that still exist). */
+function adminRecordingConfig(event) {
+  const rec = getRecordingState(event);
+  return {
+    ...rec,
+    recordingUrl: buildAdminRecordingUrl(event),
+    downloadUrl: rec.downloadPath,
   };
 }
 
@@ -356,15 +395,336 @@ export const streamStopped = asyncHandler(async (req, res) => {
   if (event.status === 'live') event.status = 'ended';
   await event.save();
 
+  const rec = getRecordingState(event);
   const io = req.app.get('io');
   if (io) {
     io.to(`event:${event.id}`).emit('stream:status', {
       isLive: false,
       status: event.status,
       liveEndedAt: event.liveEndedAt,
+      playbackMode: rec.publiclyVisible ? 'recorded' : 'offline',
+      recordingUrl: buildPublicRecordingUrl(event),
+      recordingAvailable: rec.publiclyVisible,
     });
   }
   return res.status(200).json({ ok: true });
+});
+
+/* ─────────────────── Recorded replay ──────────────────────────────────────── */
+
+/**
+ * @route POST /api/events/stream/recording-ready
+ * @desc  MediaMTX finalize hook registers the MP4 path in MongoDB.
+ * @access Media server (x-media-secret)
+ */
+export const recordingReady = asyncHandler(async (req, res) => {
+  if (!mediaSecretOk(req)) {
+    res.status(401);
+    throw new Error('Unauthorized');
+  }
+
+  const eventId = String(req.body.eventId || '').trim();
+  const filePath = String(req.body.filePath || req.body.recordingPath || '').trim();
+  const durationSec = Number(req.body.durationSec ?? req.body.duration ?? 0) || 0;
+  const streamKey = parseMediaMtxPath(req.body.path || req.body.streamKey || eventId);
+
+  let event = null;
+  if (eventId && /^[a-fA-F0-9]{24}$/.test(eventId)) {
+    event = await Event.findById(eventId);
+  }
+  if (!event && streamKey) {
+    event = await findEventByStreamKey(streamKey);
+  }
+  if (!event) return res.status(404).json({ ok: false, error: 'event_not_found' });
+
+  try {
+    applyRecordingToEvent(event, { filePath, durationSec });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message || 'invalid_recording' });
+  }
+
+  // Stream has finished recording — ensure event is offline / ended.
+  event.isLive = false;
+  event.liveEndedAt = event.liveEndedAt || new Date();
+  if (event.status === 'live' || event.status === 'published' || event.status === 'draft') {
+    event.status = 'ended';
+  }
+  await event.save();
+
+  const rec = getRecordingState(event);
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`event:${event.id}`).emit('stream:status', {
+      isLive: false,
+      status: event.status,
+      liveEndedAt: event.liveEndedAt,
+      playbackMode: 'recorded',
+      recordingUrl: buildPublicRecordingUrl(event),
+      recordingAvailable: true,
+      recordingPublicUntil: rec.recordingPublicUntil,
+    });
+  }
+
+  // Durable storage: upload to Cloudflare R2 in the background, verify, then
+  // remove the local VPS copy. Playback keeps working via the API route in
+  // both states (local file first, R2 after migration).
+  if (isR2Configured()) {
+    uploadEventRecordingToR2(event.id).catch((err) => {
+      console.error(`[r2] background upload failed for event ${event.id}:`, err.message);
+    });
+  } else {
+    console.warn('[r2] not configured — recording kept on local disk only');
+  }
+
+  return res.status(200).json({
+    ok: true,
+    eventId: event.id,
+    recordingUrl: event.recordingUrl,
+    recordingPath: event.recordingPath,
+    recordingPublicUntil: event.recordingPublicUntil,
+  });
+});
+
+/**
+ * Upload an event's local recording to R2, verify it, persist the object URL
+ * in MongoDB, then delete the local VPS copy. Logs success/failure.
+ */
+async function uploadEventRecordingToR2(eventId) {
+  const event = await Event.findById(eventId);
+  if (!event) throw new Error('event not found');
+  if (event.recordingStorage === 'r2' && event.recordingR2Key) return; // already migrated
+
+  const abs = resolveRecordingAbsolutePath(event.recordingPath);
+  if (!abs || !fs.existsSync(abs)) throw new Error(`local recording missing: ${event.recordingPath}`);
+
+  const key = `recordings/${event.id}/${path.basename(abs)}`;
+  console.log(`[r2] uploading ${abs} -> ${key}`);
+  const { url, size } = await uploadRecordingToR2(abs, key);
+  console.log(`[r2] upload verified (${size} bytes): ${url}`);
+
+  event.recordingStorage = 'r2';
+  event.recordingR2Key = key;
+  event.recordingR2Url = url;
+  await event.save();
+
+  // Only delete the local copy after the verified upload is saved in MongoDB.
+  try {
+    fs.unlinkSync(abs);
+    console.log(`[r2] local copy removed: ${abs}`);
+  } catch (err) {
+    console.warn(`[r2] could not remove local copy ${abs}: ${err.message}`);
+  }
+}
+
+/**
+ * @route GET /api/events/:id/stream/recording
+ * @desc  Stream the recorded MP4 (public within 30 days; admins always if file exists).
+ * @access Public (gated) / Private admin override
+ */
+export const playRecording = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  const rec = getRecordingState(event);
+  if (!rec.hasRecording) {
+    res.status(404);
+    throw new Error('Recording not found');
+  }
+
+  const isAdmin = Boolean(req.user && canManageEvent(event, req.user));
+  if (!rec.publiclyVisible && !isAdmin) {
+    res.status(404);
+    throw new Error('Recording is not available');
+  }
+
+  // R2-backed: redirect to the public bucket URL (or a presigned URL).
+  if (rec.recordingStorage === 'r2' && rec.recordingR2Key) {
+    const publicUrl = r2PublicUrl(rec.recordingR2Key);
+    const target = publicUrl || (await presignRecordingUrl(rec.recordingR2Key));
+    if (!target) {
+      res.status(500);
+      throw new Error('R2 recording URL unavailable');
+    }
+    return res.redirect(302, target);
+  }
+
+  const abs = resolveRecordingAbsolutePath(rec.recordingPath);
+  if (!abs || !fs.existsSync(abs)) {
+    res.status(404);
+    throw new Error('Recording file missing');
+  }
+
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.sendFile(abs);
+});
+
+/**
+ * @route GET /api/events/:id/stream/recording/download
+ * @desc  Download the recorded MP4 (owner/admin).
+ * @access Private
+ */
+export const downloadRecording = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+  const rec = getRecordingState(event);
+  if (!rec.hasRecording) {
+    res.status(404);
+    throw new Error('Recording not found');
+  }
+
+  const filename = rec.recordingFilename || `recording-${event.id}.mp4`;
+
+  if (rec.recordingStorage === 'r2' && rec.recordingR2Key) {
+    const target = await presignRecordingUrl(rec.recordingR2Key, {
+      downloadFilename: filename,
+    });
+    if (!target) {
+      res.status(500);
+      throw new Error('R2 recording URL unavailable');
+    }
+    return res.redirect(302, target);
+  }
+
+  const abs = resolveRecordingAbsolutePath(rec.recordingPath);
+  if (!abs || !fs.existsSync(abs)) {
+    res.status(404);
+    throw new Error('Recording file missing');
+  }
+  return res.download(abs, filename);
+});
+
+/**
+ * @route GET /api/events/:id/stream/recording/meta
+ * @desc  Admin recording metadata + control flags.
+ * @access Private
+ */
+export const getRecordingMeta = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+  res.status(200).json({ success: true, data: adminRecordingConfig(event) });
+});
+
+/**
+ * @route POST /api/events/:id/stream/recording/hide
+ * @desc  Hide recording from public visitors (file kept).
+ * @access Private
+ */
+export const hideRecording = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+  const rec = getRecordingState(event);
+  if (!rec.hasRecording) {
+    res.status(404);
+    throw new Error('Recording not found');
+  }
+  event.recordingHidden = true;
+  await event.save();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`event:${event.id}`).emit('stream:status', {
+      isLive: event.isLive,
+      status: event.status,
+      playbackMode: event.isLive ? 'live' : 'offline',
+      recordingUrl: '',
+      recordingAvailable: false,
+    });
+  }
+
+  res.status(200).json({ success: true, data: adminRecordingConfig(event) });
+});
+
+/**
+ * @route POST /api/events/:id/stream/recording/restore
+ * @desc  Restore a hidden recording to public view (extends 30-day window if expired).
+ * @access Private
+ */
+export const restoreRecording = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+  const rec = getRecordingState(event);
+  if (!rec.hasRecording) {
+    res.status(404);
+    throw new Error('Recording not found');
+  }
+
+  event.recordingHidden = false;
+  // If the public window already elapsed, grant another 30 days from now.
+  if (rec.recordingExpired || !event.recordingPublicUntil || new Date() > event.recordingPublicUntil) {
+    event.recordingPublicUntil = addDays(new Date(), RECORDING_PUBLIC_DAYS);
+  }
+  await event.save();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`event:${event.id}`).emit('stream:status', {
+      isLive: event.isLive,
+      status: event.status,
+      playbackMode: event.isLive ? 'live' : 'recorded',
+      recordingUrl: buildPublicRecordingUrl(event),
+      recordingAvailable: !event.isLive,
+      recordingPublicUntil: event.recordingPublicUntil,
+    });
+  }
+
+  res.status(200).json({ success: true, data: adminRecordingConfig(event) });
+});
+
+/**
+ * @route DELETE /api/events/:id/stream/recording
+ * @desc  Permanently delete the MP4 from disk and clear MongoDB recording fields.
+ * @access Private
+ */
+export const deleteRecordingPermanently = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+  const abs = resolveRecordingAbsolutePath(event.recordingPath);
+
+  if (abs && fs.existsSync(abs)) {
+    try {
+      fs.unlinkSync(abs);
+    } catch {
+      res.status(500);
+      throw new Error('Failed to delete recording file');
+    }
+  }
+
+  if (event.recordingR2Key) {
+    try {
+      await deleteRecordingFromR2(event.recordingR2Key);
+      console.log(`[r2] deleted object ${event.recordingR2Key}`);
+    } catch (err) {
+      console.error(`[r2] failed to delete ${event.recordingR2Key}: ${err.message}`);
+      res.status(500);
+      throw new Error('Failed to delete recording from R2');
+    }
+  }
+
+  event.recordingPath = '';
+  event.recordingFilename = '';
+  event.recordingUrl = '';
+  event.recordingStorage = 'local';
+  event.recordingR2Key = '';
+  event.recordingR2Url = '';
+  event.recordingDurationSec = 0;
+  event.recordingHidden = false;
+  event.recordingDeletedAt = new Date();
+  event.recordingRecordedAt = undefined;
+  event.recordingPublicUntil = undefined;
+  await event.save();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`event:${event.id}`).emit('stream:status', {
+      isLive: event.isLive,
+      status: event.status,
+      playbackMode: event.isLive ? 'live' : 'offline',
+      recordingUrl: '',
+      recordingAvailable: false,
+    });
+  }
+
+  res.status(200).json({ success: true, data: { deleted: true } });
 });
 
 /**

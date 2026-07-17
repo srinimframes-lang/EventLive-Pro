@@ -71,8 +71,25 @@ export default function Watch() {
   const mergedConfig = useMemo(() => {
     if (!config) return null;
     if (!room.liveStatus) return config;
-    return { ...config, isLive: room.liveStatus.isLive };
+    const next = {
+      ...config,
+      isLive: room.liveStatus.isLive,
+    };
+    if (room.liveStatus.recordingUrl !== undefined) {
+      next.recordingUrl = room.liveStatus.recordingUrl || '';
+      next.recordingAvailable = Boolean(room.liveStatus.recordingAvailable);
+      next.playbackMode =
+        room.liveStatus.playbackMode ||
+        (room.liveStatus.isLive ? 'live' : room.liveStatus.recordingUrl ? 'recorded' : 'offline');
+    }
+    return next;
   }, [config, room.liveStatus]);
+
+  const isRecordedReplay = Boolean(
+    mergedConfig &&
+      !mergedConfig.isLive &&
+      (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
+  );
 
   const canAnswer = useMemo(() => user?.role === 'admin', [user]);
 
@@ -192,7 +209,11 @@ export default function Watch() {
           <BannerSlot location="live_player" className="mt-3" />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{event.title}</h2>
-            <ViewerCount count={room.viewers} isLive={mergedConfig?.isLive} />
+            <ViewerCount
+              count={room.viewers}
+              isLive={mergedConfig?.isLive}
+              isRecorded={isRecordedReplay}
+            />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <ShareButtons url={watchUrl} title={coupleTitle || event.title} />

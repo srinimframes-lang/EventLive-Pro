@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { extractYouTubeId } from '../../utils/format.js';
+import { extractYouTubeId, resolveMediaUrl } from '../../utils/format.js';
 import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
 
 const RETRY_MS = 3000;
@@ -436,6 +436,54 @@ function WebRtcPlayer({ url, isLive = true }) {
   );
 }
 
+function Mp4Player({ src, poster }) {
+  const videoRef = useRef(null);
+  const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return undefined;
+    setOverlay(OVERLAY.BUFFERING);
+    video.src = src;
+    video.load();
+    video.play?.().catch(() => {});
+
+    const onPlaying = () => setOverlay(OVERLAY.NONE);
+    const onWaiting = () => {
+      if (isActivelyPlaying(video)) return;
+      setOverlay(OVERLAY.BUFFERING);
+    };
+    const onError = () => setOverlay(OVERLAY.RECONNECTING);
+
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('canplay', onPlaying);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('error', onError);
+    return () => {
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('canplay', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('error', onError);
+    };
+  }, [src]);
+
+  if (!src) return <Offline message="Recording is not available." />;
+
+  return (
+    <Frame>
+      <video
+        ref={videoRef}
+        className="absolute inset-0 h-full w-full bg-black object-contain"
+        controls
+        controlsList="nodownload"
+        playsInline
+        poster={poster || undefined}
+      />
+      <PlayerOverlay state={overlay} />
+    </Frame>
+  );
+}
+
 /**
  * Renders the appropriate live player for the configured provider.
  */
@@ -461,6 +509,25 @@ export default function LivePlayer({ config }) {
   const poster = config.poster || '';
   const live = Boolean(isLive);
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
+  const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
+
+  // Live OBS publish always wins; when offline, fall back to recorded replay.
+  if (isMediaMtx && live) {
+    const playback = resolveServerPlaybackUrl(config);
+    if (!playback) return <Offline message={SERVER_WAITING_MSG} />;
+    return (
+      <HlsPlayer
+        src={playback}
+        poster={poster}
+        isLive
+        detectPublish
+      />
+    );
+  }
+
+  if (isMediaMtx && recordingSrc) {
+    return <Mp4Player src={recordingSrc} poster={poster} />;
+  }
 
   if (isMediaMtx) {
     const playback = resolveServerPlaybackUrl(config);
@@ -469,10 +536,14 @@ export default function LivePlayer({ config }) {
       <HlsPlayer
         src={playback}
         poster={poster}
-        isLive={live}
+        isLive={false}
         detectPublish
       />
     );
+  }
+
+  if (!live && recordingSrc) {
+    return <Mp4Player src={recordingSrc} poster={poster} />;
   }
 
   if (!live) {

@@ -204,7 +204,20 @@ const eventSchema = new Schema(
     // Private-server controls (Phase 2). Additive — defaults keep prior behaviour.
     streamDisabled: { type: Boolean, default: false }, // admin can block publishing
     autoRecord: { type: Boolean, default: false }, // record the private-server stream
-    recordingUrl: { type: String, trim: true, default: '' }, // set by media server
+    // Recorded replay (MediaMTX finalize → MongoDB). File stays on disk 30+ days.
+    recordingUrl: { type: String, trim: true, default: '' }, // public/admin play API path
+    recordingPath: { type: String, trim: true, default: '' }, // absolute MP4 path on server
+    recordingFilename: { type: String, trim: true, default: '' },
+    // Cloudflare R2 (durable storage). When set, playback/download come from R2
+    // and the local VPS copy has been removed.
+    recordingStorage: { type: String, enum: ['local', 'r2'], default: 'local' },
+    recordingR2Key: { type: String, trim: true, default: '' },
+    recordingR2Url: { type: String, trim: true, default: '' }, // canonical object URL
+    recordingRecordedAt: { type: Date },
+    recordingPublicUntil: { type: Date }, // recordedAt + 30 days; public hide after
+    recordingDurationSec: { type: Number, default: 0, min: 0 },
+    recordingHidden: { type: Boolean, default: false }, // admin hide (or keep after restore window)
+    recordingDeletedAt: { type: Date }, // permanent delete timestamp (file removed)
     isLive: { type: Boolean, default: false, index: true },
     liveStartedAt: { type: Date },
     liveEndedAt: { type: Date },
