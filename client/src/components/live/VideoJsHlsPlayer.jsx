@@ -132,6 +132,20 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
     }
   }, []);
 
+  const hideOverlay = useCallback(() => {
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+    setShowOffline(false);
+    setOverlay(OVERLAY.NONE);
+  }, []);
+
+  const markPlaying = useCallback(() => {
+    hasPlayedRef.current = true;
+    hideOverlay();
+  }, [hideOverlay]);
+
   const scheduleRetry = useCallback(() => {
     clearRetry();
     setOverlay(OVERLAY.RECONNECTING);
@@ -191,13 +205,8 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       }
     });
 
-    const onPlaying = () => {
-      clearRetry();
-      hasPlayedRef.current = true;
-      setShowOffline(false);
-      setOverlay(OVERLAY.NONE);
-    };
-    const onWaiting = () => setOverlay(OVERLAY.BUFFERING);
+    const onPlaying = () => markPlaying();
+    const onCanPlay = () => hideOverlay();
     const onError = () => {
       if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
       scheduleRetry();
@@ -214,13 +223,13 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
     };
 
     player.on('playing', onPlaying);
-    player.on('waiting', onWaiting);
+    player.on('canplay', onCanPlay);
     player.on('error', onError);
     player.on('hlsqualitychange', onQualityChange);
 
     return () => {
       player.off('playing', onPlaying);
-      player.off('waiting', onWaiting);
+      player.off('canplay', onCanPlay);
       player.off('error', onError);
       player.off('hlsqualitychange', onQualityChange);
       clearRetry();
@@ -264,109 +273,119 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       }
 
       const videoEl = player.tech({ IWillNotUseThisInPlugins: true }).el();
-    const hlsConfig = {
-      enableWorker: true,
-      lowLatencyMode: true,
-      backBufferLength: 30,
-      maxBufferLength: 20,
-      startLevel: -1,
-      maxMaxBufferLength: 60,
-      manifestLoadingMaxRetry: 4,
-      levelLoadingMaxRetry: 4,
-      fragLoadingMaxRetry: 4,
-    };
+      const hlsConfig = {
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30,
+        maxBufferLength: 20,
+        startLevel: -1,
+        maxMaxBufferLength: 60,
+        manifestLoadingMaxRetry: 4,
+        levelLoadingMaxRetry: 4,
+        fragLoadingMaxRetry: 4,
+      };
 
-    const updateQualityMenu = (levels, currentLevel) => {
-      player.trigger('hlslevelsupdated', { levels, currentLevel });
-      if (player.qualityButton) {
-        if (levels.length > 1) player.qualityButton.show();
-        else player.qualityButton.hide();
-      }
-    };
+      const updateQualityMenu = (levels, currentLevel) => {
+        player.trigger('hlslevelsupdated', { levels, currentLevel });
+        if (player.qualityButton) {
+          if (levels.length > 1) player.qualityButton.show();
+          else player.qualityButton.hide();
+        }
+      };
 
-    let useNative = false;
+      let useNative = false;
 
-    if (videoEl.canPlayType('application/vnd.apple.mpegurl') && !Hls.isSupported()) {
-      useNative = true;
-      player.src({ src, type: 'application/x-mpegURL' });
-      player.play()?.catch(() => {});
-    } else if (Hls.isSupported()) {
-      const hls = new Hls(hlsConfig);
-      hlsRef.current = hls;
-      hls.loadSource(src);
-      hls.attachMedia(videoEl);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
-        const levels = (data.levels || []).map((l, index) => ({
-          index,
-          height: l.height || 0,
-        }));
-        updateQualityMenu(levels, hls.currentLevel);
+      if (videoEl.canPlayType('application/vnd.apple.mpegurl') && !Hls.isSupported()) {
+        useNative = true;
+        player.src({ src, type: 'application/x-mpegURL' });
         player.play()?.catch(() => {});
-      });
+      } else if (Hls.isSupported()) {
+        const hls = new Hls(hlsConfig);
+        hlsRef.current = hls;
+        hls.loadSource(src);
+        hls.attachMedia(videoEl);
 
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
-        if (!hlsRef.current) return;
-        const currentLevel = hlsRef.current.autoLevelEnabled ? -1 : data.level;
-        const levels = (hlsRef.current.levels || []).map((l, index) => ({
-          index,
-          height: l.height || 0,
-        }));
-        updateQualityMenu(levels, currentLevel);
-      });
+        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+          const levels = (data.levels || []).map((l, index) => ({
+            index,
+            height: l.height || 0,
+          }));
+          updateQualityMenu(levels, hls.currentLevel);
+          hideOverlay();
+          player.play()?.catch(() => {});
+        });
 
-      hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) {
-          if (
-            data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-            data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
-          ) {
-            setOverlay(OVERLAY.BUFFERING);
+        hls.on(Hls.Events.LEVEL_LOADED, () => {
+          hideOverlay();
+        });
+
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
+          if (!hlsRef.current) return;
+          const currentLevel = hlsRef.current.autoLevelEnabled ? -1 : data.level;
+          const levels = (hlsRef.current.levels || []).map((l, index) => ({
+            index,
+            height: l.height || 0,
+          }));
+          updateQualityMenu(levels, currentLevel);
+        });
+
+        hls.on(Hls.Events.ERROR, (_e, data) => {
+          // Only surface real buffering / network problems — ignore routine LL-HLS noise.
+          if (!data.fatal) {
+            if (
+              data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+              data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL ||
+              data.type === Hls.ErrorTypes.NETWORK_ERROR
+            ) {
+              setOverlay(OVERLAY.BUFFERING);
+            }
+            return;
           }
-          return;
-        }
 
-        setOverlay(OVERLAY.RECONNECTING);
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
-            try {
-              hls.startLoad();
-            } catch {
-              /* reload below */
-            }
-            scheduleRetry();
-            break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            try {
-              hls.recoverMediaError();
-            } catch {
+          setOverlay(OVERLAY.RECONNECTING);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
+              try {
+                hls.startLoad();
+              } catch {
+                /* reload below */
+              }
               scheduleRetry();
-            }
-            break;
-          default:
-            hls.destroy();
-            hlsRef.current = null;
-            if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
-            scheduleRetry();
-        }
-      });
-    } else {
-      if (detectPublish) setShowOffline(true);
-      scheduleRetry();
-    }
-
-    const onStalled = () => setOverlay(OVERLAY.BUFFERING);
-    videoEl.addEventListener('stalled', onStalled);
-
-    cleanupStream = () => {
-      videoEl.removeEventListener('stalled', onStalled);
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              try {
+                hls.recoverMediaError();
+              } catch {
+                scheduleRetry();
+              }
+              break;
+            default:
+              hls.destroy();
+              hlsRef.current = null;
+              if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
+              scheduleRetry();
+          }
+        });
+      } else {
+        if (detectPublish) setShowOffline(true);
+        scheduleRetry();
       }
-      if (useNative) player.reset();
-    };
+
+      const onPlaying = () => markPlaying();
+      const onCanPlay = () => hideOverlay();
+      videoEl.addEventListener('playing', onPlaying);
+      videoEl.addEventListener('canplay', onCanPlay);
+
+      cleanupStream = () => {
+        videoEl.removeEventListener('playing', onPlaying);
+        videoEl.removeEventListener('canplay', onCanPlay);
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        if (useNative) player.reset();
+      };
     };
 
     if (player.isReady_) {
@@ -379,7 +398,7 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       cancelled = true;
       cleanupStream();
     };
-  }, [src, reloadKey, isLive, detectPublish, scheduleRetry]);
+  }, [src, reloadKey, isLive, detectPublish, scheduleRetry, hideOverlay, markPlaying]);
 
   if (!detectPublish && !isLive) {
     return (

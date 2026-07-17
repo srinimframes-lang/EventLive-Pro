@@ -146,7 +146,15 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
         const lvls = (data.levels || []).map((l, index) => ({ index, height: l.height || 0 }));
         setLevels(lvls);
+        clearRetry();
+        setShowOffline(false);
+        setOverlay(OVERLAY.NONE);
         video.play?.().catch(() => {});
+      });
+      hls.on(Hls.Events.LEVEL_LOADED, () => {
+        clearRetry();
+        setShowOffline(false);
+        setOverlay(OVERLAY.NONE);
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
         if (hlsRef.current) setCurrentLevel(hlsRef.current.autoLevelEnabled ? -1 : data.level);
@@ -155,7 +163,8 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
         if (!data.fatal) {
           if (
             data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-            data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
+            data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL ||
+            data.type === Hls.ErrorTypes.NETWORK_ERROR
           ) {
             setOverlay(OVERLAY.BUFFERING);
           }
@@ -197,8 +206,11 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       setShowOffline(false);
       setOverlay(OVERLAY.NONE);
     };
-    const onWaiting = () => setOverlay(OVERLAY.BUFFERING);
-    const onStalled = () => setOverlay(OVERLAY.BUFFERING);
+    const onCanPlay = () => {
+      clearRetry();
+      setShowOffline(false);
+      setOverlay(OVERLAY.NONE);
+    };
     const onVideoError = () => {
       if (useNative) {
         if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
@@ -207,14 +219,12 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     };
 
     video.addEventListener('playing', onPlaying);
-    video.addEventListener('waiting', onWaiting);
-    video.addEventListener('stalled', onStalled);
+    video.addEventListener('canplay', onCanPlay);
     video.addEventListener('error', onVideoError);
 
     return () => {
       video.removeEventListener('playing', onPlaying);
-      video.removeEventListener('waiting', onWaiting);
-      video.removeEventListener('stalled', onStalled);
+      video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('error', onVideoError);
       clearRetry();
       if (hls) {
