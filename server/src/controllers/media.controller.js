@@ -62,19 +62,25 @@ async function removeGalleryAsset(photo) {
  * Attach fresh display URLs for R2-backed gallery photos (presigned or public).
  * Legacy Cloudinary/local URLs are left unchanged.
  */
-export async function hydrateGalleryUrls(eventLike, { expiresIn = 6 * 3600 } = {}) {
+export async function hydrateGalleryUrls(eventLike, { expiresIn = 6 * 3600, directUrlLimit = 48 } = {}) {
   if (!eventLike?.gallery?.length) return eventLike?.gallery || [];
   const eventId = eventLike.id || eventLike._id;
   const sorted = sortGallery(eventLike.gallery);
 
   return Promise.all(
-    sorted.map(async (photo) => {
+    sorted.map(async (photo, index) => {
       const plain = typeof photo.toObject === 'function' ? photo.toObject() : { ...photo };
       const id = String(plain.id || plain._id || '');
       if (plain.r2Key) {
-        const publicUrl = r2PublicUrl(plain.r2Key);
-        const signed = publicUrl || (await presignR2Url(plain.r2Key, { expiresIn }));
-        plain.url = signed || galleryApiImagePath(eventId, id);
+        // Beyond the first N photos, use the durable redirect path so we do not
+        // burn CPU signing hundreds of URLs on every watch-page load.
+        if (Number.isFinite(directUrlLimit) && index >= directUrlLimit) {
+          plain.url = galleryApiImagePath(eventId, id);
+        } else {
+          const publicUrl = r2PublicUrl(plain.r2Key);
+          const signed = publicUrl || (await presignR2Url(plain.r2Key, { expiresIn }));
+          plain.url = signed || galleryApiImagePath(eventId, id);
+        }
       }
       plain.id = id;
       return plain;

@@ -130,6 +130,10 @@ async function probeMediaMtxPathReady(pathName) {
   }
 }
 
+/** Short TTL cache so Watch-page stream polls do not hammer MediaMTX API. */
+const publishingProbeCache = new Map();
+const PUBLISHING_PROBE_TTL_MS = 2500;
+
 /**
  * Best-effort probe of MediaMTX path readiness (null = unknown).
  * Also accepts OBS misconfiguration that publishes to live/<key>/<key>.
@@ -137,12 +141,30 @@ async function probeMediaMtxPathReady(pathName) {
 export async function probeMediaMtxPublishing(streamKey) {
   if (!env.mediamtxApiUrl || !streamKey) return null;
   const key = String(streamKey || '').trim();
+  const cached = publishingProbeCache.get(key);
+  if (cached && Date.now() - cached.at < PUBLISHING_PROBE_TTL_MS) {
+    return cached.value;
+  }
+
   const canonical = await probeMediaMtxPathReady(mediamtxPathName(key));
-  if (canonical === true) return true;
-  const nested = await probeMediaMtxPathReady(`${mediamtxPathName(key)}/${key}`);
-  if (nested === true) return true;
-  if (canonical === false && nested === false) return false;
-  return null;
+  let value;
+  if (canonical === true) {
+    value = true;
+  } else {
+    const nested = await probeMediaMtxPathReady(`${mediamtxPathName(key)}/${key}`);
+    if (nested === true) value = true;
+    else if (canonical === false && nested === false) value = false;
+    else value = null;
+  }
+
+  publishingProbeCache.set(key, { at: Date.now(), value });
+  if (publishingProbeCache.size > 500) {
+    const cutoff = Date.now() - PUBLISHING_PROBE_TTL_MS * 4;
+    for (const [k, v] of publishingProbeCache) {
+      if (v.at < cutoff) publishingProbeCache.delete(k);
+    }
+  }
+  return value;
 }
 
 export async function findEventByStreamKey(rawKey) {

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 
@@ -23,6 +24,18 @@ app.set('trust proxy', 1);
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
+
+// Compress JSON/API responses only. Skip already-compressed payloads.
+// HLS live segments are served by nginx→MediaMTX (not this app), so they
+// are never compressed here.
+app.use(
+  compression({
+    filter(req, res) {
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    },
   })
 );
 
@@ -62,14 +75,17 @@ if (!env.isProd) {
   app.use(morgan('dev'));
 }
 
-// Rate limit the auth-heavy API surface
+// Rate limits tuned for venue Wi‑Fi (many guests, one public IP).
+// GETs are generous so live stream polling + watch page loads do not 429;
+// mutating methods stay stricter to limit spam/abuse.
 app.use(
   '/api',
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: (req) => (req.method === 'GET' || req.method === 'HEAD' ? 6000 : 400),
     standardHeaders: true,
     legacyHeaders: false,
+    message: { success: false, message: 'Too many requests, please try again later' },
   })
 );
 

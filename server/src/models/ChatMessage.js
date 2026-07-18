@@ -31,6 +31,9 @@ const chatMessageSchema = new Schema(
   { timestamps: true }
 );
 
+// Hot path: recent chat history sorted by createdAt within an event.
+chatMessageSchema.index({ event: 1, createdAt: -1 });
+
 chatMessageSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc, ret) => {

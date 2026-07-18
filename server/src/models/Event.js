@@ -300,6 +300,11 @@ const eventSchema = new Schema(
 
 // Text index to support search across title/description.
 eventSchema.index({ title: 'text', description: 'text' });
+// Public/admin list filters.
+eventSchema.index({ status: 1, createdAt: -1 });
+eventSchema.index({ status: 1, startTime: 1 });
+eventSchema.index({ 'themeSnapshot.region': 1, status: 1 });
+eventSchema.index({ organizer: 1, createdAt: -1 });
 
 /**
  * Generates a unique short code for an event: an initials prefix plus a random

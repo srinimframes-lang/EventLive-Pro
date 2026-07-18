@@ -11,22 +11,21 @@ import Login from './pages/Login.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import Register from './pages/Register.jsx';
 import Book from './pages/Book.jsx';
-import BookingNew from './pages/BookingNew.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Admin from './pages/Admin.jsx';
-import Reseller from './pages/Reseller.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
-import EventForm from './pages/EventForm.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Districts from './pages/Districts.jsx';
 import DistrictDetail from './pages/DistrictDetail.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 
-// Code-split the live-streaming pages so heavy deps (hls.js, socket.io-client)
-// load only when needed.
+// Heavy / authenticated surfaces — load only when navigated to.
 const Watch = lazy(() => import('./pages/Watch.jsx'));
 const Studio = lazy(() => import('./pages/Studio.jsx'));
+const BookingNew = lazy(() => import('./pages/BookingNew.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Admin = lazy(() => import('./pages/Admin.jsx'));
+const Reseller = lazy(() => import('./pages/Reseller.jsx'));
+const EventForm = lazy(() => import('./pages/EventForm.jsx'));
 
 function PageLoader() {
   return <p className="py-20 text-center text-slate-500">Loading…</p>;

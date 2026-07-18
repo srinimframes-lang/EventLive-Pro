@@ -59,6 +59,9 @@ const domainSchema = new Schema(
   { timestamps: true }
 );
 
+// Compound lookup used when resolving an organizer's active brand domain.
+domainSchema.index({ customer: 1, status: 1 });
+
 // The DNS record we ask the customer to add to prove ownership.
 domainSchema.virtual('verification').get(function verification() {
   return {

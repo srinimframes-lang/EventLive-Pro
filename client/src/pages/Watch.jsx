@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
@@ -7,16 +7,22 @@ import { useLiveRoom } from '../hooks/useLiveRoom.js';
 import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../utils/format.js';
 import { hasEventTheme, ensureSafeEventTheme, publicEventTypeLabel } from '../utils/eventTheme.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
-import LiveChat from '../components/live/LiveChat.jsx';
-import QAPanel from '../components/live/QAPanel.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
-import PhotoGallery from '../components/PhotoGallery.jsx';
 import BannerSlot from '../components/BannerSlot.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
-import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
 import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
 import EventSeo from '../components/seo/EventSeo.jsx';
+
+// Defer chat / Q&A / gallery / themed shell so the player can load first.
+const LiveChat = lazy(() => import('../components/live/LiveChat.jsx'));
+const QAPanel = lazy(() => import('../components/live/QAPanel.jsx'));
+const PhotoGallery = lazy(() => import('../components/PhotoGallery.jsx'));
+const ThemedWatchLayout = lazy(() => import('../components/ThemedWatchLayout.jsx'));
+
+function PanelFallback() {
+  return <p className="p-4 text-center text-sm text-slate-500">Loading…</p>;
+}
 
 export default function Watch() {
   const { idOrSlug } = useParams();
@@ -51,23 +57,24 @@ export default function Watch() {
   }, [idOrSlug, navigate]);
 
   const eventId = event?.id;
+  const guestName = user?.name || 'Guest';
+  const room = useLiveRoom(eventId, { guestName });
 
   // Poll MediaMTX-backed stream status while watching a Premium Server event.
+  // When Socket.IO is connected, live status is also pushed — poll less often.
   useEffect(() => {
     if (!eventId || !config) return undefined;
     const isServer = config.provider === 'rtmp' || config.provider === 'hls';
     if (!isServer) return undefined;
+    const intervalMs = room.connected ? 30000 : 10000;
     const timer = setInterval(async () => {
       const cfg = await streamService.getConfig(eventId).catch(() => null);
       if (cfg) {
         setConfig((prev) => (prev ? { ...prev, ...cfg } : cfg));
       }
-    }, 10000);
+    }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, config?.provider]);
-
-  const guestName = user?.name || 'Guest';
-  const room = useLiveRoom(eventId, { guestName });
+  }, [eventId, config?.provider, room.connected]);
 
   const mergedConfig = useMemo(() => {
     if (!config) return null;
@@ -126,18 +133,20 @@ export default function Watch() {
     return (
       <>
         <EventSeo event={event} pageType="watch" />
-        <ThemedWatchLayout
-        event={event}
-        coupleTitle={coupleTitle}
-        watchUrl={watchUrl}
-        mergedConfig={mergedConfig}
-        room={room}
-        chatOn={chatOn}
-        activeTab={activeTab}
-        setTab={setTab}
-        canAnswer={canAnswer}
-        playerNonce={room.playerNonce}
-      />
+        <Suspense fallback={<ThemeLoadingScreen label="Loading watch page…" />}>
+          <ThemedWatchLayout
+            event={event}
+            coupleTitle={coupleTitle}
+            watchUrl={watchUrl}
+            mergedConfig={mergedConfig}
+            room={room}
+            chatOn={chatOn}
+            activeTab={activeTab}
+            setTab={setTab}
+            canAnswer={canAnswer}
+            playerNonce={room.playerNonce}
+          />
+        </Suspense>
       </>
     );
   }
@@ -234,7 +243,9 @@ export default function Watch() {
               <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>
             </div>
             {event.gallery?.length ? (
-              <PhotoGallery photos={event.gallery} event={event} />
+              <Suspense fallback={<PanelFallback />}>
+                <PhotoGallery photos={event.gallery} event={event} />
+              </Suspense>
             ) : (
               <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
                 Photos will appear here when the host uploads a gallery.
@@ -255,22 +266,24 @@ export default function Watch() {
               </TabButton>
             </div>
             <div className="min-h-0 flex-1">
-              {activeTab === 'chat' ? (
-                <LiveChat
-                  messages={room.messages}
-                  onSend={room.sendMessage}
-                  disabled={!room.connected}
-                />
-              ) : (
-                <QAPanel
-                  questions={room.questions}
-                  onAsk={room.askQuestion}
-                  onUpvote={room.upvoteQuestion}
-                  onAnswer={room.answerQuestion}
-                  canAnswer={canAnswer}
-                  disabled={!room.connected}
-                />
-              )}
+              <Suspense fallback={<PanelFallback />}>
+                {activeTab === 'chat' ? (
+                  <LiveChat
+                    messages={room.messages}
+                    onSend={room.sendMessage}
+                    disabled={!room.connected}
+                  />
+                ) : (
+                  <QAPanel
+                    questions={room.questions}
+                    onAsk={room.askQuestion}
+                    onUpvote={room.upvoteQuestion}
+                    onAnswer={room.answerQuestion}
+                    canAnswer={canAnswer}
+                    disabled={!room.connected}
+                  />
+                )}
+              </Suspense>
             </div>
           </div>
         </div>

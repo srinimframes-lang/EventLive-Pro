@@ -6,7 +6,7 @@ import { galleryPhotoAlt } from '../utils/seo.js';
  * Responsive photo gallery with fullscreen lightbox (next/prev + swipe).
  * Images lazy-load so they do not contend with live HLS playback.
  */
-export default function PhotoGallery({ photos = [], event, onDelete }) {
+export default function PhotoGallery({ photos = [], event, onDelete, initialCount = 12 }) {
   const ordered = useMemo(() => {
     return [...photos].sort((a, b) => {
       if (a.isCover && !b.isCover) return -1;
@@ -15,9 +15,12 @@ export default function PhotoGallery({ photos = [], event, onDelete }) {
     });
   }, [photos]);
 
+  const [visibleCount, setVisibleCount] = useState(initialCount);
   const [activeIndex, setActiveIndex] = useState(-1);
   const touchStartX = useRef(null);
 
+  const visible = ordered.slice(0, visibleCount);
+  const hasMore = visibleCount < ordered.length;
   const active = activeIndex >= 0 ? ordered[activeIndex] : null;
 
   const close = useCallback(() => setActiveIndex(-1), []);
@@ -50,7 +53,7 @@ export default function PhotoGallery({ photos = [], event, onDelete }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
-        {ordered.map((photo, index) => {
+        {visible.map((photo, index) => {
           const photoId = photo.id || photo._id;
           const alt = galleryPhotoAlt(photo, event, index);
           return (
@@ -95,6 +98,18 @@ export default function PhotoGallery({ photos = [], event, onDelete }) {
           );
         })}
       </div>
+
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={() => setVisibleCount((n) => Math.min(n + 12, ordered.length))}
+          >
+            Load more photos ({ordered.length - visibleCount} remaining)
+          </button>
+        </div>
+      )}
 
       {active && (
         <div

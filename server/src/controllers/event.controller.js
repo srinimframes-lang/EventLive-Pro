@@ -138,22 +138,56 @@ export const listEvents = asyncHandler(async (req, res) => {
 
   const sort = req.query.sort === 'startTime' ? { startTime: 1 } : { createdAt: -1 };
 
+  // Card/list projections — omit heavy gallery blobs and recording file paths.
+  const listSelect = [
+    'title',
+    'slug',
+    'shortCode',
+    'category',
+    'status',
+    'isLive',
+    'startTime',
+    'endTime',
+    'venue',
+    'coverImage',
+    'brideName',
+    'groomName',
+    'organizer',
+    'streamProvider',
+    'creditType',
+    'themeSnapshot.name',
+    'themeSnapshot.category',
+    'themeSnapshot.region',
+    'themeSnapshot.previewImage',
+    'recordingStorage',
+    'recordingPublicUntil',
+    'recordingHidden',
+    'createdAt',
+  ].join(' ');
+
   const [items, total] = await Promise.all([
     Event.find(filter)
+      .select(listSelect)
       .populate('organizer', 'name email')
       .sort(sort)
       .skip(skip)
-      .limit(limit),
+      .limit(limit)
+      .lean({ virtuals: true }),
     Event.countDocuments(filter),
   ]);
 
+  const data = items.map((doc) => {
+    const id = String(doc._id);
+    return { ...doc, id, _id: undefined };
+  });
+
   res.status(200).json({
     success: true,
-    count: items.length,
+    count: data.length,
     total,
     page,
     pages: Math.ceil(total / limit) || 1,
-    data: items,
+    data,
   });
 });
 

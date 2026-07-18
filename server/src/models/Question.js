@@ -54,6 +54,9 @@ const questionSchema = new Schema(
   { timestamps: true }
 );
 
+// Hot path: Q&A list sorted by answered/upvotes within an event.
+questionSchema.index({ event: 1, isAnswered: 1, upvotes: -1, createdAt: -1 });
+
 questionSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc, ret) => {

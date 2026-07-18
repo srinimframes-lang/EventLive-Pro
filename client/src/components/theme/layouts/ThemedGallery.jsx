@@ -18,7 +18,7 @@ const VARIANTS = {
   default: 'gallery-default',
 };
 
-export default function ThemedGallery({ photos = [], variant = 'default', event, onDelete }) {
+export default function ThemedGallery({ photos = [], variant = 'default', event, onDelete, initialCount = 12 }) {
   const ordered = useMemo(() => {
     return [...photos].sort((a, b) => {
       if (a.isCover && !b.isCover) return -1;
@@ -27,9 +27,12 @@ export default function ThemedGallery({ photos = [], variant = 'default', event,
     });
   }, [photos]);
 
+  const [visibleCount, setVisibleCount] = useState(initialCount);
   const [activeIndex, setActiveIndex] = useState(-1);
   const touchStartX = useRef(null);
   const rootClass = VARIANTS[variant] || VARIANTS.default;
+  const visible = ordered.slice(0, visibleCount);
+  const hasMore = visibleCount < ordered.length;
   const active = activeIndex >= 0 ? ordered[activeIndex] : null;
 
   const close = useCallback(() => setActiveIndex(-1), []);
@@ -62,7 +65,7 @@ export default function ThemedGallery({ photos = [], variant = 'default', event,
   return (
     <>
       <div className={rootClass}>
-        {ordered.map((photo, index) => {
+        {visible.map((photo, index) => {
           const photoId = photo.id || photo._id;
           const alt = galleryPhotoAlt(photo, event, index);
           return (
@@ -96,6 +99,18 @@ export default function ThemedGallery({ photos = [], variant = 'default', event,
           );
         })}
       </div>
+
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={() => setVisibleCount((n) => Math.min(n + 12, ordered.length))}
+          >
+            Load more photos ({ordered.length - visibleCount} remaining)
+          </button>
+        </div>
+      )}
 
       {active && (
         <div

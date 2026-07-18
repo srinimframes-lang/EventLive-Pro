@@ -804,10 +804,13 @@ export const getChatHistory = asyncHandler(async (req, res) => {
  * @access Public
  */
 export const listQuestions = asyncHandler(async (req, res) => {
-  const questions = await Question.find({ event: req.params.id }).sort({
-    isAnswered: 1,
-    upvotes: -1,
-    createdAt: -1,
-  });
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  const questions = await Question.find({ event: req.params.id })
+    .sort({
+      isAnswered: 1,
+      upvotes: -1,
+      createdAt: -1,
+    })
+    .limit(limit);
   res.status(200).json({ success: true, data: questions });
 });

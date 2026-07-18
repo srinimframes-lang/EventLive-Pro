@@ -65,12 +65,21 @@ export function initSocket(httpServer) {
   io.on('connection', (socket) => {
     socket.data.eventId = null;
     socket.data.displayName = socket.user?.name || 'Guest';
+    socket.data.lastChatAt = 0;
+    socket.data.lastQaAt = 0;
 
     const emitViewers = (eventId) => {
       io.to(roomKey(eventId)).emit('presence:viewers', {
         eventId,
         count: viewerCount(eventId),
       });
+    };
+
+    const rateOk = (field, minIntervalMs) => {
+      const now = Date.now();
+      if (now - (socket.data[field] || 0) < minIntervalMs) return false;
+      socket.data[field] = now;
+      return true;
     };
 
     socket.on('room:join', async ({ eventId, guestName } = {}, ack) => {
@@ -112,6 +121,10 @@ export function initSocket(httpServer) {
         if (typeof ack === 'function') ack({ ok: false, error: 'Invalid message' });
         return;
       }
+      if (!rateOk('lastChatAt', 1500)) {
+        if (typeof ack === 'function') ack({ ok: false, error: 'Please wait a moment before sending again' });
+        return;
+      }
       try {
         const message = await ChatMessage.create({
           event: eventId,
@@ -131,6 +144,10 @@ export function initSocket(httpServer) {
       const body = clean(text, 500);
       if (!eventId || !body) {
         if (typeof ack === 'function') ack({ ok: false, error: 'Invalid question' });
+        return;
+      }
+      if (!rateOk('lastQaAt', 3000)) {
+        if (typeof ack === 'function') ack({ ok: false, error: 'Please wait a moment before asking again' });
         return;
       }
       try {
