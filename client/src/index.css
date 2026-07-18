@@ -296,24 +296,68 @@
     animation: theme-fade-up 0.8s ease both;
   }
 
-  /* ── Live player overlays (buffering / reconnecting) ──────── */
+  /* ── Live player: quiet spinner only (no big reconnect banners) ─ */
   .player-overlay {
-    @apply absolute inset-0 z-10 flex items-center justify-center px-6 text-center text-white;
-    background: rgba(0, 0, 0, 0.72);
-    animation: player-overlay-in 0.45s ease both;
-  }
-  .player-overlay-panel {
-    @apply flex max-w-sm flex-col items-center gap-3;
+    @apply absolute inset-0 z-10 flex items-center justify-center pointer-events-none;
+    background: transparent;
   }
   .player-overlay-spinner {
-    @apply h-11 w-11 rounded-full border-[3px] border-white/25 border-t-white;
-    animation: spin 0.85s linear infinite;
+    @apply h-10 w-10 rounded-full border-[3px] border-white/20 border-t-white;
+    animation: spin 0.8s linear infinite;
+    filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.55));
   }
-  .player-overlay-title {
-    @apply text-base font-bold leading-snug sm:text-lg;
+
+  /* Custom EventLive player chrome */
+  .elp-player {
+    @apply relative aspect-video w-full overflow-hidden rounded-xl bg-black;
   }
-  .player-overlay-subtitle {
-    @apply text-sm font-medium leading-relaxed text-white/85;
+  .elp-player-chrome {
+    @apply absolute inset-0 z-20 flex flex-col justify-between transition-opacity duration-300;
+  }
+  .elp-player-chrome-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .elp-player-gradient-top {
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
+    @apply h-14 shrink-0;
+  }
+  .elp-player-gradient-bottom {
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
+    @apply px-2 pb-2 pt-8 sm:px-3 sm:pb-3;
+  }
+  .elp-player-bar {
+    @apply flex items-center gap-1.5 text-white sm:gap-2;
+  }
+  .elp-player-btn {
+    @apply grid h-9 w-9 shrink-0 place-items-center rounded-full text-white transition hover:bg-white/15 active:bg-white/25 sm:h-10 sm:w-10;
+  }
+  .elp-player-center-play {
+    @apply absolute left-1/2 top-1/2 z-20 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/25 backdrop-blur-sm transition hover:bg-black/70 sm:h-20 sm:w-20;
+  }
+  .elp-player-scrub {
+    @apply h-1 w-full cursor-pointer appearance-none rounded-full bg-white/25 accent-red-500;
+  }
+  .elp-player-scrub::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: #ef4444;
+    cursor: pointer;
+  }
+  .elp-live-pill {
+    @apply inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-white;
+  }
+  .elp-live-pill-on {
+    @apply bg-red-600;
+  }
+  .elp-live-pill-behind {
+    @apply cursor-pointer bg-neutral-800/95 ring-1 ring-white/20 hover:bg-red-600;
+  }
+  .elp-status-chip {
+    @apply rounded bg-black/65 px-2 py-1 text-[11px] font-semibold text-white/90;
   }
 
   /* ── Photography studio section ───────────────────────────── */
