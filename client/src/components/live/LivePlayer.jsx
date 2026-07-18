@@ -92,16 +92,60 @@ function isActivelyPlaying(video) {
   );
 }
 
+function formatClock(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  }
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+/** YouTube-style LIVE badge — click jumps to the live edge when watching DVR. */
+function LiveDvrBadge({ behindLive, lagSec, onGoLive }) {
+  return (
+    <div className="absolute left-2 top-2 z-20 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onGoLive}
+        disabled={!behindLive}
+        title={behindLive ? 'Jump to live' : 'Watching live'}
+        className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white shadow ${
+          behindLive
+            ? 'cursor-pointer bg-slate-800/90 ring-1 ring-white/25 hover:bg-red-600'
+            : 'cursor-default bg-red-600'
+        }`}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full bg-white ${behindLive ? '' : 'animate-pulse'}`}
+          aria-hidden
+        />
+        Live
+      </button>
+      {behindLive && lagSec >= 3 && (
+        <span className="rounded bg-black/70 px-2 py-1 text-[11px] font-semibold text-white/90">
+          −{formatClock(lagSec)} · seek to rewind
+        </span>
+      )}
+    </div>
+  );
+}
+
 function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const retryTimer = useRef(null);
+  const dvrTimer = useRef(null);
   const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
   const [levels, setLevels] = useState([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
   const hasPlayedRef = useRef(false);
   const [showOffline, setShowOffline] = useState(false);
+  const [behindLive, setBehindLive] = useState(false);
+  const [lagSec, setLagSec] = useState(0);
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current) {
@@ -122,13 +166,10 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
   }, [hideOverlay]);
 
   /** Never cover a playing video — only show stall/reconnect UI when playback is actually stopped. */
-  const showOverlayIfNotPlaying = useCallback(
-    (state) => {
-      if (hasPlayedRef.current && isActivelyPlaying(videoRef.current)) return;
-      setOverlay(state);
-    },
-    []
-  );
+  const showOverlayIfNotPlaying = useCallback((state) => {
+    if (hasPlayedRef.current && isActivelyPlaying(videoRef.current)) return;
+    setOverlay(state);
+  }, []);
 
   const scheduleRetry = useCallback(() => {
     clearRetry();
@@ -138,6 +179,29 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     }, RETRY_MS);
   }, [clearRetry, showOverlayIfNotPlaying]);
 
+  const jumpToLive = useCallback(() => {
+    const video = videoRef.current;
+    const hls = hlsRef.current;
+    if (!video) return;
+    let target = null;
+    if (hls && Number.isFinite(hls.liveSyncPosition)) {
+      target = hls.liveSyncPosition;
+    } else if (video.seekable && video.seekable.length > 0) {
+      const end = video.seekable.end(video.seekable.length - 1);
+      target = Math.max(0, end - 0.25);
+    }
+    if (target != null && Number.isFinite(target)) {
+      try {
+        video.currentTime = target;
+      } catch {
+        /* ignore seek race */
+      }
+    }
+    video.play?.().catch(() => {});
+    setBehindLive(false);
+    setLagSec(0);
+  }, []);
+
   useEffect(() => {
     if (!detectPublish && !isLive) return undefined;
     const video = videoRef.current;
@@ -146,18 +210,23 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     setShowOffline(false);
     hasPlayedRef.current = false;
     setOverlay(OVERLAY.BUFFERING);
+    setBehindLive(false);
+    setLagSec(0);
 
     const hlsConfig = {
       enableWorker: true,
-      // Stable VOD-like live buffering — LL-HLS is too fragile on mobile networks.
+      // Classic HLS + long MediaMTX playlist = YouTube-style DVR.
+      // Start one segment behind live (~2s) for a 1–2s join.
       lowLatencyMode: false,
-      backBufferLength: 30,
-      maxBufferLength: 60,
-      maxMaxBufferLength: 120,
-      liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: 10,
+      liveDurationInfinity: true,
+      backBufferLength: 120,
+      maxBufferLength: 12,
+      maxMaxBufferLength: 30,
+      liveSyncDurationCount: 1,
+      liveMaxLatencyDurationCount: 5,
+      maxLiveSyncPlaybackRate: 1.15,
+      startFragPrefetch: true,
       startLevel: -1,
-      // OBS often ships ~8s GOPs → ~1.5MB .ts segments; allow slow mobile downloads.
       fragLoadingTimeOut: 30000,
       manifestLoadingTimeOut: 15000,
       levelLoadingTimeOut: 15000,
@@ -171,6 +240,25 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     let hls;
     let useNative = false;
     let frameCallbackId = null;
+
+    const refreshDvrState = () => {
+      if (!video) return;
+      let liveEdge = null;
+      if (hlsRef.current && Number.isFinite(hlsRef.current.liveSyncPosition)) {
+        liveEdge = hlsRef.current.liveSyncPosition;
+      } else if (video.seekable && video.seekable.length > 0) {
+        liveEdge = video.seekable.end(video.seekable.length - 1);
+      }
+      if (liveEdge == null || !Number.isFinite(liveEdge)) {
+        setBehindLive(false);
+        setLagSec(0);
+        return;
+      }
+      const lag = Math.max(0, liveEdge - video.currentTime);
+      setLagSec(lag);
+      // More than ~1.5 segments behind counts as time-shifted (DVR) viewing.
+      setBehindLive(lag > 3.5);
+    };
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       useNative = true;
@@ -192,11 +280,9 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) {
-          // Never flash overlay for non-fatal stalls/network blips once frames exist.
           return;
         }
         if (hasPlayedRef.current && isActivelyPlaying(video)) {
-          // Keep recovering under the video; do not cover it.
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             try {
               hls.startLoad();
@@ -248,7 +334,9 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     };
     const onTimeUpdate = () => {
       if (video.currentTime > 0) markPlaying();
+      refreshDvrState();
     };
+    const onSeeked = () => refreshDvrState();
     const onVideoError = () => {
       if (useNative) {
         if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
@@ -259,7 +347,9 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     video.addEventListener('playing', onPlaying);
     video.addEventListener('loadeddata', onLoadedData);
     video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onVideoError);
+    dvrTimer.current = setInterval(refreshDvrState, 1000);
 
     if (typeof video.requestVideoFrameCallback === 'function') {
       frameCallbackId = video.requestVideoFrameCallback(() => markPlaying());
@@ -269,7 +359,12 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onVideoError);
+      if (dvrTimer.current) {
+        clearInterval(dvrTimer.current);
+        dvrTimer.current = null;
+      }
       if (frameCallbackId != null && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallbackId);
       }
@@ -317,6 +412,9 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
         poster={poster || undefined}
       />
       <PlayerOverlay state={overlay} />
+      {overlay === OVERLAY.NONE && !showOffline && (
+        <LiveDvrBadge behindLive={behindLive} lagSec={lagSec} onGoLive={jumpToLive} />
+      )}
 
       {levels.length > 1 && overlay === OVERLAY.NONE && (
         <div className="absolute right-2 top-2 z-20 flex flex-wrap justify-end gap-1">
@@ -436,15 +534,42 @@ function WebRtcPlayer({ url, isLive = true }) {
   );
 }
 
-function Mp4Player({ src, poster }) {
+function Mp4Player({ src, poster, eventId = '' }) {
   const videoRef = useRef(null);
   const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
+  const [resolvedSrc, setResolvedSrc] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setOverlay(OVERLAY.BUFFERING);
+    setResolvedSrc('');
+
+    (async () => {
+      let playSrc = src;
+      // Prefer a direct R2/presigned URL so <video> does not depend on cross-origin
+      // redirect behavior from the API route.
+      if (eventId) {
+        try {
+          const { streamService } = await import('../../services/stream.service.js');
+          const info = await streamService.resolveRecordingPlayUrl(eventId);
+          if (info?.url) playSrc = info.url;
+        } catch {
+          /* fall back to API recording path */
+        }
+      }
+      if (!cancelled) setResolvedSrc(playSrc || '');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src, eventId]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src) return undefined;
+    if (!video || !resolvedSrc) return undefined;
     setOverlay(OVERLAY.BUFFERING);
-    video.src = src;
+    video.src = resolvedSrc;
     video.load();
     video.play?.().catch(() => {});
 
@@ -465,7 +590,7 @@ function Mp4Player({ src, poster }) {
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('error', onError);
     };
-  }, [src]);
+  }, [resolvedSrc]);
 
   if (!src) return <Offline message="Recording is not available." />;
 
@@ -510,6 +635,7 @@ export default function LivePlayer({ config }) {
   const live = Boolean(isLive);
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
+  const eventId = config.eventId || '';
 
   // Live OBS publish always wins; when offline, fall back to recorded replay.
   if (isMediaMtx && live) {
@@ -526,7 +652,7 @@ export default function LivePlayer({ config }) {
   }
 
   if (isMediaMtx && recordingSrc) {
-    return <Mp4Player src={recordingSrc} poster={poster} />;
+    return <Mp4Player src={recordingSrc} poster={poster} eventId={eventId} />;
   }
 
   if (isMediaMtx) {
@@ -543,7 +669,7 @@ export default function LivePlayer({ config }) {
   }
 
   if (!live && recordingSrc) {
-    return <Mp4Player src={recordingSrc} poster={poster} />;
+    return <Mp4Player src={recordingSrc} poster={poster} eventId={eventId} />;
   }
 
   if (!live) {

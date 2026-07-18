@@ -21,6 +21,7 @@ import {
   streamStopped,
   recordingReady,
   playRecording,
+  getRecordingPlayUrl,
   downloadRecording,
   getRecordingMeta,
   hideRecording,
@@ -62,6 +63,7 @@ router.post('/:id/stream/key/regenerate', protect, regenerateStreamKey);
 router.post('/:id/stream/live', protect, setLiveStatus);
 router.post('/:id/stream/disable', protect, setStreamDisabled);
 router.post('/:id/stream/restart', protect, restartStream);
+router.get('/:id/stream/recording/url', optionalAuth, getRecordingPlayUrl);
 router.get('/:id/stream/recording', optionalAuth, playRecording);
 router.get('/:id/stream/recording/download', protect, downloadRecording);
 router.get('/:id/stream/recording/meta', protect, getRecordingMeta);

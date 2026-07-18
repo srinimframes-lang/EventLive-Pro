@@ -30,15 +30,22 @@ rtmp: yes
 rtmpAddress: :1935
 rtmpEncryption: "no"
 
-# Standard MPEG-TS HLS — stable on mobile Chrome / iOS (not LL-HLS).
+# Classic MPEG-TS HLS with sliding-window DVR (YouTube Live style).
+# Keep LL-HLS off for mobile stability; DVR comes from a long segment window
+# stored on disk (hlsDirectory) so RAM stays bounded. Recording/R2 is separate
+# and still runs only after the stream ends.
+#
+# With OBS keyframe interval = 2s, each segment is ~2s. 1800 segments ≈ 60 min
+# of rewind while the live is still running.
 hls: yes
 hlsAddress: 127.0.0.1:8888
 hlsAllowOrigin: '*'
 hlsAlwaysRemux: yes
 hlsVariant: mpegts
-hlsSegmentCount: 12
+hlsSegmentCount: 1800
 hlsSegmentDuration: 2s
 hlsSegmentMaxSize: 50M
+hlsDirectory: /root/EventLive-Pro/hls-cache
 hlsMuxerCloseAfter: 30s
 
 webrtc: yes
@@ -60,7 +67,10 @@ authHTTPExclude:
 
 # Automatic recording: starts when OBS publishes, stops when the stream ends.
 # Native format is fMP4 (.mp4); finalize-recording.sh remuxes to standard MP4
-# under recordings/<eventId>/.
+# under recordings/<eventId>/ after the stream ends (never during live).
+readTimeout: 60s
+writeTimeout: 30s
+
 pathDefaults:
   record: yes
   recordPath: /root/EventLive-Pro/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
@@ -68,6 +78,9 @@ pathDefaults:
   recordPartDuration: 1s
   recordSegmentDuration: 24h
   recordDeleteAfter: 0s
+  runOnReady: /root/EventLive-Pro/media-server/scripts/on-publish-notify.sh
+  runOnNotReady: /root/EventLive-Pro/media-server/scripts/on-unpublish-notify.sh
+  runOnReadyRestart: no
   runOnRecordSegmentComplete: /root/EventLive-Pro/media-server/scripts/finalize-recording.sh
 
 paths:

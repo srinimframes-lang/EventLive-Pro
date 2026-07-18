@@ -46,3 +46,4 @@ server/uploads/
 .env*
 uploads/
 recordings/
+hls-cache/

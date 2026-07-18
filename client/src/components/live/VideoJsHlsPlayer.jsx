@@ -308,15 +308,18 @@ export default function VideoJsHlsPlayer({ src, poster, isLive = true, detectPub
       const videoEl = player.tech({ IWillNotUseThisInPlugins: true }).el();
       const hlsConfig = {
         enableWorker: true,
-        // Stable VOD-like live buffering — LL-HLS is too fragile on mobile networks.
+        // Classic HLS + long MediaMTX playlist = YouTube-style DVR.
+        // Start one segment behind live (~2s) for a 1–2s join.
         lowLatencyMode: false,
-        backBufferLength: 30,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
+        liveDurationInfinity: true,
+        backBufferLength: 120,
+        maxBufferLength: 12,
+        maxMaxBufferLength: 30,
+        liveSyncDurationCount: 1,
+        liveMaxLatencyDurationCount: 5,
+        maxLiveSyncPlaybackRate: 1.15,
+        startFragPrefetch: true,
         startLevel: -1,
-        // OBS often ships ~8s GOPs → ~1.5MB .ts segments; allow slow mobile downloads.
         fragLoadingTimeOut: 30000,
         manifestLoadingTimeOut: 15000,
         levelLoadingTimeOut: 15000,

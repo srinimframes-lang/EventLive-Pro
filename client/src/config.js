@@ -5,7 +5,7 @@
 //   2. In the browser on a non-localhost host, fall back to the known
 //      production API so the deployed app works even if the env var is missing.
 //   3. Otherwise empty string ("same origin") so the Vite dev proxy handles it.
-const PROD_API_FALLBACK = 'https://eventlive-pro.onrender.com';
+const PROD_API_FALLBACK = 'https://stream.eventlivepro.com';
 
 const RAW_API_URL = (import.meta.env.VITE_API_URL || '').trim();
 let origin = RAW_API_URL.replace(/\/+$/, '').replace(/\/api$/i, '');

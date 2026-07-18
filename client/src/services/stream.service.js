@@ -51,6 +51,10 @@ export const streamService = {
   recordingDownloadUrl(eventId) {
     return `/api/events/${eventId}/stream/recording/download`;
   },
+  async resolveRecordingPlayUrl(eventId) {
+    const { data } = await api.get(`/api/events/${eventId}/stream/recording/url`);
+    return data.data; // { url, storage, expiresInSec, filename }
+  },
   async getChatHistory(eventId, limit = 50) {
     const { data } = await api.get(`/api/events/${eventId}/chat`, { params: { limit } });
     return data.data;
