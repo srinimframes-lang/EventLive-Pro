@@ -13,6 +13,7 @@ import ViewerCount from '../components/live/ViewerCount.jsx';
 import PhotoGallery from '../components/PhotoGallery.jsx';
 import BannerSlot from '../components/BannerSlot.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
+import PhotographyStudio from '../components/PhotographyStudio.jsx';
 import ThemedWatchLayout from '../components/ThemedWatchLayout.jsx';
 import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
 import EventSeo from '../components/seo/EventSeo.jsx';
@@ -226,6 +227,20 @@ export default function Watch() {
           {event.description && (
             <p className="mt-4 whitespace-pre-wrap text-slate-600">{event.description}</p>
           )}
+          <section className="mt-8">
+            <BannerSlot location="gallery" className="mb-4" />
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Photo gallery</h2>
+              <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>
+            </div>
+            {event.gallery?.length ? (
+              <PhotoGallery photos={event.gallery} event={event} />
+            ) : (
+              <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+                Photos will appear here when the host uploads a gallery.
+              </p>
+            )}
+          </section>
         </div>
         <div className="lg:col-span-1">
           <div className="card flex h-[60vh] flex-col p-0 sm:h-[70vh]">
@@ -260,15 +275,6 @@ export default function Watch() {
           </div>
         </div>
       </div>
-
-      <section className="mt-8">
-        <BannerSlot location="gallery" className="mb-4" />
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Photo gallery</h2>
-          <span className="text-sm text-slate-500">{event.gallery?.length || 0} photos</span>
-        </div>
-        <PhotoGallery photos={event.gallery || []} event={event} />
-      </section>
 
       <PhotographyStudio event={event} />
     </div>

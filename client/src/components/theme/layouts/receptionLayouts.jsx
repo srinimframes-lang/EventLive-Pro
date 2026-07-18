@@ -69,8 +69,8 @@ export function ReceptionRoyalNightLayout(ctx) {
           <WatchPlayerHeader {...ctx} />
           <WatchDescription event={event} surfaceDark />
         </section>
-        <WatchChatBlock {...rest} surfaceDark className="mt-6 h-[50vh] sm:h-[55vh]" />
         <WatchGallerySection event={event} surfaceDark galleryVariant="reception-golden-stage" />
+        <WatchChatBlock {...rest} surfaceDark className="mt-6 h-[50vh] sm:h-[55vh]" />
         <PhotographyStudio event={event} themed surfaceDark />
       </main>
       <WatchFooter snap={snap} title={title} event={event} className="layout-reception-royal-footer" />

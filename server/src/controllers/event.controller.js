@@ -187,6 +187,14 @@ export const getEvent = asyncHandler(async (req, res) => {
     data.hlsUrl = streamUrls.playbackUrl;
   }
 
+  // Fresh R2 (or legacy) display URLs for gallery images.
+  try {
+    const { hydrateGalleryUrls } = await import('./media.controller.js');
+    data.gallery = await hydrateGalleryUrls(data);
+  } catch {
+    /* keep stored gallery urls */
+  }
+
   // Repair: theme ref saved but snapshot missing (legacy bug) — backfill once.
   if (data.theme && !data.themeSnapshot?.name) {
     const theme = await Theme.findById(data.theme);

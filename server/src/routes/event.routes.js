@@ -33,6 +33,10 @@ import {
 import {
   uploadGallery,
   deleteGalleryPhoto,
+  deleteGalleryPhotos,
+  reorderGallery,
+  setGalleryCover,
+  playGalleryImage,
   uploadLogo,
   uploadCover,
 } from '../controllers/media.controller.js';
@@ -75,6 +79,10 @@ router.get('/:id/questions', listQuestions);
 
 // ── Media: gallery photos & photography logo ──────────────────────────
 router.post('/:id/gallery', protect, upload.array('photos', 20), uploadGallery);
+router.post('/:id/gallery/delete', protect, deleteGalleryPhotos);
+router.patch('/:id/gallery/reorder', protect, reorderGallery);
+router.post('/:id/gallery/:photoId/cover', protect, setGalleryCover);
+router.get('/:id/gallery/:photoId/image', playGalleryImage);
 router.delete('/:id/gallery/:photoId', protect, deleteGalleryPhoto);
 router.post('/:id/logo', protect, upload.single('logo'), uploadLogo);
 router.post('/:id/cover', protect, upload.single('cover'), uploadCover);

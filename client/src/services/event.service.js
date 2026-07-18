@@ -26,16 +26,34 @@ export const eventService = {
   },
 
   /** Upload one or more gallery photos. `files` is a FileList/array. */
-  async uploadGallery(id, files, captions = []) {
+  async uploadGallery(id, files, captions = [], onUploadProgress) {
     const fd = new FormData();
     Array.from(files).forEach((file) => fd.append('photos', file));
     captions.forEach((c) => fd.append('captions', c || ''));
-    const { data } = await api.post(`/api/events/${id}/gallery`, fd);
+    const { data } = await api.post(`/api/events/${id}/gallery`, fd, {
+      onUploadProgress,
+      timeout: 180_000,
+    });
     return data.data;
   },
 
   async deleteGalleryPhoto(id, photoId) {
     const { data } = await api.delete(`/api/events/${id}/gallery/${photoId}`);
+    return data.data;
+  },
+
+  async deleteGalleryPhotos(id, photoIds) {
+    const { data } = await api.post(`/api/events/${id}/gallery/delete`, { photoIds });
+    return data.data;
+  },
+
+  async reorderGallery(id, photoIds) {
+    const { data } = await api.patch(`/api/events/${id}/gallery/reorder`, { photoIds });
+    return data.data;
+  },
+
+  async setGalleryCover(id, photoId) {
+    const { data } = await api.post(`/api/events/${id}/gallery/${photoId}/cover`);
     return data.data;
   },
 

@@ -4,6 +4,7 @@ import { eventService } from '../../services/event.service.js';
 import { streamService } from '../../services/stream.service.js';
 import api from '../../services/api.js';
 import EventQrCard from '../EventQrCard.jsx';
+import EventGalleryManager from './EventGalleryManager.jsx';
 import { formatDateTime, buildWatchUrl } from '../../utils/format.js';
 
 export default function AdminEvents() {
@@ -13,6 +14,9 @@ export default function AdminEvents() {
   const [copiedId, setCopiedId] = useState(null);
   const [expandedQrId, setExpandedQrId] = useState(null);
   const [expandedStreamId, setExpandedStreamId] = useState(null);
+  const [expandedGalleryId, setExpandedGalleryId] = useState(null);
+  const [galleryByEvent, setGalleryByEvent] = useState({});
+  const [galleryLoadingId, setGalleryLoadingId] = useState(null);
   const [streamInfo, setStreamInfo] = useState({});
   const [recordingMeta, setRecordingMeta] = useState({});
   const [streamLoadingId, setStreamLoadingId] = useState(null);
@@ -142,6 +146,24 @@ export default function AdminEvents() {
     }
   };
 
+  const toggleGallery = async (ev) => {
+    if (expandedGalleryId === ev.id) {
+      setExpandedGalleryId(null);
+      return;
+    }
+    setExpandedGalleryId(ev.id);
+    if (galleryByEvent[ev.id]) return;
+    setGalleryLoadingId(ev.id);
+    try {
+      const full = await eventService.get(ev.id);
+      setGalleryByEvent((prev) => ({ ...prev, [ev.id]: full.gallery || [] }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGalleryLoadingId(null);
+    }
+  };
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
@@ -205,6 +227,9 @@ export default function AdminEvents() {
                       {expandedStreamId === ev.id ? 'Hide stream' : 'Stream setup'}
                     </button>
                   )}
+                  <button type="button" className="btn-outline" onClick={() => toggleGallery(ev)}>
+                    {expandedGalleryId === ev.id ? 'Hide gallery' : 'Gallery'}
+                  </button>
                   <Link to={`/events/${ev.id}/studio`} className="btn-outline">
                     Studio
                   </Link>
@@ -221,6 +246,22 @@ export default function AdminEvents() {
                 {expandedQrId === ev.id && (
                   <div className="mt-4 border-t border-slate-100 pt-4">
                     <EventQrCard event={ev} className="!shadow-none !p-0 border-0" />
+                  </div>
+                )}
+                {expandedGalleryId === ev.id && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    {galleryLoadingId === ev.id ? (
+                      <p className="text-sm text-slate-500">Loading gallery…</p>
+                    ) : (
+                      <EventGalleryManager
+                        eventId={ev.id}
+                        photos={galleryByEvent[ev.id] || []}
+                        onChange={(next) =>
+                          setGalleryByEvent((prev) => ({ ...prev, [ev.id]: next }))
+                        }
+                        onError={setError}
+                      />
+                    )}
                   </div>
                 )}
                 {expandedStreamId === ev.id && (

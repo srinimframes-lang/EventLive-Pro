@@ -168,13 +168,18 @@ const eventSchema = new Schema(
     studioYoutube: { type: String, trim: true, default: '', maxlength: 300 },
     studioMapsUrl: { type: String, trim: true, default: '', maxlength: 500 },
 
-    // ── Photo gallery ─────────────────────────────────────────
+    // ── Photo gallery (Cloudflare R2) ─────────────────────────
     gallery: {
       type: [
         new Schema(
           {
+            // Display URL (API image path, public R2 URL, or legacy Cloudinary/local).
             url: { type: String, required: true, trim: true },
+            r2Key: { type: String, trim: true, default: '' },
+            filename: { type: String, trim: true, default: '' },
             caption: { type: String, trim: true, default: '', maxlength: 200 },
+            order: { type: Number, default: 0, min: 0 },
+            isCover: { type: Boolean, default: false },
           },
           { timestamps: { createdAt: true, updatedAt: false } }
         ),

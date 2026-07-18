@@ -48,11 +48,11 @@ export function RoyalPalaceLayout(ctx) {
           <WatchPlayerHeader {...ctx} />
           <WatchDescription event={event} surfaceDark={surfaceRead.isDark} />
         </div>
+        <WatchGallerySection event={event} surfaceDark={surfaceRead.isDark} galleryVariant="masonry-gold" />
         <div className="mt-8 grid gap-6 lg:grid-cols-5">
           <div className="lg:col-span-3" />
           <WatchChatBlock {...rest} surfaceDark={surfaceRead.isDark} className="h-[55vh] lg:col-span-2 lg:h-[60vh]" />
         </div>
-        <WatchGallerySection event={event} surfaceDark={surfaceRead.isDark} galleryVariant="masonry-gold" />
         <PhotographyStudio event={event} themed surfaceDark={surfaceRead.isDark} />
       </main>
       <WatchFooter snap={snap} title={title} event={event} className="layout-royal-footer" />
@@ -79,8 +79,8 @@ export function LuxuryGoldLayout(ctx) {
       <main className="layout-luxury-main relative z-10 mx-auto max-w-6xl px-4 py-8">
         <WatchPlayerHeader {...ctx} />
         <WatchDescription event={event} surfaceDark />
-        <WatchChatBlock {...rest} surfaceDark className="mt-6 h-[50vh] sm:h-[55vh]" />
         <WatchGallerySection event={event} surfaceDark galleryVariant="horizontal-scroll" />
+        <WatchChatBlock {...rest} surfaceDark className="mt-6 h-[50vh] sm:h-[55vh]" />
         <PhotographyStudio event={event} themed surfaceDark />
       </main>
       <WatchFooter snap={snap} title={title} event={event} className="layout-luxury-footer" />
@@ -110,9 +110,9 @@ export function FloralGardenLayout(ctx) {
           <WatchPlayerBlock {...rest} surfaceDark={surfaceRead.isDark} />
           <WatchPlayerHeader {...ctx} />
         </div>
-        <WatchChatBlock {...rest} surfaceDark={surfaceRead.isDark} className="h-[50vh]" />
         <WatchDescription event={event} surfaceDark={surfaceRead.isDark} />
         <WatchGallerySection event={event} surfaceDark={surfaceRead.isDark} galleryVariant="polaroid" />
+        <WatchChatBlock {...rest} surfaceDark={surfaceRead.isDark} className="h-[50vh]" />
         <PhotographyStudio event={event} themed surfaceDark={surfaceRead.isDark} />
       </main>
       <WatchFooter snap={snap} title={title} event={event} className="layout-floral-footer rounded-t-3xl" />
@@ -208,9 +208,9 @@ export function SunsetRomanceLayout(ctx) {
           <WatchPlayerBlock {...rest} surfaceDark={surfaceRead.isDark} />
           <WatchPlayerHeader {...ctx} />
         </div>
-        <WatchChatBlock {...rest} surfaceDark={surfaceRead.isDark} className="h-[48vh]" />
         <WatchDescription event={event} surfaceDark={surfaceRead.isDark} />
         <WatchGallerySection event={event} surfaceDark={surfaceRead.isDark} galleryVariant="circles" />
+        <WatchChatBlock {...rest} surfaceDark={surfaceRead.isDark} className="h-[48vh]" />
         <PhotographyStudio event={event} themed surfaceDark={surfaceRead.isDark} />
       </main>
       <WatchFooter snap={snap} title={title} event={event} className="layout-sunset-footer" />
@@ -264,11 +264,11 @@ export function VintageClassicLayout(ctx) {
       <main className="layout-vintage-main mx-auto max-w-4xl px-4 py-8">
         <div id="watch-player" className="layout-vintage-letter space-y-6 p-6">
           <WatchPlayerBlock {...rest} surfaceDark={false} />
-          <WatchChatBlock {...rest} surfaceDark={false} className="h-[50vh]" />
           <WatchPlayerHeader {...ctx} />
           <WatchDescription event={event} surfaceDark={false} />
+          <WatchGallerySection event={event} surfaceDark={false} galleryVariant="vintage" />
+          <WatchChatBlock {...rest} surfaceDark={false} className="h-[50vh]" />
         </div>
-        <WatchGallerySection event={event} surfaceDark={false} galleryVariant="vintage" />
         <PhotographyStudio event={event} themed surfaceDark={false} />
       </main>
       <WatchFooter snap={snap} title={title} event={event} className="layout-vintage-footer font-serif" />

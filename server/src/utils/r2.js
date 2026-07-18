@@ -66,18 +66,15 @@ export function r2PublicUrl(key) {
   return `${R2_PUBLIC_BASE}/${key}`;
 }
 
-/**
- * Upload a local recording to R2 and verify the stored object size matches.
- * Returns { key, url, size } on success; throws on any failure.
- */
-export async function uploadRecordingToR2(localPath, key) {
+/** Upload a local file to R2 and verify size. Used for recordings and gallery. */
+export async function uploadFileToR2(localPath, key, contentType = 'application/octet-stream') {
   const s3 = getClient();
   if (!s3) throw new Error('R2 is not configured');
 
   const abs = path.resolve(localPath);
   const stat = fs.statSync(abs);
   if (!stat.isFile() || stat.size === 0) {
-    throw new Error(`Recording file invalid: ${abs}`);
+    throw new Error(`File invalid: ${abs}`);
   }
 
   await s3.send(
@@ -85,12 +82,11 @@ export async function uploadRecordingToR2(localPath, key) {
       Bucket: R2_BUCKET,
       Key: key,
       Body: fs.createReadStream(abs),
-      ContentType: 'video/mp4',
+      ContentType: contentType,
       ContentLength: stat.size,
     })
   );
 
-  // Verify the upload before the caller deletes the local copy.
   const head = await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
   const remoteSize = Number(head.ContentLength || 0);
   if (remoteSize !== stat.size) {
@@ -102,8 +98,16 @@ export async function uploadRecordingToR2(localPath, key) {
   return { key, url: r2ObjectUrl(key), size: stat.size };
 }
 
+/**
+ * Upload a local recording to R2 and verify the stored object size matches.
+ * Returns { key, url, size } on success; throws on any failure.
+ */
+export async function uploadRecordingToR2(localPath, key) {
+  return uploadFileToR2(localPath, key, 'video/mp4');
+}
+
 /** Presigned GET URL (default 1h) for playback/download from a private bucket. */
-export async function presignRecordingUrl(key, { expiresIn = 3600, downloadFilename = '' } = {}) {
+export async function presignR2Url(key, { expiresIn = 3600, downloadFilename = '' } = {}) {
   const s3 = getClient();
   if (!s3 || !key) return '';
   const command = new GetObjectCommand({
@@ -116,9 +120,18 @@ export async function presignRecordingUrl(key, { expiresIn = 3600, downloadFilen
   return getSignedUrl(s3, command, { expiresIn });
 }
 
-export async function deleteRecordingFromR2(key) {
+/** @deprecated alias — recordings use the shared presigner */
+export async function presignRecordingUrl(key, opts = {}) {
+  return presignR2Url(key, opts);
+}
+
+export async function deleteR2Object(key) {
   const s3 = getClient();
   if (!s3 || !key) return false;
   await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
   return true;
+}
+
+export async function deleteRecordingFromR2(key) {
+  return deleteR2Object(key);
 }
