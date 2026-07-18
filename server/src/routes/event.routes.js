@@ -39,6 +39,7 @@ import {
   playGalleryImage,
   uploadLogo,
   uploadCover,
+  uploadTemplateImage,
 } from '../controllers/media.controller.js';
 import { protect, optionalAuth } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
@@ -86,6 +87,7 @@ router.get('/:id/gallery/:photoId/image', playGalleryImage);
 router.delete('/:id/gallery/:photoId', protect, deleteGalleryPhoto);
 router.post('/:id/logo', protect, upload.single('logo'), uploadLogo);
 router.post('/:id/cover', protect, upload.single('cover'), uploadCover);
+router.post('/:id/media/:kind', protect, upload.single('image'), uploadTemplateImage);
 router.post('/:id/qr/sync', protect, syncEventQr);
 
 router

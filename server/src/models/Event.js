@@ -154,6 +154,17 @@ const eventSchema = new Schema(
     // ── Wedding / couple details ──────────────────────────────
     brideName: { type: String, trim: true, default: '', maxlength: 80 },
     groomName: { type: String, trim: true, default: '', maxlength: 80 },
+    // Public page template (opt-in). Existing events stay on "default".
+    pageTemplate: {
+      type: String,
+      enum: ['default', 'classic-wedding'],
+      default: 'default',
+      index: true,
+    },
+    // Classic Wedding (and future templates): hero BG separate from couple photo.
+    heroBackgroundImage: { type: String, trim: true, default: '' },
+    bridePhoto: { type: String, trim: true, default: '' },
+    groomPhoto: { type: String, trim: true, default: '' },
 
     // ── Photography branding ──────────────────────────────────
     studioName: { type: String, trim: true, default: '', maxlength: 120 },

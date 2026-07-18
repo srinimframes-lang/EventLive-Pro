@@ -373,3 +373,37 @@ export const uploadCover = asyncHandler(async (req, res) => {
 
   res.status(201).json({ success: true, data: { coverImage: event.coverImage } });
 });
+
+const TEMPLATE_IMAGE_FIELDS = {
+  hero: 'heroBackgroundImage',
+  bride: 'bridePhoto',
+  groom: 'groomPhoto',
+};
+
+/**
+ * @route POST /api/events/:id/media/:kind
+ * @desc  Upload hero / bride / groom images for page templates (owner/admin)
+ * @access Private
+ * @param kind — hero | bride | groom
+ */
+export const uploadTemplateImage = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+
+  const field = TEMPLATE_IMAGE_FIELDS[String(req.params.kind || '').toLowerCase()];
+  if (!field) {
+    res.status(400);
+    throw new Error('Invalid image kind (use hero, bride, or groom)');
+  }
+
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No image was uploaded');
+  }
+
+  if (event[field]) await removeUpload(event[field]);
+  event[field] = await persistUpload(req.file);
+  await event.save();
+
+  res.status(201).json({ success: true, data: { [field]: event[field] } });
+});

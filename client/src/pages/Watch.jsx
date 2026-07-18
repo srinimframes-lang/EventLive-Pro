@@ -19,6 +19,7 @@ const LiveChat = lazy(() => import('../components/live/LiveChat.jsx'));
 const QAPanel = lazy(() => import('../components/live/QAPanel.jsx'));
 const PhotoGallery = lazy(() => import('../components/PhotoGallery.jsx'));
 const ThemedWatchLayout = lazy(() => import('../components/ThemedWatchLayout.jsx'));
+const ClassicWeddingPage = lazy(() => import('../components/classic-wedding/ClassicWeddingPage.jsx'));
 
 function PanelFallback() {
   return <p className="p-4 text-center text-sm text-slate-500">Loading…</p>;
@@ -108,12 +109,17 @@ export default function Watch() {
   }, [event]);
 
   const themed = hasEventTheme(event);
+  const isClassicWedding = event?.pageTemplate === 'classic-wedding';
 
   useEffect(() => {
-    if (!themed) return undefined;
+    if (!themed && !isClassicWedding) return undefined;
     document.body.classList.add('watch-themed');
-    return () => document.body.classList.remove('watch-themed');
-  }, [themed]);
+    if (isClassicWedding) document.body.classList.add('watch-classic-wedding');
+    return () => {
+      document.body.classList.remove('watch-themed');
+      document.body.classList.remove('watch-classic-wedding');
+    };
+  }, [themed, isClassicWedding]);
 
   if (error)
     return (
@@ -128,6 +134,26 @@ export default function Watch() {
   const watchUrl = buildWatchUrl(event);
   const chatOn = event.chatEnabled !== false;
   const activeTab = chatOn ? tab : 'qa';
+
+  // Opt-in Classic Wedding template — does not affect default or other themes.
+  if (isClassicWedding) {
+    return (
+      <Suspense fallback={<ThemeLoadingScreen label="Loading wedding page…" />}>
+        <ClassicWeddingPage
+          event={event}
+          coupleTitle={coupleTitle}
+          watchUrl={watchUrl}
+          mergedConfig={mergedConfig}
+          room={room}
+          chatOn={chatOn}
+          activeTab={activeTab}
+          setTab={setTab}
+          canAnswer={canAnswer}
+          isRecordedReplay={isRecordedReplay}
+        />
+      </Suspense>
+    );
+  }
 
   if (themed) {
     return (

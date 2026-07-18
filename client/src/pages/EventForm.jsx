@@ -46,6 +46,10 @@ const EMPTY = {
   studioYoutube: '',
   studioMapsUrl: '',
   coverImage: '',
+  pageTemplate: 'default',
+  heroBackgroundImage: '',
+  bridePhoto: '',
+  groomPhoto: '',
   theme: '',
   shortCode: '',
   slug: '',
@@ -62,8 +66,14 @@ export default function EventForm() {
   const { user, isAdmin, refreshUser } = useAuth();
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
+  const heroInputRef = useRef(null);
+  const bridePhotoInputRef = useRef(null);
+  const groomPhotoInputRef = useRef(null);
   const pendingCoverRef = useRef(null);
   const pendingLogoRef = useRef(null);
+  const pendingHeroRef = useRef(null);
+  const pendingBridePhotoRef = useRef(null);
+  const pendingGroomPhotoRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
@@ -84,6 +94,7 @@ export default function EventForm() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingTemplateImg, setUploadingTemplateImg] = useState(false);
   const [error, setError] = useState('');
   const [allThemes, setAllThemes] = useState([]);
   const [themesLoading, setThemesLoading] = useState(true);
@@ -127,6 +138,10 @@ export default function EventForm() {
           studioYoutube: event.studioYoutube || '',
           studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
+          pageTemplate: event.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
+          heroBackgroundImage: event.heroBackgroundImage || '',
+          bridePhoto: event.bridePhoto || '',
+          groomPhoto: event.groomPhoto || '',
           theme: event.theme?.id || event.theme || '',
           shortCode: event.shortCode || '',
           slug: event.slug || '',
@@ -241,6 +256,42 @@ export default function EventForm() {
     }
   };
 
+  const handleTemplateImageUpload = async (kind, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const field =
+      kind === 'hero' ? 'heroBackgroundImage' : kind === 'bride' ? 'bridePhoto' : 'groomPhoto';
+    const pendingRef =
+      kind === 'hero'
+        ? pendingHeroRef
+        : kind === 'bride'
+          ? pendingBridePhotoRef
+          : pendingGroomPhotoRef;
+    const inputRef =
+      kind === 'hero'
+        ? heroInputRef
+        : kind === 'bride'
+          ? bridePhotoInputRef
+          : groomPhotoInputRef;
+
+    if (!isEdit) {
+      pendingRef.current = file;
+      setForm((f) => ({ ...f, [field]: URL.createObjectURL(file) }));
+      return;
+    }
+    setUploadingTemplateImg(true);
+    setError('');
+    try {
+      const data = await eventService.uploadTemplateImage(id, kind, file);
+      setForm((f) => ({ ...f, ...data }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploadingTemplateImg(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
   const handleQrUpdated = useCallback((data) => {
     setForm((f) => ({
       ...f,
@@ -251,7 +302,7 @@ export default function EventForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (saveInFlightRef.current || submitting || uploadingLogo || uploadingCover) return;
+    if (saveInFlightRef.current || submitting || uploadingLogo || uploadingCover || uploadingTemplateImg) return;
 
     setError('');
     const studioForm = normalizeStudioForm(form);
@@ -288,6 +339,7 @@ export default function EventForm() {
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
       brideName: form.brideName?.trim() || '',
       groomName: form.groomName?.trim() || '',
+      pageTemplate: form.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
       chatEnabled: form.chatEnabled,
     };
 
@@ -330,8 +382,14 @@ export default function EventForm() {
 
     const pendingCover = pendingCoverRef.current;
     const pendingLogo = pendingLogoRef.current;
+    const pendingHero = pendingHeroRef.current;
+    const pendingBride = pendingBridePhotoRef.current;
+    const pendingGroom = pendingGroomPhotoRef.current;
     pendingCoverRef.current = null;
     pendingLogoRef.current = null;
+    pendingHeroRef.current = null;
+    pendingBridePhotoRef.current = null;
+    pendingGroomPhotoRef.current = null;
 
     let saved = null;
     try {
@@ -346,6 +404,7 @@ export default function EventForm() {
           slug: saved.slug || f.slug,
           qrCodeImage: saved.qrCodeImage || f.qrCodeImage,
           qrCodeTargetUrl: saved.qrCodeTargetUrl || f.qrCodeTargetUrl,
+          pageTemplate: saved.pageTemplate || f.pageTemplate,
         }));
       }
 
@@ -353,6 +412,9 @@ export default function EventForm() {
         const uploads = [];
         if (pendingCover) uploads.push(eventService.uploadCover(saved.id, pendingCover));
         if (pendingLogo) uploads.push(eventService.uploadLogo(saved.id, pendingLogo));
+        if (pendingHero) uploads.push(eventService.uploadTemplateImage(saved.id, 'hero', pendingHero));
+        if (pendingBride) uploads.push(eventService.uploadTemplateImage(saved.id, 'bride', pendingBride));
+        if (pendingGroom) uploads.push(eventService.uploadTemplateImage(saved.id, 'groom', pendingGroom));
         if (uploads.length) await Promise.all(uploads);
         if (streamType === 'server') {
           try {
@@ -372,6 +434,9 @@ export default function EventForm() {
     } catch (err) {
       pendingCoverRef.current = pendingCover;
       pendingLogoRef.current = pendingLogo;
+      pendingHeroRef.current = pendingHero;
+      pendingBridePhotoRef.current = pendingBride;
+      pendingGroomPhotoRef.current = pendingGroom;
       const message = err.message || 'Failed to save event. Please try again.';
       // eslint-disable-next-line no-console
       console.error('[EventForm] save failed:', {
@@ -487,10 +552,59 @@ export default function EventForm() {
           </div>
         </Section>
 
+        {/* ── Page template ──────────────────────────────────── */}
+        <Section
+          title="Page template"
+          subtitle="Optional premium public page. Leave as Default to keep the current EventLive-Pro watch page."
+        >
+          <Field label="Public page design" htmlFor="pageTemplate">
+            <select
+              id="pageTemplate"
+              name="pageTemplate"
+              className="input"
+              value={form.pageTemplate || 'default'}
+              onChange={handleChange}
+            >
+              <option value="default">Default (current EventLive-Pro page)</option>
+              <option value="classic-wedding">Classic Wedding</option>
+            </select>
+          </Field>
+
+          {form.pageTemplate === 'classic-wedding' && (
+            <div className="mt-4 space-y-4 rounded-xl border border-teal-100 bg-teal-50/50 p-4">
+              <p className="text-sm text-teal-900">
+                Classic Wedding uses a full-screen invitation-style hero. Upload a hero background
+                (recommended). Couple / bride / groom photos are optional.
+              </p>
+              <ImageUploadField
+                label="Hero background image"
+                preview={form.heroBackgroundImage}
+                inputRef={heroInputRef}
+                uploading={uploadingTemplateImg}
+                onChange={(e) => handleTemplateImageUpload('hero', e)}
+              />
+              <ImageUploadField
+                label="Bride photo (optional)"
+                preview={form.bridePhoto}
+                inputRef={bridePhotoInputRef}
+                uploading={uploadingTemplateImg}
+                onChange={(e) => handleTemplateImageUpload('bride', e)}
+              />
+              <ImageUploadField
+                label="Groom photo (optional)"
+                preview={form.groomPhoto}
+                inputRef={groomPhotoInputRef}
+                uploading={uploadingTemplateImg}
+                onChange={(e) => handleTemplateImageUpload('groom', e)}
+              />
+            </div>
+          )}
+        </Section>
+
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
           title="Choose a theme"
-          subtitle="10 premium layout themes — optional; pick one for a custom live page design."
+          subtitle="10 premium layout themes — optional; pick one for a custom live page design. Ignored when Classic Wedding page template is selected."
         >
           <ThemeGallery
             themes={allThemes}
@@ -954,7 +1068,7 @@ export default function EventForm() {
           <button
             type="submit"
             className="btn-primary w-full sm:w-auto"
-            disabled={submitting || uploadingLogo || uploadingCover || insufficient}
+            disabled={submitting || uploadingLogo || uploadingCover || uploadingTemplateImg || insufficient}
           >
             {submitting
               ? 'Saving…'
@@ -992,6 +1106,35 @@ function Field({ label, htmlFor, hint, children }) {
       </label>
       {children}
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
+function ImageUploadField({ label, preview, inputRef, uploading, onChange }) {
+  return (
+    <div>
+      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      <div className="flex flex-wrap items-center gap-4">
+        {preview ? (
+          <img
+            src={resolveMediaUrl(preview)}
+            alt=""
+            className="h-20 w-28 rounded-lg object-cover"
+          />
+        ) : (
+          <div className="grid h-20 w-28 place-items-center rounded-lg border border-dashed border-slate-300 text-xs text-slate-400">
+            No image
+          </div>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          disabled={uploading}
+          onChange={onChange}
+          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-teal-800"
+        />
+      </div>
     </div>
   );
 }

@@ -73,6 +73,14 @@ export const eventService = {
     return data.data;
   },
 
+  /** Upload classic-wedding (or template) image. kind: hero | bride | groom */
+  async uploadTemplateImage(id, kind, file) {
+    const fd = new FormData();
+    fd.append('image', file);
+    const { data } = await api.post(`/api/events/${id}/media/${kind}`, fd);
+    return data.data;
+  },
+
   /** Regenerate QR when the public live URL changed. */
   async syncQr(id) {
     const { data } = await api.post(`/api/events/${id}/qr/sync`);
