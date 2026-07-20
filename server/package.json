@@ -12,7 +12,7 @@
     "dev": "nodemon src/index.js",
     "dev:memdb": "node scripts/dev-memory-db.js",
     "start": "node src/index.js",
-    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js"
+    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1089.0",

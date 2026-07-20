@@ -227,13 +227,30 @@ const eventSchema = new Schema(
     // Cloudflare R2 (durable storage). When set, playback/download come from R2
     // and the local VPS copy has been removed.
     recordingStorage: { type: String, enum: ['local', 'r2'], default: 'local' },
+    // Legacy single-pointer fields — always synced to the newest active part.
     recordingR2Key: { type: String, trim: true, default: '' },
     recordingR2Url: { type: String, trim: true, default: '' }, // canonical object URL
     recordingRecordedAt: { type: Date },
     recordingPublicUntil: { type: Date }, // recordedAt + 30 days; public hide after
     recordingDurationSec: { type: Number, default: 0, min: 0 },
     recordingHidden: { type: Boolean, default: false }, // admin hide (or keep after restore window)
-    recordingDeletedAt: { type: Date }, // permanent delete timestamp (file removed)
+    recordingDeletedAt: { type: Date }, // permanent delete timestamp (all parts removed)
+    // Multi-session history: every OBS stop creates a new entry; prior parts are kept.
+    recordings: [
+      {
+        r2Key: { type: String, trim: true, default: '' },
+        r2Url: { type: String, trim: true, default: '' },
+        filename: { type: String, trim: true, default: '' },
+        localPath: { type: String, trim: true, default: '' },
+        storage: { type: String, enum: ['local', 'r2'], default: 'local' },
+        startedAt: { type: Date },
+        endedAt: { type: Date },
+        durationSec: { type: Number, default: 0, min: 0 },
+        sizeBytes: { type: Number, default: 0, min: 0 },
+        createdAt: { type: Date, default: Date.now },
+        deletedAt: { type: Date },
+      },
+    ],
     isLive: { type: Boolean, default: false, index: true },
     liveStartedAt: { type: Date },
     liveEndedAt: { type: Date },

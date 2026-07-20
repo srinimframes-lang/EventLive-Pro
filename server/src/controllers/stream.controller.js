@@ -22,9 +22,14 @@ import {
   applyRecordingToEvent,
   buildAdminRecordingUrl,
   buildPublicRecordingUrl,
+  clearAllRecordingFields,
   getRecordingState,
+  listActiveRecordingParts,
+  markRecordingPartUploaded,
   RECORDING_PUBLIC_DAYS,
+  removeRecordingPart,
   resolveRecordingAbsolutePath,
+  resolveRecordingPartForPlayback,
 } from '../utils/recording.js';
 import {
   deleteRecordingFromR2,
@@ -98,6 +103,18 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     recordingPublicUntil: rec.recordingPublicUntil,
     recordingRecordedAt: rec.recordingRecordedAt,
     recordingDurationSec: rec.recordingDurationSec,
+    recordingCount: rec.recordingCount,
+    // Lightweight part list for the player (no R2 URLs — resolve per part on demand).
+    recordings: recordingUrl
+      ? rec.parts.map((p) => ({
+          id: p.id,
+          part: p.part,
+          durationSec: p.durationSec,
+          startedAt: p.startedAt,
+          createdAt: p.createdAt,
+          filename: p.filename,
+        }))
+      : [],
   };
 }
 
@@ -469,6 +486,15 @@ export const recordingReady = asyncHandler(async (req, res) => {
       recordingUrl: buildPublicRecordingUrl(event),
       recordingAvailable: true,
       recordingPublicUntil: rec.recordingPublicUntil,
+      recordingCount: rec.recordingCount,
+      recordings: rec.parts.map((p) => ({
+        id: p.id,
+        part: p.part,
+        durationSec: p.durationSec,
+        startedAt: p.startedAt,
+        createdAt: p.createdAt,
+        filename: p.filename,
+      })),
     });
   }
 
@@ -493,25 +519,42 @@ export const recordingReady = asyncHandler(async (req, res) => {
 });
 
 /**
- * Upload an event's local recording to R2, verify it, persist the object URL
- * in MongoDB, then delete the local VPS copy. Logs success/failure.
+ * Upload the newest local recording part to R2, verify it, update that history
+ * entry (prior parts untouched), then delete only that local VPS copy.
  */
 async function uploadEventRecordingToR2(eventId) {
   const event = await Event.findById(eventId);
   if (!event) throw new Error('event not found');
-  if (event.recordingStorage === 'r2' && event.recordingR2Key) return; // already migrated
 
-  const abs = resolveRecordingAbsolutePath(event.recordingPath);
-  if (!abs || !fs.existsSync(abs)) throw new Error(`local recording missing: ${event.recordingPath}`);
+  const parts = listActiveRecordingParts(event);
+  const pending =
+    parts
+      .slice()
+      .reverse()
+      .find((p) => p.storage !== 'r2' || !p.r2Key) || null;
 
-  const key = `recordings/${event.id}/${path.basename(abs)}`;
+  const abs = resolveRecordingAbsolutePath(
+    pending?.localPath || event.recordingPath
+  );
+  if (!abs || !fs.existsSync(abs)) {
+    // Already migrated (e.g. race) — nothing to do.
+    if (event.recordingStorage === 'r2' && event.recordingR2Key) return;
+    throw new Error(`local recording missing: ${event.recordingPath}`);
+  }
+
+  const filename = path.basename(abs);
+  const key = `recordings/${event.id}/${filename}`;
   console.log(`[r2] uploading ${abs} -> ${key}`);
   const { url, size } = await uploadRecordingToR2(abs, key);
   console.log(`[r2] upload verified (${size} bytes): ${url}`);
 
-  event.recordingStorage = 'r2';
-  event.recordingR2Key = key;
-  event.recordingR2Url = url;
+  markRecordingPartUploaded(event, {
+    filename,
+    localPath: abs,
+    r2Key: key,
+    r2Url: url,
+    sizeBytes: size,
+  });
   await event.save();
 
   // Only delete the local copy after the verified upload is saved in MongoDB.
@@ -525,7 +568,8 @@ async function uploadEventRecordingToR2(eventId) {
 
 /**
  * @route GET /api/events/:id/stream/recording
- * @desc  Stream the recorded MP4 (public within 30 days; admins always if file exists).
+ * @desc  Stream / redirect a recorded MP4 part (public within 30 days; admins always).
+ *        Optional query: ?part=<recordingPartId> (defaults to Part 1 / oldest).
  * @access Public (gated) / Private admin override
  */
 export const playRecording = asyncHandler(async (req, res) => {
@@ -542,10 +586,17 @@ export const playRecording = asyncHandler(async (req, res) => {
     throw new Error('Recording is not available');
   }
 
-  // R2-backed: redirect to the public bucket URL (or a presigned URL).
-  if (rec.recordingStorage === 'r2' && rec.recordingR2Key) {
-    const publicUrl = r2PublicUrl(rec.recordingR2Key);
-    const target = publicUrl || (await presignRecordingUrl(rec.recordingR2Key));
+  const partId = String(req.query.part || '').trim();
+  const part = resolveRecordingPartForPlayback(event, partId || undefined);
+  if (partId && !part) {
+    res.status(404);
+    throw new Error('Recording part not found');
+  }
+
+  const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
+  if (r2Key) {
+    const publicUrl = r2PublicUrl(r2Key);
+    const target = publicUrl || (await presignRecordingUrl(r2Key));
     if (!target) {
       res.status(500);
       throw new Error('R2 recording URL unavailable');
@@ -553,7 +604,7 @@ export const playRecording = asyncHandler(async (req, res) => {
     return res.redirect(302, target);
   }
 
-  const abs = resolveRecordingAbsolutePath(rec.recordingPath);
+  const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
   if (!abs || !fs.existsSync(abs)) {
     res.status(404);
     throw new Error('Recording file missing');
@@ -567,8 +618,8 @@ export const playRecording = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/events/:id/stream/recording/url
- * @desc  JSON play URL for the browser player (presigned R2 or same-origin API).
- *        Avoids fragile <video> cross-origin redirect handling.
+ * @desc  JSON play URL for one recording part (presigned R2 or same-origin API).
+ *        Optional query: ?part=<recordingPartId>
  * @access Public (gated) / Private admin override
  */
 export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
@@ -585,9 +636,19 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
     throw new Error('Recording is not available');
   }
 
-  if (rec.recordingStorage === 'r2' && rec.recordingR2Key) {
-    const publicUrl = r2PublicUrl(rec.recordingR2Key);
-    const url = publicUrl || (await presignRecordingUrl(rec.recordingR2Key, { expiresIn: 6 * 3600 }));
+  const partId = String(req.query.part || '').trim();
+  const part = resolveRecordingPartForPlayback(event, partId || undefined);
+  if (partId && !part) {
+    res.status(404);
+    throw new Error('Recording part not found');
+  }
+
+  const filename = part?.filename || rec.recordingFilename;
+  const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
+
+  if (r2Key) {
+    const publicUrl = r2PublicUrl(r2Key);
+    const url = publicUrl || (await presignRecordingUrl(r2Key, { expiresIn: 6 * 3600 }));
     if (!url) {
       res.status(500);
       throw new Error('R2 recording URL unavailable');
@@ -598,27 +659,29 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
         url,
         storage: 'r2',
         expiresInSec: publicUrl ? null : 6 * 3600,
-        filename: rec.recordingFilename,
+        filename,
+        partId: part ? String(part._id || part.id || '') : '',
       },
     });
   }
 
-  // Local disk: browser plays via the streaming API route on this same origin.
   const apiOrigin = `${req.protocol}://${req.get('host') || 'localhost'}`.replace(/\/+$/, '');
+  const qs = part && (part._id || part.id) ? `?part=${part._id || part.id}` : '';
   return res.status(200).json({
     success: true,
     data: {
-      url: `${apiOrigin}/api/events/${event.id}/stream/recording`,
+      url: `${apiOrigin}/api/events/${event.id}/stream/recording${qs}`,
       storage: 'local',
       expiresInSec: null,
-      filename: rec.recordingFilename,
+      filename,
+      partId: part ? String(part._id || part.id || '') : '',
     },
   });
 });
 
 /**
  * @route GET /api/events/:id/stream/recording/download
- * @desc  Download the recorded MP4 (owner/admin).
+ * @desc  Download one recorded MP4 part (owner/admin). Query: ?part=<id>
  * @access Private
  */
 export const downloadRecording = asyncHandler(async (req, res) => {
@@ -630,10 +693,18 @@ export const downloadRecording = asyncHandler(async (req, res) => {
     throw new Error('Recording not found');
   }
 
-  const filename = rec.recordingFilename || `recording-${event.id}.mp4`;
+  const partId = String(req.query.part || '').trim();
+  const part = resolveRecordingPartForPlayback(event, partId || undefined);
+  if (partId && !part) {
+    res.status(404);
+    throw new Error('Recording part not found');
+  }
 
-  if (rec.recordingStorage === 'r2' && rec.recordingR2Key) {
-    const target = await presignRecordingUrl(rec.recordingR2Key, {
+  const filename = part?.filename || rec.recordingFilename || `recording-${event.id}.mp4`;
+  const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
+
+  if (r2Key) {
+    const target = await presignRecordingUrl(r2Key, {
       downloadFilename: filename,
     });
     if (!target) {
@@ -643,7 +714,7 @@ export const downloadRecording = asyncHandler(async (req, res) => {
     return res.redirect(302, target);
   }
 
-  const abs = resolveRecordingAbsolutePath(rec.recordingPath);
+  const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
   if (!abs || !fs.existsSync(abs)) {
     res.status(404);
     throw new Error('Recording file missing');
@@ -730,59 +801,92 @@ export const restoreRecording = asyncHandler(async (req, res) => {
 
 /**
  * @route DELETE /api/events/:id/stream/recording
- * @desc  Permanently delete the MP4 from disk and clear MongoDB recording fields.
+ * @desc  Permanently delete one recording part (?part=id) or all parts (?all=1).
+ *        Deleting one part never removes other parts' R2 objects.
  * @access Private
  */
 export const deleteRecordingPermanently = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res);
   assertCanManageEvent(event, req.user, res);
-  const abs = resolveRecordingAbsolutePath(event.recordingPath);
 
-  if (abs && fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs);
-    } catch {
-      res.status(500);
-      throw new Error('Failed to delete recording file');
+  const partId = String(req.query.part || req.body?.part || '').trim();
+  const deleteAll = ['1', 'true', 'yes'].includes(
+    String(req.query.all || req.body?.all || '').toLowerCase()
+  );
+
+  const unlinkLocal = (localPath) => {
+    const abs = resolveRecordingAbsolutePath(localPath);
+    if (abs && fs.existsSync(abs)) {
+      try {
+        fs.unlinkSync(abs);
+      } catch {
+        res.status(500);
+        throw new Error('Failed to delete recording file');
+      }
     }
-  }
+  };
 
-  if (event.recordingR2Key) {
+  const unlinkR2 = async (r2Key) => {
+    if (!r2Key) return;
     try {
-      await deleteRecordingFromR2(event.recordingR2Key);
-      console.log(`[r2] deleted object ${event.recordingR2Key}`);
+      await deleteRecordingFromR2(r2Key);
+      console.log(`[r2] deleted object ${r2Key}`);
     } catch (err) {
-      console.error(`[r2] failed to delete ${event.recordingR2Key}: ${err.message}`);
+      console.error(`[r2] failed to delete ${r2Key}: ${err.message}`);
       res.status(500);
       throw new Error('Failed to delete recording from R2');
     }
+  };
+
+  if (deleteAll) {
+    const cleanup = clearAllRecordingFields(event);
+    for (const item of cleanup) {
+      unlinkLocal(item.localPath);
+      await unlinkR2(item.r2Key);
+    }
+    // Also clean legacy pointer if somehow orphaned outside history.
+    unlinkLocal(event.recordingPath);
+    await unlinkR2(event.recordingR2Key);
+    await event.save();
+  } else {
+    // Prefer explicit part id. If only one active part exists, allow omitting it.
+    const parts = listActiveRecordingParts(event);
+    const targetId = partId || (parts.length === 1 ? String(parts[0]._id || parts[0].id || '') : '');
+    if (!targetId) {
+      res.status(400);
+      throw new Error('Specify ?part=<id> to delete one recording, or ?all=1 to delete all');
+    }
+    const cleanup = removeRecordingPart(event, targetId);
+    if (!cleanup) {
+      res.status(404);
+      throw new Error('Recording part not found');
+    }
+    unlinkLocal(cleanup.localPath);
+    await unlinkR2(cleanup.r2Key);
+    await event.save();
   }
 
-  event.recordingPath = '';
-  event.recordingFilename = '';
-  event.recordingUrl = '';
-  event.recordingStorage = 'local';
-  event.recordingR2Key = '';
-  event.recordingR2Url = '';
-  event.recordingDurationSec = 0;
-  event.recordingHidden = false;
-  event.recordingDeletedAt = new Date();
-  event.recordingRecordedAt = undefined;
-  event.recordingPublicUntil = undefined;
-  await event.save();
-
+  const remaining = getRecordingState(event);
   const io = req.app.get('io');
   if (io) {
     io.to(`event:${event.id}`).emit('stream:status', {
       isLive: event.isLive,
       status: event.status,
-      playbackMode: event.isLive ? 'live' : 'offline',
-      recordingUrl: '',
-      recordingAvailable: false,
+      playbackMode: event.isLive ? 'live' : remaining.hasRecording ? 'recorded' : 'offline',
+      recordingUrl: event.isLive ? '' : buildPublicRecordingUrl(event),
+      recordingAvailable: !event.isLive && remaining.publiclyVisible,
+      recordingCount: remaining.recordingCount,
     });
   }
 
-  res.status(200).json({ success: true, data: { deleted: true } });
+  res.status(200).json({
+    success: true,
+    data: {
+      deleted: true,
+      remaining: remaining.recordingCount,
+      ...adminRecordingConfig(event),
+    },
+  });
 });
 
 /**

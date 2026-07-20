@@ -87,27 +87,25 @@ export default function AdminEvents() {
     return meta;
   };
 
-  const runRecordingAction = async (ev, action) => {
+  const runRecordingAction = async (ev, action, part = null) => {
     setRecordingBusyId(ev.id);
     setError('');
     try {
       if (action === 'hide') await streamService.hideRecording(ev.id);
       if (action === 'restore') await streamService.restoreRecording(ev.id);
       if (action === 'play') {
-        const res = await api.get(streamService.recordingPlayUrl(ev.id), {
-          responseType: 'blob',
-        });
-        const url = URL.createObjectURL(res.data);
-        window.open(url, '_blank', 'noopener,noreferrer');
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        const info = await streamService.resolveRecordingPlayUrl(ev.id, part?.id || '');
+        if (info?.url) window.open(info.url, '_blank', 'noopener,noreferrer');
         return;
       }
       if (action === 'download') {
-        const res = await api.get(streamService.recordingDownloadUrl(ev.id), {
+        const res = await api.get(streamService.recordingDownloadUrl(ev.id, part?.id || ''), {
           responseType: 'blob',
         });
         const filename =
-          recordingMeta[ev.id]?.recordingFilename || `recording-${ev.id}.mp4`;
+          part?.filename ||
+          recordingMeta[ev.id]?.recordingFilename ||
+          `recording-${ev.id}.mp4`;
         const url = URL.createObjectURL(res.data);
         const a = document.createElement('a');
         a.href = url;
@@ -118,15 +116,25 @@ export default function AdminEvents() {
         URL.revokeObjectURL(url);
         return;
       }
-      if (action === 'delete') {
+      if (action === 'delete-part') {
         if (
           !window.confirm(
-            `Permanently delete the recording for "${ev.title}"? The MP4 will be removed from the server.`
+            `Permanently delete Part ${part?.part} (${part?.filename || 'recording'})? Other parts are kept.`
           )
         ) {
           return;
         }
-        await streamService.deleteRecording(ev.id);
+        await streamService.deleteRecording(ev.id, { partId: part.id });
+      }
+      if (action === 'delete-all') {
+        if (
+          !window.confirm(
+            `Permanently delete ALL ${recordingMeta[ev.id]?.recordingCount || ''} recording parts for "${ev.title}"? This cannot be undone.`
+          )
+        ) {
+          return;
+        }
+        await streamService.deleteRecording(ev.id, { all: true });
       }
       await refreshRecordingMeta(ev);
     } catch (e) {
@@ -303,30 +311,58 @@ export default function AdminEvents() {
                       ) : (
                         <>
                           <p className="mt-1 text-xs text-slate-600">
-                            File: <code className="break-all">{rec.recordingFilename}</code>
+                            {rec.recordingCount > 1
+                              ? `${rec.recordingCount} parts`
+                              : `File: ${rec.recordingFilename}`}
                             {rec.recordingPublicUntil && (
                               <> · Public until {formatDateTime(rec.recordingPublicUntil)}</>
                             )}
                             {rec.recordingHidden && ' · Hidden by admin'}
                             {rec.recordingExpired && !rec.recordingHidden && ' · Expired (hidden from public)'}
                           </p>
+                          <div className="mt-2 space-y-2">
+                            {(rec.parts || []).map((part) => (
+                              <div
+                                key={part.id || part.part}
+                                className="rounded-md border border-slate-200 bg-white px-2 py-2"
+                              >
+                                <p className="text-xs font-medium text-slate-800">
+                                  Part {part.part}
+                                  {part.durationSec
+                                    ? ` · ${Math.round(part.durationSec / 60)}m ${part.durationSec % 60}s`
+                                    : ''}
+                                </p>
+                                <p className="break-all text-[11px] text-slate-500">{part.filename}</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn-outline text-xs"
+                                    disabled={recordingBusyId === ev.id}
+                                    onClick={() => runRecordingAction(ev, 'play', part)}
+                                  >
+                                    Play
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-outline text-xs"
+                                    disabled={recordingBusyId === ev.id}
+                                    onClick={() => runRecordingAction(ev, 'download', part)}
+                                  >
+                                    Download
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-outline text-xs text-red-600"
+                                    disabled={recordingBusyId === ev.id}
+                                    onClick={() => runRecordingAction(ev, 'delete-part', part)}
+                                  >
+                                    Delete part
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="btn-outline text-xs"
-                              disabled={recordingBusyId === ev.id}
-                              onClick={() => runRecordingAction(ev, 'play')}
-                            >
-                              Play Recording
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-outline text-xs"
-                              disabled={recordingBusyId === ev.id}
-                              onClick={() => runRecordingAction(ev, 'download')}
-                            >
-                              Download Recording
-                            </button>
                             {rec.recordingHidden || rec.recordingExpired ? (
                               <button
                                 type="button"
@@ -334,7 +370,7 @@ export default function AdminEvents() {
                                 disabled={recordingBusyId === ev.id}
                                 onClick={() => runRecordingAction(ev, 'restore')}
                               >
-                                Restore Recording
+                                Restore all (public)
                               </button>
                             ) : (
                               <button
@@ -343,16 +379,16 @@ export default function AdminEvents() {
                                 disabled={recordingBusyId === ev.id}
                                 onClick={() => runRecordingAction(ev, 'hide')}
                               >
-                                Hide Recording
+                                Hide all (public)
                               </button>
                             )}
                             <button
                               type="button"
                               className="btn-outline text-xs text-red-600"
                               disabled={recordingBusyId === ev.id}
-                              onClick={() => runRecordingAction(ev, 'delete')}
+                              onClick={() => runRecordingAction(ev, 'delete-all')}
                             >
-                              Delete Permanently
+                              Delete all permanently
                             </button>
                           </div>
                         </>

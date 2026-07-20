@@ -221,9 +221,12 @@ export const getEvent = asyncHandler(async (req, res) => {
 
   const streamUrls = freshServerStreamUrls(event);
   if (streamUrls) {
-    data.rtmpPublishUrl = streamUrls.fullUrl;
+    // Public watch must never receive the full RTMP publish URL (it embeds the
+    // stream key). Hosts fetch ingest credentials via GET /stream/key.
     data.hlsUrl = streamUrls.playbackUrl;
   }
+  delete data.rtmpPublishUrl;
+  delete data.rtmpStreamKey;
 
   // Fresh R2 (or legacy) display URLs for gallery images.
   try {

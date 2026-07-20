@@ -41,19 +41,25 @@ export const streamService = {
     const { data } = await api.post(`/api/events/${eventId}/stream/recording/restore`);
     return data.data;
   },
-  async deleteRecording(eventId) {
-    const { data } = await api.delete(`/api/events/${eventId}/stream/recording`);
+  async deleteRecording(eventId, { partId = '', all = false } = {}) {
+    const params = {};
+    if (all) params.all = '1';
+    else if (partId) params.part = partId;
+    const { data } = await api.delete(`/api/events/${eventId}/stream/recording`, { params });
     return data.data;
   },
-  recordingPlayUrl(eventId) {
-    return `/api/events/${eventId}/stream/recording`;
+  recordingPlayUrl(eventId, partId = '') {
+    const qs = partId ? `?part=${encodeURIComponent(partId)}` : '';
+    return `/api/events/${eventId}/stream/recording${qs}`;
   },
-  recordingDownloadUrl(eventId) {
-    return `/api/events/${eventId}/stream/recording/download`;
+  recordingDownloadUrl(eventId, partId = '') {
+    const qs = partId ? `?part=${encodeURIComponent(partId)}` : '';
+    return `/api/events/${eventId}/stream/recording/download${qs}`;
   },
-  async resolveRecordingPlayUrl(eventId) {
-    const { data } = await api.get(`/api/events/${eventId}/stream/recording/url`);
-    return data.data; // { url, storage, expiresInSec, filename }
+  async resolveRecordingPlayUrl(eventId, partId = '') {
+    const params = partId ? { part: partId } : undefined;
+    const { data } = await api.get(`/api/events/${eventId}/stream/recording/url`, { params });
+    return data.data; // { url, storage, expiresInSec, filename, partId }
   },
   async getChatHistory(eventId, limit = 50) {
     const { data } = await api.get(`/api/events/${eventId}/chat`, { params: { limit } });

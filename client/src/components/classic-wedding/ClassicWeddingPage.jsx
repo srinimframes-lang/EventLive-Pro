@@ -2,6 +2,7 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import LivePlayer from '../live/LivePlayer.jsx';
 import ViewerCount from '../live/ViewerCount.jsx';
+import StreamingDetailsBox from '../live/StreamingDetailsBox.jsx';
 import BannerSlot from '../BannerSlot.jsx';
 import ShareButtons from '../ShareButtons.jsx';
 import PhotographyStudio from '../PhotographyStudio.jsx';
@@ -245,6 +246,12 @@ export default function ClassicWeddingPage({
         </section>
 
         <PhotographyStudio event={event} />
+
+        <StreamingDetailsBox
+          event={event}
+          streamConfig={mergedConfig}
+          variant="classic"
+        />
 
         <footer className="cw-footer">
           <p className="cw-footer-names">{coupleTitle || event.title}</p>

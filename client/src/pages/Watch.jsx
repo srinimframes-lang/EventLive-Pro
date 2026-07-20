@@ -8,6 +8,7 @@ import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../ut
 import { hasEventTheme, ensureSafeEventTheme, publicEventTypeLabel } from '../utils/eventTheme.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
+import StreamingDetailsBox from '../components/live/StreamingDetailsBox.jsx';
 import BannerSlot from '../components/BannerSlot.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
@@ -90,6 +91,10 @@ export default function Watch() {
       next.playbackMode =
         room.liveStatus.playbackMode ||
         (room.liveStatus.isLive ? 'live' : room.liveStatus.recordingUrl ? 'recorded' : 'offline');
+    }
+    if (room.liveStatus.recordings) {
+      next.recordings = room.liveStatus.recordings;
+      next.recordingCount = room.liveStatus.recordingCount ?? room.liveStatus.recordings.length;
     }
     return next;
   }, [config, room.liveStatus]);
@@ -316,6 +321,7 @@ export default function Watch() {
       </div>
 
       <PhotographyStudio event={event} />
+      <StreamingDetailsBox event={event} streamConfig={mergedConfig} />
     </div>
     </>
   );

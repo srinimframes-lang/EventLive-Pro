@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { extractYouTubeId, resolveMediaUrl } from '../../utils/format.js';
 import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
@@ -813,12 +813,39 @@ function WebRtcPlayer({ url, isLive = true }) {
   );
 }
 
-function Mp4Player({ src, poster, eventId = '' }) {
+function formatPartDuration(sec) {
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m >= 60) {
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return `${h}h ${mm}m`;
+  }
+  if (m > 0) return `${m}m ${String(r).padStart(2, '0')}s`;
+  return `${r}s`;
+}
+
+function Mp4Player({ src, poster, eventId = '', parts = [] }) {
   const videoRef = useRef(null);
   const shellRef = useRef(null);
   const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
   const [resolvedSrc, setResolvedSrc] = useState('');
+  const sortedParts = useMemo(() => {
+    if (!Array.isArray(parts) || parts.length === 0) return [];
+    return parts
+      .slice()
+      .sort((a, b) => Number(a.part || 0) - Number(b.part || 0));
+  }, [parts]);
+  const [partIndex, setPartIndex] = useState(0);
   const chrome = usePlayerChrome(videoRef, shellRef, { isLiveMode: false });
+
+  useEffect(() => {
+    setPartIndex(0);
+  }, [eventId, sortedParts.map((p) => p.id).join(',')]);
+
+  const activePart = sortedParts[partIndex] || null;
+  const activePartId = activePart?.id || '';
 
   useEffect(() => {
     let cancelled = false;
@@ -830,7 +857,7 @@ function Mp4Player({ src, poster, eventId = '' }) {
       if (eventId) {
         try {
           const { streamService } = await import('../../services/stream.service.js');
-          const info = await streamService.resolveRecordingPlayUrl(eventId);
+          const info = await streamService.resolveRecordingPlayUrl(eventId, activePartId);
           if (info?.url) playSrc = info.url;
         } catch {
           /* fall back to API recording path */
@@ -842,7 +869,7 @@ function Mp4Player({ src, poster, eventId = '' }) {
     return () => {
       cancelled = true;
     };
-  }, [src, eventId]);
+  }, [src, eventId, activePartId]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -858,16 +885,23 @@ function Mp4Player({ src, poster, eventId = '' }) {
       setOverlay(OVERLAY.BUFFERING);
     };
     const onError = () => setOverlay(OVERLAY.RECONNECTING);
+    const onEnded = () => {
+      if (partIndex < sortedParts.length - 1) {
+        setPartIndex((i) => i + 1);
+      }
+    };
 
     video.addEventListener('playing', onPlaying);
     video.addEventListener('canplay', onPlaying);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('error', onError);
+    video.addEventListener('ended', onEnded);
     return () => {
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplay', onPlaying);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('error', onError);
+      video.removeEventListener('ended', onEnded);
       try {
         video.removeAttribute('src');
         video.load();
@@ -875,9 +909,14 @@ function Mp4Player({ src, poster, eventId = '' }) {
         /* ignore */
       }
     };
-  }, [resolvedSrc]);
+  }, [resolvedSrc, partIndex, sortedParts.length]);
 
-  if (!src) return <Offline message="Recording is not available." />;
+  if (!src && sortedParts.length === 0) return <Offline message="Recording is not available." />;
+
+  const statusLabel =
+    sortedParts.length > 1
+      ? `Replay · Part ${partIndex + 1}/${sortedParts.length}`
+      : 'Replay';
 
   return (
     <Frame shellRef={shellRef}>
@@ -899,8 +938,27 @@ function Mp4Player({ src, poster, eventId = '' }) {
         behindLive={false}
         lagSec={0}
         onGoLive={() => {}}
-        statusLabel="Replay"
+        statusLabel={statusLabel}
       />
+      {sortedParts.length > 1 ? (
+        <div className="recording-parts" role="tablist" aria-label="Recording parts">
+          {sortedParts.map((p, idx) => (
+            <button
+              key={p.id || idx}
+              type="button"
+              role="tab"
+              aria-selected={idx === partIndex}
+              className={`recording-parts__btn ${idx === partIndex ? 'is-active' : ''}`}
+              onClick={() => setPartIndex(idx)}
+            >
+              Part {p.part || idx + 1}
+              {p.durationSec ? (
+                <span className="recording-parts__dur">{formatPartDuration(p.durationSec)}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </Frame>
   );
 }
@@ -932,6 +990,7 @@ export default function LivePlayer({ config }) {
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
   const eventId = config.eventId || '';
+  const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
 
   if (isMediaMtx && live) {
     const playback = resolveServerPlaybackUrl(config);
@@ -939,8 +998,15 @@ export default function LivePlayer({ config }) {
     return <HlsPlayer src={playback} poster={poster} isLive detectPublish />;
   }
 
-  if (isMediaMtx && recordingSrc) {
-    return <Mp4Player src={recordingSrc} poster={poster} eventId={eventId} />;
+  if (isMediaMtx && (recordingSrc || recordingParts.length > 0)) {
+    return (
+      <Mp4Player
+        src={recordingSrc}
+        poster={poster}
+        eventId={eventId}
+        parts={recordingParts}
+      />
+    );
   }
 
   if (isMediaMtx) {
@@ -949,8 +1015,15 @@ export default function LivePlayer({ config }) {
     return <HlsPlayer src={playback} poster={poster} isLive={false} detectPublish />;
   }
 
-  if (!live && recordingSrc) {
-    return <Mp4Player src={recordingSrc} poster={poster} eventId={eventId} />;
+  if (!live && (recordingSrc || recordingParts.length > 0)) {
+    return (
+      <Mp4Player
+        src={recordingSrc}
+        poster={poster}
+        eventId={eventId}
+        parts={recordingParts}
+      />
+    );
   }
 
   if (!live) {
