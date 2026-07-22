@@ -52,7 +52,14 @@ export const listDomains = asyncHandler(async (_req, res) => {
   const domains = await Domain.find()
     .populate('customer', 'name email')
     .sort({ createdAt: -1 });
-  res.status(200).json({ success: true, data: domains });
+  // Ensure verifyToken exists and verification virtual is serialized for the admin UI.
+  const data = [];
+  for (const domain of domains) {
+    domain.ensureVerifyToken();
+    if (domain.isModified('verifyToken')) await domain.save();
+    data.push(domain.toJSON());
+  }
+  res.status(200).json({ success: true, data });
 });
 
 /**
@@ -77,6 +84,8 @@ export const createDomain = asyncHandler(async (req, res) => {
     throw new Error('That domain is already registered');
   }
   const domain = await Domain.create({ customer: customerId, host });
+  domain.ensureVerifyToken();
+  if (domain.isModified('verifyToken')) await domain.save();
   res.status(201).json({ success: true, data: domain });
 });
 
@@ -86,26 +95,52 @@ export const createDomain = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const verifyDomain = asyncHandler(async (req, res) => {
-  const domain = await Domain.findById(req.params.id);
+  const domain = await Domain.findById(req.params.id).populate('customer', 'name email');
   if (!domain) {
     res.status(404);
     throw new Error('Domain not found');
   }
-  const { ok } = await checkDnsTxt(domain.host, domain.verifyToken);
-  domain.dnsVerified = ok;
-  domain.lastCheckedAt = new Date();
-  if (ok && !domain.verifiedAt) domain.verifiedAt = new Date();
 
-  // Auto-attach to Vercel once ownership is proven so SSL provisioning can start
-  // even before the Super Admin activates the domain.
-  if (ok && env.vercel.enabled && !domain.hostingAttached) {
-    const attach = await attachDomain(domain.host);
-    if (attach.enabled && attach.ok) domain.hostingAttached = true;
+  domain.ensureVerifyToken();
+  const dnsCheck = await checkDnsTxt(domain.host, domain.verifyToken);
+  domain.dnsVerified = dnsCheck.ok;
+  domain.lastCheckedAt = new Date();
+  if (dnsCheck.ok && !domain.verifiedAt) domain.verifiedAt = new Date();
+
+  // Once ownership is proven: start SSL (Vercel attach) and activate routing.
+  if (dnsCheck.ok) {
+    if (env.vercel.enabled && !domain.hostingAttached) {
+      const attach = await attachDomain(domain.host);
+      if (attach.enabled && attach.ok) domain.hostingAttached = true;
+      if (Array.isArray(attach.verification) && attach.verification.length) {
+        domain.hostingRecords = attach.verification;
+      }
+    } else if (!env.vercel.enabled && domain.sslStatus === 'pending') {
+      domain.sslStatus = 'manual';
+    }
+    applyVercelStatus(domain, await getDomainStatus(domain.host));
+    if (domain.status !== 'active' && domain.status !== 'suspended') {
+      domain.status = 'active';
+    }
+    await refreshDomainCache();
+  } else {
+    applyVercelStatus(domain, await getDomainStatus(domain.host));
   }
-  applyVercelStatus(domain, await getDomainStatus(domain.host));
 
   await domain.save();
-  res.status(200).json({ success: true, data: domain });
+  res.status(200).json({
+    success: true,
+    data: domain,
+    message: dnsCheck.ok
+      ? 'DNS verified. Domain is active and SSL provisioning has started.'
+      : 'TXT record not found yet. Add the DNS records shown below, wait for propagation, then try again.',
+    dnsCheck: {
+      ok: dnsCheck.ok,
+      lookedUp: `_eventlive-verify.${domain.host}`,
+      expected: domain.verifyToken,
+      found: dnsCheck.found,
+    },
+  });
 });
 
 /**

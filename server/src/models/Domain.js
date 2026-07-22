@@ -62,16 +62,51 @@ const domainSchema = new Schema(
 // Compound lookup used when resolving an organizer's active brand domain.
 domainSchema.index({ customer: 1, status: 1 });
 
-// The DNS record we ask the customer to add to prove ownership.
+const DNS_TTL_SECONDS = 3600;
+
+/** Recommended DNS records for ownership proof + routing/SSL. */
 domainSchema.virtual('verification').get(function verification() {
-  return {
+  const token = this.verifyToken || '';
+  const txtHost = `_eventlive-verify.${this.host}`;
+  const txt = {
     type: 'TXT',
-    name: `_eventlive-verify.${this.host}`,
-    value: this.verifyToken,
-    // CNAME the customer points at the hosting provider so the site + SSL work.
-    cname: { type: 'CNAME', name: this.host, value: 'cname.vercel-dns.com' },
+    name: txtHost,
+    host: txtHost,
+    value: token,
+    ttl: DNS_TTL_SECONDS,
+  };
+  const cname = {
+    type: 'CNAME',
+    name: this.host,
+    host: this.host,
+    value: 'cname.vercel-dns.com',
+    ttl: DNS_TTL_SECONDS,
+  };
+  return {
+    type: txt.type,
+    name: txt.name,
+    host: txt.host,
+    value: txt.value,
+    ttl: DNS_TTL_SECONDS,
+    cname: {
+      type: cname.type,
+      name: cname.name,
+      host: cname.host,
+      value: cname.value,
+      ttl: DNS_TTL_SECONDS,
+    },
+    // Structured list for admin/customer UI tables.
+    records: [txt, cname],
   };
 });
+
+/** Ensure every domain has a TXT ownership token (backfill legacy rows). */
+domainSchema.methods.ensureVerifyToken = function ensureVerifyToken() {
+  if (!this.verifyToken) {
+    this.verifyToken = crypto.randomBytes(16).toString('hex');
+  }
+  return this.verifyToken;
+};
 
 domainSchema.set('toJSON', {
   virtuals: true,

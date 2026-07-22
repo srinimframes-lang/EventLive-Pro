@@ -1,9 +1,11 @@
 import { Domain } from '../models/Domain.js';
 import { User } from '../models/User.js';
+import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { checkDnsTxt } from '../utils/dnsVerify.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
 import { refreshDomainCache } from '../utils/domainCache.js';
+import { attachDomain, getDomainStatus } from '../utils/vercel.js';
 
 const MAX_DOMAINS_PER_CUSTOMER = 10;
 
@@ -64,10 +66,16 @@ export const resolveByHost = asyncHandler(async (req, res) => {
  */
 export const myDomains = asyncHandler(async (req, res) => {
   const domains = await Domain.find({ customer: req.user._id }).sort({ createdAt: -1 });
-  const active = domains.find((d) => d.status === 'active');
+  const payload = [];
+  for (const domain of domains) {
+    domain.ensureVerifyToken();
+    if (domain.isModified('verifyToken')) await domain.save();
+    payload.push(domain.toJSON());
+  }
+  const active = payload.find((d) => d.status === 'active');
   res.status(200).json({
     success: true,
-    data: { domains, activeHost: active ? active.host : '' },
+    data: { domains: payload, activeHost: active ? active.host : '' },
   });
 });
 
@@ -93,13 +101,15 @@ export const addMyDomain = asyncHandler(async (req, res) => {
     throw new Error('That domain is already registered.');
   }
   const domain = await Domain.create({ customer: req.user._id, host });
+  domain.ensureVerifyToken();
+  if (domain.isModified('verifyToken')) await domain.save();
   res.status(201).json({ success: true, data: domain });
 });
 
 /**
  * @route POST /api/tenant/my-domains/:id/verify
- * @desc  Customer triggers a DNS ownership check for their own domain. Marks
- *        dnsVerified; activation still requires Super Admin approval.
+ * @desc  Customer triggers a DNS ownership check for their own domain.
+ *        On success: mark verified, start SSL attach, activate routing.
  * @access Private
  */
 export const verifyMyDomain = asyncHandler(async (req, res) => {
@@ -108,12 +118,49 @@ export const verifyMyDomain = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Domain not found');
   }
-  const { ok } = await checkDnsTxt(domain.host, domain.verifyToken);
-  domain.dnsVerified = ok;
+
+  domain.ensureVerifyToken();
+  const dnsCheck = await checkDnsTxt(domain.host, domain.verifyToken);
+  domain.dnsVerified = dnsCheck.ok;
   domain.lastCheckedAt = new Date();
-  if (ok && !domain.verifiedAt) domain.verifiedAt = new Date();
+  if (dnsCheck.ok && !domain.verifiedAt) domain.verifiedAt = new Date();
+
+  if (dnsCheck.ok) {
+    if (env.vercel.enabled) {
+      const attach = await attachDomain(domain.host);
+      if (attach.enabled && attach.ok) domain.hostingAttached = true;
+      if (Array.isArray(attach.verification) && attach.verification.length) {
+        domain.hostingRecords = attach.verification;
+      }
+      const vstat = await getDomainStatus(domain.host);
+      if (vstat?.enabled) {
+        domain.hostingVerified = Boolean(vstat.verified);
+        if (Array.isArray(vstat.verification)) domain.hostingRecords = vstat.verification;
+        domain.sslStatus = vstat.ssl === 'issued' ? 'issued' : 'pending';
+      }
+    } else if (domain.sslStatus === 'pending') {
+      domain.sslStatus = 'manual';
+    }
+    if (domain.status !== 'active' && domain.status !== 'suspended') {
+      domain.status = 'active';
+    }
+    await refreshDomainCache();
+  }
+
   await domain.save();
-  res.status(200).json({ success: true, data: domain });
+  res.status(200).json({
+    success: true,
+    data: domain,
+    message: dnsCheck.ok
+      ? 'DNS verified. Your domain is active and SSL provisioning has started.'
+      : 'TXT record not found yet. Add the DNS records shown below, wait for propagation, then try again.',
+    dnsCheck: {
+      ok: dnsCheck.ok,
+      lookedUp: `_eventlive-verify.${domain.host}`,
+      expected: domain.verifyToken,
+      found: dnsCheck.found,
+    },
+  });
 });
 
 /**

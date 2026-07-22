@@ -100,7 +100,7 @@ export const adminService = {
   },
   async verifyDomain(id) {
     const { data } = await api.post(`/api/admin/domains/${id}/verify`);
-    return data.data;
+    return { domain: data.data, message: data.message, dnsCheck: data.dnsCheck };
   },
   async approveDomain(id, force) {
     const { data } = await api.post(`/api/admin/domains/${id}/approve`, { force: Boolean(force) });

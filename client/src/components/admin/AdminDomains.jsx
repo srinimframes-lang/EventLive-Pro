@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { adminService } from '../../services/admin.service.js';
+import DnsInstructions from '../DnsInstructions.jsx';
 
 const STATUS_STYLES = {
   active: 'bg-emerald-100 text-emerald-700',
@@ -90,10 +91,13 @@ export default function AdminDomains() {
   };
 
   const verify = async (id) => {
-    const u = await act(adminService.verifyDomain, id);
-    if (u) {
-      replaceDomain(u);
-      flash(u.dnsVerified ? 'DNS verified' : 'TXT record not found yet');
+    const result = await act(adminService.verifyDomain, id);
+    if (result?.domain) {
+      replaceDomain(result.domain);
+      flash(
+        result.message ||
+          (result.domain.dnsVerified ? 'DNS verified' : 'TXT record not found yet')
+      );
     }
   };
 
@@ -268,6 +272,13 @@ export default function AdminDomains() {
                       </div>
                     </td>
                   </tr>
+                  {(!d.dnsVerified || d.status !== 'active') && (
+                    <tr className="bg-slate-50/80">
+                      <td colSpan={6} className="px-2 py-3">
+                        <DnsInstructions domain={d} />
+                      </td>
+                    </tr>
+                  )}
                   {Array.isArray(d.hostingRecords) && d.hostingRecords.length > 0 && (
                     <tr className="bg-amber-50/60">
                       <td colSpan={6} className="px-2 py-2 text-xs text-amber-800">

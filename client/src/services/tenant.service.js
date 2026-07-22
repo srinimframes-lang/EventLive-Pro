@@ -18,7 +18,7 @@ export const tenantService = {
   },
   async verifyDomain(id) {
     const { data } = await api.post(`/api/tenant/my-domains/${id}/verify`);
-    return data.data;
+    return { domain: data.data, message: data.message, dnsCheck: data.dnsCheck };
   },
   async deleteDomain(id) {
     const { data } = await api.delete(`/api/tenant/my-domains/${id}`);

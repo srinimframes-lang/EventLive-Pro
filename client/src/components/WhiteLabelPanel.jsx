@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { tenantService } from '../services/tenant.service.js';
 import { resolveMediaUrl } from '../utils/format.js';
+import DnsInstructions from './DnsInstructions.jsx';
 
 const BRANDING_DEFAULTS = {
   businessName: '',
@@ -100,9 +101,13 @@ export default function WhiteLabelPanel({ initialBranding }) {
   const verify = async (id) => {
     setError('');
     try {
-      const updated = await tenantService.verifyDomain(id);
+      const result = await tenantService.verifyDomain(id);
+      const updated = result.domain || result;
       setDomains((list) => list.map((d) => (d.id === id ? updated : d)));
-      flash(updated.dnsVerified ? 'DNS verified! Awaiting admin approval.' : 'DNS record not found yet.');
+      flash(
+        result.message ||
+          (updated.dnsVerified ? 'DNS verified! Domain is active.' : 'DNS record not found yet.')
+      );
     } catch (err) {
       setError(err.message);
     }
@@ -216,23 +221,23 @@ export default function WhiteLabelPanel({ initialBranding }) {
                 </span>
               </div>
 
-              {d.status !== 'active' && d.verification && (
-                <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                  <p className="font-medium text-slate-700">Add these DNS records at your registrar:</p>
-                  <code className="block break-all">
-                    TXT &nbsp;{d.verification.name}&nbsp;=&nbsp;{d.verification.value}
-                  </code>
-                  <code className="block break-all">
-                    CNAME &nbsp;{d.host}&nbsp;→&nbsp;{d.verification.cname?.value}
-                  </code>
-                  <p className="text-slate-400">
-                    After adding them, click Verify. An admin then approves the domain to go live.
-                  </p>
+              {(!d.dnsVerified || d.status !== 'active') && (
+                <DnsInstructions domain={d} className="mt-3" />
+              )}
+
+              {Array.isArray(d.hostingRecords) && d.hostingRecords.length > 0 && (
+                <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                  <p className="font-medium">Extra records required by hosting:</p>
+                  {d.hostingRecords.map((r, i) => (
+                    <code key={i} className="mt-1 block break-all">
+                      {r.type} {r.domain} = {r.value}
+                    </code>
+                  ))}
                 </div>
               )}
 
               <div className="mt-3 flex flex-wrap gap-2">
-                {d.status !== 'active' && (
+                {(!d.dnsVerified || d.status !== 'active') && (
                   <button type="button" className="btn-outline" onClick={() => verify(d.id)}>
                     Verify DNS
                   </button>
