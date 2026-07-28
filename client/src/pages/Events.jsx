@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { eventService, EVENT_CATEGORIES } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
+import EventCard from '../components/EventCard.jsx';
 import SiteSeo from '../components/seo/SiteSeo.jsx';
 import { truncate } from '../utils/seo.js';
 
