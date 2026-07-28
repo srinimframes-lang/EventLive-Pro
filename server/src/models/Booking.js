@@ -13,6 +13,14 @@ const bookingSchema = new Schema(
   {
     customer: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
 
+    // Tenant admin who owns this booking (usually the customer's createdBy).
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
+
     // Chosen package (snapshot name/price so historic bookings stay accurate).
     package: { type: Schema.Types.ObjectId, ref: 'Package' },
     packageName: { type: String, default: '', trim: true },

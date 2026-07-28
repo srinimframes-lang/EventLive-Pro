@@ -7,6 +7,7 @@ import {
   LINK_COSTS,
   getProductById,
 } from '../config/credits.js';
+import { isAdminPanelUser } from '../utils/tenantScope.js';
 
 /**
  * @route GET /api/payments/products
@@ -56,6 +57,7 @@ export const createPaymentRequest = asyncHandler(async (req, res) => {
 
   const payment = await Payment.create({
     user: req.user._id,
+    createdBy: isAdminPanelUser(req.user) ? req.user._id : req.user.createdBy || null,
     productId: product.id,
     credits: product.credits,
     amount: product.price,

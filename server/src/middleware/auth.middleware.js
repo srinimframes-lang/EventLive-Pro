@@ -81,3 +81,19 @@ export function authorize(...roles) {
     return next();
   };
 }
+
+/**
+ * Platform-wide actions (settings, themes, banners, tenant-admin CRUD).
+ * Allows legacy production `admin` (no createdBy) and explicit `superadmin`.
+ * Use after `protect` + `authorize('admin', 'superadmin')`.
+ */
+export function authorizePlatformAdmin(req, res, next) {
+  const owner = req.user?.createdBy?._id || req.user?.createdBy;
+  const isPlatform =
+    req.user?.role === 'superadmin' || (req.user?.role === 'admin' && !owner);
+  if (!req.user || !isPlatform) {
+    res.status(403);
+    return next(new Error('You do not have permission to perform this action'));
+  }
+  return next();
+}

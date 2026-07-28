@@ -25,6 +25,14 @@ const paymentSchema = new Schema(
 
     status: { type: String, enum: PAYMENT_STATUSES, default: 'pending', index: true },
 
+    // Tenant admin who owns this payment request (customer's createdBy).
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
+
     reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     reviewedAt: { type: Date },
     reviewNote: { type: String, default: '', trim: true },

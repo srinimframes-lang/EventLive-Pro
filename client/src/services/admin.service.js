@@ -47,6 +47,24 @@ export const adminService = {
     return data.data;
   },
 
+  // ── Tenant admins (Super Admin) ─────────────────────────
+  async listAdmins() {
+    const { data } = await api.get('/api/admin/admins');
+    return data.data;
+  },
+  async createAdmin(payload) {
+    const { data } = await api.post('/api/admin/admins', payload);
+    return data.data;
+  },
+  async updateAdmin(id, payload) {
+    const { data } = await api.patch(`/api/admin/admins/${id}`, payload);
+    return data.data;
+  },
+  async deleteAdmin(id) {
+    const { data } = await api.delete(`/api/admin/admins/${id}`);
+    return data;
+  },
+
   // ── Sub admins (resellers) ──────────────────────────────
   async listSubAdmins() {
     const { data } = await api.get('/api/admin/subadmins');

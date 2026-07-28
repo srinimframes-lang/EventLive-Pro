@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 
 /**
- * Dedicated, secure entry point for the Super Admin. Only accounts with the
- * 'admin' role are allowed through — anyone else is signed out immediately.
+ * Dedicated entry point for Admin / Super Admin. Only panel roles are allowed
+ * through — anyone else is signed out immediately.
  */
 export default function AdminLogin() {
   const { login, logout } = useAuth();
@@ -24,7 +24,7 @@ export default function AdminLogin() {
     setSubmitting(true);
     try {
       const user = await login(form);
-      if (user?.role !== 'admin') {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
         await logout();
         setError('This account is not authorised for the Admin Panel.');
         return;
@@ -43,7 +43,7 @@ export default function AdminLogin() {
         <span className="badge bg-brand-100 text-brand-700">Restricted area</span>
         <h1 className="mt-3 font-display text-3xl font-bold text-slate-900">Admin Panel Login</h1>
         <p className="mt-1 text-slate-600">
-          Sign in to the {settings.companyName} Super Admin console.
+          Sign in to the {settings.companyName} admin console.
         </p>
       </div>
 

@@ -60,7 +60,12 @@ export function AuthProvider({ children }) {
       user,
       loading,
       isAuthenticated: Boolean(user),
-      isAdmin: user?.role === 'admin',
+      // Panel access: both roles during transition (old + new backends).
+      isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
+      // Platform owner: explicit superadmin OR legacy admin with no createdBy.
+      isSuperAdmin:
+        user?.role === 'superadmin' ||
+        (user?.role === 'admin' && !user?.createdBy),
       isSubAdmin: user?.role === 'subadmin',
       login,
       register,

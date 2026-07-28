@@ -70,7 +70,7 @@ const eventSchema = new Schema(
       unique: true,
       index: true,
     },
-    // Short, shareable public code used in /live/<shortCode> URLs (e.g. "AP24X9").
+    // Short, shareable public code used in /<shortCode> URLs (e.g. "AP24X9").
     shortCode: {
       type: String,
       unique: true,
@@ -89,6 +89,14 @@ const eventSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      index: true,
+    },
+    // Tenant admin who owns this live link (multi-tenant isolation).
+    // Super Admin sees all; normal Admin only sees createdBy === self.
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
       index: true,
     },
     // Commercial booking that produced this event (admin-approved payment).
@@ -336,7 +344,7 @@ eventSchema.index({ organizer: 1, createdAt: -1 });
 
 /**
  * Generates a unique short code for an event: an initials prefix plus a random
- * segment (widening on repeated collisions). Used for /live/<shortCode> URLs.
+ * segment (widening on repeated collisions). Used for /<shortCode> URLs.
  */
 eventSchema.statics.generateUniqueShortCode = async function generateUniqueShortCode(doc) {
   const prefix = codePrefix(doc);

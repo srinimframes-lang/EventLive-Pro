@@ -2,7 +2,21 @@ import mongoose from 'mongoose';
 import { Booking } from '../models/Booking.js';
 import { Package } from '../models/Package.js';
 import { Event } from '../models/Event.js';
+import { User } from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import {
+  assertOwnsRecord,
+  createdByFilter,
+  isAdminPanelUser,
+} from '../utils/tenantScope.js';
+
+/**
+ * Owning admin id for a customer-created record (booking/payment/event).
+ */
+function tenantAdminIdForUser(user) {
+  if (isAdminPanelUser(user)) return user._id;
+  return user.createdBy || null;
+}
 
 /**
  * @route POST /api/bookings
@@ -11,7 +25,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
  */
 export const createBooking = asyncHandler(async (req, res) => {
   // Self-registered customers must be approved by the admin before booking.
-  if (req.user.role !== 'admin' && req.user.approved === false) {
+  if (!isAdminPanelUser(req.user) && req.user.approved === false) {
     res.status(403);
     throw new Error('Your account is pending admin approval. Please wait before booking.');
   }
@@ -29,6 +43,7 @@ export const createBooking = asyncHandler(async (req, res) => {
 
   const booking = await Booking.create({
     customer: req.user._id,
+    createdBy: tenantAdminIdForUser(req.user),
     package: pkg._id,
     packageName: pkg.name,
     amount: pkg.price,
@@ -61,11 +76,11 @@ export const listMyBookings = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/bookings  (admin)
- * @desc  Admin lists all bookings, optionally filtered by status
+ * @desc  Admin lists bookings for their tenant
  * @access Private/Admin
  */
 export const listAllBookings = asyncHandler(async (req, res) => {
-  const filter = {};
+  const filter = { ...createdByFilter(req.user) };
   if (req.query.status) filter.status = req.query.status;
   const bookings = await Booking.find(filter)
     .populate('customer', 'name email phone')
@@ -77,7 +92,7 @@ export const listAllBookings = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/bookings/:id
- * @desc  Get one booking (owner or admin)
+ * @desc  Get one booking (owner or owning admin / Super Admin)
  * @access Private
  */
 export const getBooking = asyncHandler(async (req, res) => {
@@ -90,9 +105,12 @@ export const getBooking = asyncHandler(async (req, res) => {
     throw new Error('Booking not found');
   }
   const isOwner = booking.customer._id.toString() === req.user._id.toString();
-  if (!isOwner && req.user.role !== 'admin') {
-    res.status(403);
-    throw new Error('You do not have permission to view this booking');
+  if (!isOwner) {
+    if (!isAdminPanelUser(req.user)) {
+      res.status(403);
+      throw new Error('You do not have permission to view this booking');
+    }
+    assertOwnsRecord(booking, req.user, res, 'booking');
   }
   res.status(200).json({ success: true, data: booking });
 });
@@ -108,9 +126,18 @@ export const approveBooking = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Booking not found');
   }
+  assertOwnsRecord(booking, req.user, res, 'booking');
+
   if (booking.status === 'approved' && booking.event) {
     const existing = await Event.findById(booking.event).populate('organizer', 'name email');
     return res.status(200).json({ success: true, data: { booking, event: existing } });
+  }
+
+  // Prefer booking.createdBy; fall back to customer's owning admin.
+  let ownerAdminId = booking.createdBy || req.user._id;
+  if (!booking.createdBy) {
+    const customer = await User.findById(booking.customer).select('createdBy');
+    if (customer?.createdBy) ownerAdminId = customer.createdBy;
   }
 
   const start = booking.eventDate ? new Date(booking.eventDate) : new Date(Date.now() + 86400000);
@@ -127,6 +154,7 @@ export const approveBooking = asyncHandler(async (req, res) => {
       booking.notes ||
       `Live wedding stream${couple ? ` for ${couple}` : ''} by MaaEvents9 Broadcasting Services.`,
     organizer: booking.customer,
+    createdBy: ownerAdminId,
     booking: booking._id,
     package: booking.package,
     category: 'other',
@@ -141,6 +169,7 @@ export const approveBooking = asyncHandler(async (req, res) => {
 
   booking.status = 'approved';
   booking.event = event._id;
+  booking.createdBy = booking.createdBy || ownerAdminId;
   booking.reviewedBy = req.user._id;
   booking.reviewedAt = new Date();
   if (req.body.adminNote !== undefined) booking.adminNote = req.body.adminNote;
@@ -160,6 +189,7 @@ export const rejectBooking = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Booking not found');
   }
+  assertOwnsRecord(booking, req.user, res, 'booking');
   booking.status = 'rejected';
   booking.adminNote = req.body.adminNote || 'Payment could not be verified.';
   booking.reviewedBy = req.user._id;

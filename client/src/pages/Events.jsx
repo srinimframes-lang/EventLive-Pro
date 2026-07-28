@@ -20,7 +20,8 @@ export default function Events() {
     setError('');
 
     const params = { page: filters.page, limit: 9 };
-    if (!isAdmin) params.public = true;
+    if (isAdmin) params.adminScope = true;
+    else params.public = true;
     if (filters.search) params.search = filters.search;
     if (filters.category) params.category = filters.category;
 

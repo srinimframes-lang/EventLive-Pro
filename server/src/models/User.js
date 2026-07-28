@@ -28,11 +28,12 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      // 'admin'    = super admin (MaaEvents9, full control).
-      // 'subadmin' = reseller; buys credits and creates events (1 credit each).
-      // 'customer' = self/admin-created client who books packages.
+      // 'superadmin' = platform owner; sees every tenant's data.
+      // 'admin'      = tenant admin; only records where createdBy = their id.
+      // 'subadmin'   = reseller; buys credits and creates events.
+      // 'customer'   = self/admin-created client who books packages.
       // Legacy 'user'/'organizer' kept for backward compatibility.
-      enum: ['user', 'organizer', 'customer', 'subadmin', 'admin'],
+      enum: ['user', 'organizer', 'customer', 'subadmin', 'admin', 'superadmin'],
       default: 'customer',
     },
     // Unified credit wallet. Credits are purchased via the payment gateway and

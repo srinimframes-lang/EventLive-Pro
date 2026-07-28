@@ -25,7 +25,7 @@ export default function AdminEvents() {
   const load = () => {
     setLoading(true);
     eventService
-      .list({ limit: 50 })
+      .list({ limit: 50, adminScope: true })
       .then((res) => setEvents(res.data))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

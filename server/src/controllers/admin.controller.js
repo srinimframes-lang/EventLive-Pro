@@ -7,10 +7,42 @@ import { CreditTransaction } from '../models/CreditTransaction.js';
 import { Payment, PAYMENT_STATUSES } from '../models/Payment.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeCredits, changeBalance } from '../utils/credits.js';
+import {
+  assertOwnsRecord,
+  createdByFilter,
+  isPlatformAdmin,
+} from '../utils/tenantScope.js';
+
+const PLATFORM_ROLES = ['admin', 'superadmin'];
+
+function isPlatformUser(user) {
+  return PLATFORM_ROLES.includes(user?.role);
+}
+
+/** Load a customer-like user owned by this admin (or any if Super Admin). */
+async function findScopedCustomer(id, adminUser, res) {
+  const customer = await User.findById(id);
+  if (!customer || isPlatformUser(customer)) {
+    res.status(404);
+    throw new Error('Customer not found');
+  }
+  assertOwnsRecord(customer, adminUser, res, 'customer');
+  return customer;
+}
+
+async function findScopedSubAdmin(id, adminUser, res) {
+  const subAdmin = await User.findOne({ _id: id, role: 'subadmin' });
+  if (!subAdmin) {
+    res.status(404);
+    throw new Error('Sub admin not found');
+  }
+  assertOwnsRecord(subAdmin, adminUser, res, 'sub admin');
+  return subAdmin;
+}
 
 /**
  * @route POST /api/admin/customers
- * @desc  Super Admin creates a customer account
+ * @desc  Admin creates a customer account (scoped to creating admin)
  * @access Private/Admin
  */
 export const createCustomer = asyncHandler(async (req, res) => {
@@ -47,12 +79,13 @@ export const createCustomer = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/admin/customers
- * @desc  List all customer accounts
+ * @desc  List customer accounts (tenant-scoped)
  * @access Private/Admin
  */
 export const listCustomers = asyncHandler(async (req, res) => {
   const customers = await User.find({
     role: { $in: ['customer', 'user', 'organizer'] },
+    ...createdByFilter(req.user),
   }).sort({ createdAt: -1 });
   res.status(200).json({ success: true, data: customers });
 });
@@ -63,11 +96,7 @@ export const listCustomers = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const updateCustomer = asyncHandler(async (req, res) => {
-  const customer = await User.findById(req.params.id);
-  if (!customer || customer.role === 'admin') {
-    res.status(404);
-    throw new Error('Customer not found');
-  }
+  const customer = await findScopedCustomer(req.params.id, req.user, res);
 
   const { name, phone, isActive, approved, password } = req.body;
   if (name !== undefined) customer.name = name;
@@ -98,11 +127,7 @@ export const adjustCustomerCredits = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Amount must be a non-zero number');
   }
-  const user = await User.findById(req.params.id);
-  if (!user || user.role === 'admin') {
-    res.status(404);
-    throw new Error('Customer not found');
-  }
+  const user = await findScopedCustomer(req.params.id, req.user, res);
 
   const updated = await changeBalance({
     userId: user._id,
@@ -124,11 +149,11 @@ export const adjustCustomerCredits = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/admin/payments?status=pending
- * @desc  List manual UPI credit-purchase requests
+ * @desc  List manual UPI credit-purchase requests (tenant-scoped)
  * @access Private/Admin
  */
 export const listPayments = asyncHandler(async (req, res) => {
-  const filter = {};
+  const filter = { ...createdByFilter(req.user) };
   if (req.query.status && PAYMENT_STATUSES.includes(req.query.status)) {
     filter.status = req.query.status;
   }
@@ -145,6 +170,13 @@ export const listPayments = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const approvePayment = asyncHandler(async (req, res) => {
+  const existing = await Payment.findById(req.params.id);
+  if (!existing || existing.status !== 'pending') {
+    res.status(404);
+    throw new Error('Pending payment request not found (it may already be reviewed)');
+  }
+  assertOwnsRecord(existing, req.user, res, 'payment');
+
   // Atomically flip pending -> approved so credits can only ever be added once.
   const payment = await Payment.findOneAndUpdate(
     { _id: req.params.id, status: 'pending' },
@@ -178,6 +210,13 @@ export const approvePayment = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const rejectPayment = asyncHandler(async (req, res) => {
+  const existing = await Payment.findById(req.params.id);
+  if (!existing || existing.status !== 'pending') {
+    res.status(404);
+    throw new Error('Pending payment request not found (it may already be reviewed)');
+  }
+  assertOwnsRecord(existing, req.user, res, 'payment');
+
   const payment = await Payment.findOneAndUpdate(
     { _id: req.params.id, status: 'pending' },
     {
@@ -209,6 +248,7 @@ export const voidPayment = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Payment request not found');
   }
+  assertOwnsRecord(payment, req.user, res, 'payment');
 
   let reversedCredits = 0;
   if (payment.status === 'approved' && payment.credits > 0) {
@@ -236,21 +276,32 @@ export const voidPayment = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const deleteCustomer = asyncHandler(async (req, res) => {
-  const customer = await User.findById(req.params.id);
-  if (!customer || customer.role === 'admin') {
-    res.status(404);
-    throw new Error('Customer not found');
-  }
+  const customer = await findScopedCustomer(req.params.id, req.user, res);
   await customer.deleteOne();
   res.status(200).json({ success: true, id: req.params.id });
 });
 
 /**
  * @route GET /api/admin/analytics
- * @desc  High-level platform metrics for the admin dashboard
+ * @desc  High-level metrics for the admin dashboard (tenant-scoped)
  * @access Private/Admin
  */
-export const getAnalytics = asyncHandler(async (_req, res) => {
+export const getAnalytics = asyncHandler(async (req, res) => {
+  const scope = createdByFilter(req.user);
+  const customerFilter = {
+    role: { $in: ['customer', 'user', 'organizer'] },
+    ...scope,
+  };
+  const subAdminFilter = { role: 'subadmin', ...scope };
+
+  const tenantSubAdminIds = isPlatformAdmin(req.user)
+    ? null
+    : (await User.find({ role: 'subadmin', ...scope }).select('_id')).map((u) => u._id);
+
+  const creditOrderFilter = tenantSubAdminIds
+    ? { subAdmin: { $in: tenantSubAdminIds } }
+    : {};
+
   const [
     customers,
     pendingCustomers,
@@ -270,32 +321,32 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
     creditsAgg,
     creditsSoldAgg,
   ] = await Promise.all([
-    User.countDocuments({ role: { $in: ['customer', 'user', 'organizer'] } }),
-    User.countDocuments({ role: { $in: ['customer', 'user', 'organizer'] }, approved: false }),
-    User.countDocuments({ role: 'subadmin' }),
-    User.countDocuments({ role: 'subadmin', isActive: true }),
-    Event.countDocuments(),
-    Event.countDocuments({ isLive: true }),
-    Event.countDocuments({ status: 'ended' }),
+    User.countDocuments(customerFilter),
+    User.countDocuments({ ...customerFilter, approved: false }),
+    User.countDocuments(subAdminFilter),
+    User.countDocuments({ ...subAdminFilter, isActive: true }),
+    Event.countDocuments(scope),
+    Event.countDocuments({ ...scope, isLive: true }),
+    Event.countDocuments({ ...scope, status: 'ended' }),
     Package.countDocuments({ isActive: true }),
-    Booking.countDocuments({ status: 'pending' }),
-    Booking.countDocuments({ status: 'approved' }),
-    CreditOrder.countDocuments({ status: 'pending' }),
-    Payment.countDocuments({ status: 'pending' }),
+    Booking.countDocuments({ ...scope, status: 'pending' }),
+    Booking.countDocuments({ ...scope, status: 'approved' }),
+    CreditOrder.countDocuments({ ...creditOrderFilter, status: 'pending' }),
+    Payment.countDocuments({ ...scope, status: 'pending' }),
     Booking.aggregate([
-      { $match: { status: 'approved' } },
+      { $match: { status: 'approved', ...scope } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     CreditOrder.aggregate([
-      { $match: { status: 'approved' } },
+      { $match: { status: 'approved', ...creditOrderFilter } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     Payment.aggregate([
-      { $match: { status: 'approved' } },
+      { $match: { status: 'approved', ...scope } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     User.aggregate([
-      { $match: { role: 'subadmin' } },
+      { $match: subAdminFilter },
       {
         $group: {
           _id: null,
@@ -304,9 +355,8 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
         },
       },
     ]),
-    // Total credits sold = credits from all approved purchase requests.
     Payment.aggregate([
-      { $match: { status: 'approved' } },
+      { $match: { status: 'approved', ...scope } },
       { $group: { _id: null, total: { $sum: '$credits' } } },
     ]),
   ]);
@@ -344,6 +394,110 @@ export const getAnalytics = asyncHandler(async (_req, res) => {
       },
     },
   });
+});
+
+/* ───────────────────────── Tenant Admins (Super Admin only) ───────────────────────── */
+
+/**
+ * @route POST /api/admin/admins
+ * @desc  Super Admin creates a tenant Admin account
+ * @access Private/SuperAdmin
+ */
+export const createTenantAdmin = asyncHandler(async (req, res) => {
+  if (!isPlatformAdmin(req.user)) {
+    res.status(403);
+    throw new Error('Only Super Admin can create tenant admins');
+  }
+  const { name, email, password, phone } = req.body;
+  if (!name || !email || !password) {
+    res.status(400);
+    throw new Error('Please provide name, email and password');
+  }
+  if (String(password).length < 8) {
+    res.status(400);
+    throw new Error('Password must be at least 8 characters');
+  }
+  const normalized = String(email).toLowerCase().trim();
+  const exists = await User.findOne({ email: normalized });
+  if (exists) {
+    res.status(409);
+    throw new Error('An account with that email already exists');
+  }
+
+  const admin = await User.create({
+    name,
+    email: normalized,
+    password,
+    phone: phone || '',
+    role: 'admin',
+    approved: true,
+    isActive: true,
+    createdBy: req.user._id,
+  });
+  admin.password = undefined;
+  res.status(201).json({ success: true, data: admin });
+});
+
+/**
+ * @route GET /api/admin/admins
+ * @desc  List tenant Admin accounts
+ * @access Private/SuperAdmin
+ */
+export const listTenantAdmins = asyncHandler(async (req, res) => {
+  if (!isPlatformAdmin(req.user)) {
+    res.status(403);
+    throw new Error('Only Super Admin can list tenant admins');
+  }
+  const admins = await User.find({ role: 'admin' }).sort({ createdAt: -1 });
+  res.status(200).json({ success: true, data: admins });
+});
+
+/**
+ * @route PATCH /api/admin/admins/:id
+ * @access Private/SuperAdmin
+ */
+export const updateTenantAdmin = asyncHandler(async (req, res) => {
+  if (!isPlatformAdmin(req.user)) {
+    res.status(403);
+    throw new Error('Only Super Admin can update tenant admins');
+  }
+  const admin = await User.findOne({ _id: req.params.id, role: 'admin' });
+  if (!admin) {
+    res.status(404);
+    throw new Error('Admin not found');
+  }
+  const { name, phone, isActive, password } = req.body;
+  if (name !== undefined) admin.name = name;
+  if (phone !== undefined) admin.phone = phone;
+  if (isActive !== undefined) admin.isActive = isActive;
+  if (password) {
+    if (String(password).length < 6) {
+      res.status(400);
+      throw new Error('Password must be at least 6 characters');
+    }
+    admin.password = password;
+  }
+  await admin.save();
+  admin.password = undefined;
+  res.status(200).json({ success: true, data: admin });
+});
+
+/**
+ * @route DELETE /api/admin/admins/:id
+ * @access Private/SuperAdmin
+ */
+export const deleteTenantAdmin = asyncHandler(async (req, res) => {
+  if (!isPlatformAdmin(req.user)) {
+    res.status(403);
+    throw new Error('Only Super Admin can delete tenant admins');
+  }
+  const admin = await User.findOne({ _id: req.params.id, role: 'admin' });
+  if (!admin) {
+    res.status(404);
+    throw new Error('Admin not found');
+  }
+  await admin.deleteOne();
+  res.status(200).json({ success: true, id: req.params.id });
 });
 
 /* ───────────────────────── Sub Admins (resellers) ───────────────────────── */
@@ -417,8 +571,11 @@ export const createSubAdmin = asyncHandler(async (req, res) => {
  * @route GET /api/admin/subadmins
  * @access Private/Admin
  */
-export const listSubAdmins = asyncHandler(async (_req, res) => {
-  const subAdmins = await User.find({ role: 'subadmin' }).sort({ createdAt: -1 });
+export const listSubAdmins = asyncHandler(async (req, res) => {
+  const subAdmins = await User.find({
+    role: 'subadmin',
+    ...createdByFilter(req.user),
+  }).sort({ createdAt: -1 });
   res.status(200).json({ success: true, data: subAdmins });
 });
 
@@ -428,11 +585,7 @@ export const listSubAdmins = asyncHandler(async (_req, res) => {
  * @access Private/Admin
  */
 export const updateSubAdmin = asyncHandler(async (req, res) => {
-  const subAdmin = await User.findOne({ _id: req.params.id, role: 'subadmin' });
-  if (!subAdmin) {
-    res.status(404);
-    throw new Error('Sub admin not found');
-  }
+  const subAdmin = await findScopedSubAdmin(req.params.id, req.user, res);
   const { name, phone, isActive, password } = req.body;
   if (name !== undefined) subAdmin.name = name;
   if (phone !== undefined) subAdmin.phone = phone;
@@ -454,11 +607,7 @@ export const updateSubAdmin = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const deleteSubAdmin = asyncHandler(async (req, res) => {
-  const subAdmin = await User.findOne({ _id: req.params.id, role: 'subadmin' });
-  if (!subAdmin) {
-    res.status(404);
-    throw new Error('Sub admin not found');
-  }
+  const subAdmin = await findScopedSubAdmin(req.params.id, req.user, res);
   await subAdmin.deleteOne();
   res.status(200).json({ success: true, id: req.params.id });
 });
@@ -481,11 +630,7 @@ export const adjustSubAdminCredits = asyncHandler(async (req, res) => {
     throw new Error('Amount must be a non-zero number');
   }
 
-  const subAdmin = await User.findOne({ _id: req.params.id, role: 'subadmin' });
-  if (!subAdmin) {
-    res.status(404);
-    throw new Error('Sub admin not found');
-  }
+  const subAdmin = await findScopedSubAdmin(req.params.id, req.user, res);
 
   const updated = await changeCredits({
     userId: subAdmin._id,
@@ -507,12 +652,29 @@ export const adjustSubAdminCredits = asyncHandler(async (req, res) => {
 
 /* ───────────────────────── Credit Orders ───────────────────────── */
 
+async function creditOrderScopeFilter(adminUser) {
+  if (isPlatformAdmin(adminUser)) return {};
+  const ids = (await User.find({ role: 'subadmin', createdBy: adminUser._id }).select('_id')).map(
+    (u) => u._id
+  );
+  return { subAdmin: { $in: ids } };
+}
+
+async function assertOwnsCreditOrder(order, adminUser, res) {
+  if (isPlatformAdmin(adminUser)) return;
+  const sub = await User.findById(order.subAdmin).select('createdBy');
+  if (!sub || sub.createdBy?.toString() !== adminUser._id.toString()) {
+    res.status(403);
+    throw new Error('You do not have permission to access this order');
+  }
+}
+
 /**
  * @route GET /api/admin/credit-orders
  * @access Private/Admin
  */
 export const listCreditOrders = asyncHandler(async (req, res) => {
-  const filter = {};
+  const filter = { ...(await creditOrderScopeFilter(req.user)) };
   if (req.query.status) filter.status = req.query.status;
   const orders = await CreditOrder.find(filter)
     .populate('subAdmin', 'name email phone')
@@ -531,6 +693,7 @@ export const approveCreditOrder = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Order not found');
   }
+  await assertOwnsCreditOrder(order, req.user, res);
   if (order.status === 'approved') {
     return res.status(200).json({ success: true, data: order });
   }
@@ -564,6 +727,7 @@ export const rejectCreditOrder = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Order not found');
   }
+  await assertOwnsCreditOrder(order, req.user, res);
   order.status = 'rejected';
   order.adminNote = req.body.adminNote || 'Payment could not be verified.';
   order.reviewedBy = req.user._id;

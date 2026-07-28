@@ -4,14 +4,18 @@ import { Settings } from '../models/Settings.js';
 import { Package } from '../models/Package.js';
 import { Payment } from '../models/Payment.js';
 import { Event } from '../models/Event.js';
+import { Booking } from '../models/Booking.js';
 
 /* eslint-disable no-console */
 
 /**
  * Ensures the platform has its baseline data on boot:
- *  - a Super Admin account (from env, change password after first login)
+ *  - a Super Admin account (created only if missing — never mutates existing users)
  *  - the singleton Settings document
  *  - a few default packages (only if none exist yet)
+ *
+ * Destructive / multi-tenant migrations are OFF by default. Enable only with
+ * MIGRATE_MULTI_TENANT=true (idempotent, optional).
  */
 import { seedCuratedThemes } from './seedCuratedThemes.js';
 
@@ -20,13 +24,20 @@ export async function runSeed() {
   await Settings.getSingleton();
   await seedDefaultPackages();
   await seedCuratedThemes();
-  await cleanupLegacyPayments();
   await backfillShortCodes();
+
+  if (env.migrateMultiTenant) {
+    await runOptionalMultiTenantMigration();
+  } else {
+    console.log(
+      '[seed] Multi-tenant migration skipped (set MIGRATE_MULTI_TENANT=true to run explicitly).'
+    );
+  }
 }
 
 /**
  * Assigns a unique short code to any existing event that predates the
- * shortCode field, so old events get clean /live/<code> URLs too.
+ * shortCode field, so old events get clean /<code> URLs too.
  */
 async function backfillShortCodes() {
   const events = await Event.find({
@@ -45,45 +56,120 @@ async function backfillShortCodes() {
 }
 
 /**
- * The original Payment model used a gateway flow with a unique
- * `merchantTransactionId`. The current manual-UPI model drops that field, so
- * the stale unique index (and the throwaway gateway-era docs) must be removed —
- * otherwise multiple new requests would collide on a null `merchantTransactionId`.
+ * Optional, idempotent multi-tenant migration.
+ * Only runs when MIGRATE_MULTI_TENANT=true.
+ * - Promotes legacy platform admins (role=admin, no createdBy) → superadmin
+ * - Backfills createdBy on events / bookings / payments where missing
+ * Never deletes documents.
  */
-async function cleanupLegacyPayments() {
-  try {
-    await Payment.collection.dropIndex('merchantTransactionId_1');
-    console.log('[seed] Dropped legacy Payment index merchantTransactionId_1.');
-  } catch {
-    // Index doesn't exist (fresh DB or already cleaned) — nothing to do.
+async function runOptionalMultiTenantMigration() {
+  console.log('[seed] MIGRATE_MULTI_TENANT=true — running optional multi-tenant migration…');
+
+  const promoted = await User.updateMany(
+    {
+      role: 'admin',
+      $or: [{ createdBy: null }, { createdBy: { $exists: false } }],
+    },
+    { $set: { role: 'superadmin' } }
+  );
+  if (promoted.modifiedCount) {
+    console.log(`[seed] Promoted ${promoted.modifiedCount} legacy admin(s) → superadmin.`);
+  } else {
+    console.log('[seed] No legacy admins to promote (idempotent).');
   }
-  try {
-    const { deletedCount } = await Payment.deleteMany({
-      merchantTransactionId: { $exists: true },
-    });
-    if (deletedCount) console.log(`[seed] Removed ${deletedCount} legacy gateway payment(s).`);
-  } catch {
-    // Best-effort cleanup.
+
+  // Ensure configured bootstrap email is superadmin when migration is explicitly enabled.
+  const { email } = env.superAdmin;
+  const configured = await User.findOne({ email });
+  if (configured && configured.role !== 'superadmin') {
+    configured.role = 'superadmin';
+    configured.isActive = true;
+    configured.approved = true;
+    await configured.save();
+    console.log(`[seed] Ensured configured account is superadmin: ${email}`);
   }
+
+  await backfillTenantOwnership();
+  console.log('[seed] Multi-tenant migration finished.');
 }
 
+/**
+ * Backfill createdBy on events/bookings/payments (add-only, never deletes).
+ * createdBy is always the owning admin id (never the customer).
+ */
+async function backfillTenantOwnership() {
+  const missing = { $or: [{ createdBy: null }, { createdBy: { $exists: false } }] };
+
+  const events = await Event.find(missing).select('organizer');
+  let eventN = 0;
+  for (const ev of events) {
+    // eslint-disable-next-line no-await-in-loop
+    const org = await User.findById(ev.organizer).select('role createdBy');
+    if (!org) continue;
+    if (org.role === 'admin' || org.role === 'superadmin') {
+      ev.createdBy = org._id;
+    } else if (org.createdBy) {
+      ev.createdBy = org.createdBy;
+    }
+    if (ev.createdBy) {
+      // eslint-disable-next-line no-await-in-loop
+      await ev.save();
+      eventN += 1;
+    }
+  }
+  if (eventN) console.log(`[seed] Backfilled createdBy on ${eventN} event(s).`);
+
+  const bookings = await Booking.find(missing).select('customer');
+  let bookingN = 0;
+  for (const b of bookings) {
+    // eslint-disable-next-line no-await-in-loop
+    const cust = await User.findById(b.customer).select('createdBy');
+    if (cust?.createdBy) {
+      b.createdBy = cust.createdBy;
+      // eslint-disable-next-line no-await-in-loop
+      await b.save();
+      bookingN += 1;
+    }
+  }
+  if (bookingN) console.log(`[seed] Backfilled createdBy on ${bookingN} booking(s).`);
+
+  const payments = await Payment.find(missing).select('user');
+  let payN = 0;
+  for (const p of payments) {
+    // eslint-disable-next-line no-await-in-loop
+    const u = await User.findById(p.user).select('createdBy');
+    if (u?.createdBy) {
+      p.createdBy = u.createdBy;
+      // eslint-disable-next-line no-await-in-loop
+      await p.save();
+      payN += 1;
+    }
+  }
+  if (payN) console.log(`[seed] Backfilled createdBy on ${payN} payment(s).`);
+}
+
+/**
+ * Creates the bootstrap Super Admin only when the email does not exist.
+ * Never updates / rewrites an existing user (production-safe).
+ */
 async function seedSuperAdmin() {
   const { name, email, password } = env.superAdmin;
   const existing = await User.findOne({ email });
 
   if (existing) {
-    // Make sure the configured account always retains admin access.
-    if (existing.role !== 'admin' || !existing.isActive || !existing.approved) {
-      existing.role = 'admin';
-      existing.isActive = true;
-      existing.approved = true;
-      await existing.save();
-    }
-    console.log(`[seed] Super admin present: ${email}`);
+    console.log(`[seed] Super admin present (unchanged): ${email} role=${existing.role}`);
     return;
   }
 
-  await User.create({ name, email, password, role: 'admin', isActive: true, approved: true });
+  // Fresh installs get superadmin. Existing production accounts are never rewritten.
+  await User.create({
+    name,
+    email,
+    password,
+    role: 'superadmin',
+    isActive: true,
+    approved: true,
+  });
   console.log(
     `[seed] Created super admin ${email}. ` +
       (process.env.SUPER_ADMIN_PASSWORD

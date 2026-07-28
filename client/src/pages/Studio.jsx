@@ -56,7 +56,12 @@ export default function Studio() {
   const canManage = useMemo(() => {
     if (!event || !user) return false;
     const organizerId = event.organizer?.id || event.organizer?._id;
-    return user.role === 'admin' || organizerId === user.id;
+    const ownerId = event.createdBy?.id || event.createdBy?._id || event.createdBy;
+    const isPlatformAdmin =
+      user.role === 'superadmin' || (user.role === 'admin' && !user.createdBy);
+    if (isPlatformAdmin) return true;
+    if (user.role === 'admin' && ownerId && String(ownerId) === String(user.id)) return true;
+    return organizerId === user.id;
   }, [event, user]);
 
   const coupleTitle = useMemo(() => {

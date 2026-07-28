@@ -4,7 +4,7 @@ import { streamService } from '../../services/stream.service.js';
 
 function canManageEvent(event, user) {
   if (!event || !user) return false;
-  if (user.role === 'admin') return true;
+  if (user.role === 'admin' || user.role === 'superadmin') return true;
   const organizerId = event.organizer?.id || event.organizer?._id || event.organizer;
   const userId = user.id || user._id;
   return Boolean(organizerId && userId && String(organizerId) === String(userId));

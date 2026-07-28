@@ -34,11 +34,15 @@ export default function EventDetail() {
     };
   }, [idOrSlug]);
 
-  // The Super Admin manages any event; a reseller manages events they created.
+  // Platform admin manages any event; tenant Admin manages their own; organizer manages theirs.
+  const ownerId = event?.createdBy?.id || event?.createdBy?._id || event?.createdBy;
+  const isPlatformAdmin =
+    user?.role === 'superadmin' || (user?.role === 'admin' && !user?.createdBy);
   const canManage =
     Boolean(event) &&
     user &&
-    (user.role === 'admin' ||
+    (isPlatformAdmin ||
+      (user.role === 'admin' && ownerId && String(ownerId) === String(user.id)) ||
       (user.role === 'subadmin' &&
         (event.organizer?.id === user.id || event.organizer?._id === user.id)));
 

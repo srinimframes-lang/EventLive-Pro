@@ -44,9 +44,12 @@ export default function Watch() {
       .then(async (ev) => {
         if (!active) return;
         const canonical = watchPath(ev);
-        if (ev.shortCode && canonical && window.location.pathname !== canonical) {
-          navigate(canonical, { replace: true });
-          return;
+        if (canonical) {
+          const current = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+          if (current.toLowerCase() !== canonical.toLowerCase()) {
+            navigate(canonical, { replace: true });
+            return;
+          }
         }
         setEvent(ensureSafeEventTheme(ev));
         const cfg = await streamService.getConfig(ev.id).catch(() => null);
@@ -105,7 +108,10 @@ export default function Watch() {
       (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
   );
 
-  const canAnswer = useMemo(() => user?.role === 'admin', [user]);
+  const canAnswer = useMemo(
+    () => user?.role === 'admin' || user?.role === 'superadmin',
+    [user]
+  );
 
   const coupleTitle = useMemo(() => {
     if (!event) return '';

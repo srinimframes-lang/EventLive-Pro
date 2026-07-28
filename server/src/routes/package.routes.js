@@ -5,13 +5,13 @@ import {
   updatePackage,
   deletePackage,
 } from '../controllers/package.controller.js';
-import { protect, optionalAuth, authorize } from '../middleware/auth.middleware.js';
+import { protect, optionalAuth, authorize, authorizePlatformAdmin } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
 router.get('/', optionalAuth, listPackages);
-router.post('/', protect, authorize('admin'), createPackage);
-router.patch('/:id', protect, authorize('admin'), updatePackage);
-router.delete('/:id', protect, authorize('admin'), deletePackage);
+router.post('/', protect, authorize('admin', 'superadmin'), authorizePlatformAdmin, createPackage);
+router.patch('/:id', protect, authorize('admin', 'superadmin'), authorizePlatformAdmin, updatePackage);
+router.delete('/:id', protect, authorize('admin', 'superadmin'), authorizePlatformAdmin, deletePackage);
 
 export default router;

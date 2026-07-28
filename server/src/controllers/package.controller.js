@@ -1,5 +1,6 @@
 import { Package } from '../models/Package.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { isAdminPanelUser } from '../utils/tenantScope.js';
 
 const PACKAGE_FIELDS = [
   'name',
@@ -32,7 +33,7 @@ function pickFields(body) {
  * @access Public
  */
 export const listPackages = asyncHandler(async (req, res) => {
-  const filter = req.user?.role === 'admin' ? {} : { isActive: true };
+  const filter = isAdminPanelUser(req.user) ? {} : { isActive: true };
   const packages = await Package.find(filter).sort({ sortOrder: 1, price: 1 });
   res.status(200).json({ success: true, data: packages });
 });

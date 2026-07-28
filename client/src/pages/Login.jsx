@@ -23,7 +23,7 @@ export default function Login() {
     try {
       const loggedIn = await login(form);
       const home =
-        loggedIn?.role === 'admin'
+        loggedIn?.role === 'admin' || loggedIn?.role === 'superadmin'
           ? '/admin'
           : loggedIn?.role === 'subadmin'
             ? '/reseller'

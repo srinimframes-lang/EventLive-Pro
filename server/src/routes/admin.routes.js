@@ -10,6 +10,10 @@ import {
   rejectPayment,
   voidPayment,
   getAnalytics,
+  createTenantAdmin,
+  listTenantAdmins,
+  updateTenantAdmin,
+  deleteTenantAdmin,
   createSubAdmin,
   listSubAdmins,
   updateSubAdmin,
@@ -48,20 +52,27 @@ import {
   adminUploadBannerImage,
   adminDeleteBanner,
 } from '../controllers/banner.controller.js';
-import { protect, authorize } from '../middleware/auth.middleware.js';
+import { protect, authorize, authorizePlatformAdmin } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 import { bannerUpload } from '../middleware/bannerUpload.middleware.js';
 
 const router = Router();
 
-// All admin routes require an authenticated super admin.
-router.use(protect, authorize('admin'));
+// Tenant Admin + Super Admin / legacy platform admin may access the admin API.
+router.use(protect, authorize('admin', 'superadmin'));
 
 router.get('/analytics', getAnalytics);
 
 router.route('/customers').get(listCustomers).post(createCustomer);
 router.route('/customers/:id').patch(updateCustomer).delete(deleteCustomer);
 router.post('/customers/:id/credits', adjustCustomerCredits);
+
+// Tenant admins (platform admin only — handlers also enforce)
+router.route('/admins').get(authorizePlatformAdmin, listTenantAdmins).post(authorizePlatformAdmin, createTenantAdmin);
+router
+  .route('/admins/:id')
+  .patch(authorizePlatformAdmin, updateTenantAdmin)
+  .delete(authorizePlatformAdmin, deleteTenantAdmin);
 
 // Credit payment requests (manual UPI)
 router.get('/payments', listPayments);
@@ -92,21 +103,31 @@ router.post('/domains/:id/suspend', suspendDomain);
 router.post('/domains/:id/refresh', refreshDomainStatus);
 router.delete('/domains/:id', removeDomain);
 
-// Theme builder
-router.get('/themes', adminListThemes);
-router.post('/themes', createTheme);
-router.patch('/themes/:id', updateTheme);
-router.delete('/themes/:id', deleteTheme);
-router.post('/themes/:id/background', upload.single('background'), uploadThemeBackground);
-router.post('/themes/reseed-regional', reseedRegionalThemes);
-router.put('/themes/reorder', reorderThemes);
-router.post('/themes/:id/duplicate', duplicateTheme);
+// Theme builder (platform-wide)
+router.get('/themes', authorizePlatformAdmin, adminListThemes);
+router.post('/themes', authorizePlatformAdmin, createTheme);
+router.patch('/themes/:id', authorizePlatformAdmin, updateTheme);
+router.delete('/themes/:id', authorizePlatformAdmin, deleteTheme);
+router.post(
+  '/themes/:id/background',
+  authorizePlatformAdmin,
+  upload.single('background'),
+  uploadThemeBackground
+);
+router.post('/themes/reseed-regional', authorizePlatformAdmin, reseedRegionalThemes);
+router.put('/themes/reorder', authorizePlatformAdmin, reorderThemes);
+router.post('/themes/:id/duplicate', authorizePlatformAdmin, duplicateTheme);
 
-// Banner advertisements
-router.get('/banners', adminListBanners);
-router.post('/banners', bannerUpload.single('image'), adminCreateBanner);
-router.patch('/banners/:id', adminUpdateBanner);
-router.post('/banners/:id/image', bannerUpload.single('image'), adminUploadBannerImage);
-router.delete('/banners/:id', adminDeleteBanner);
+// Banner advertisements (platform-wide)
+router.get('/banners', authorizePlatformAdmin, adminListBanners);
+router.post('/banners', authorizePlatformAdmin, bannerUpload.single('image'), adminCreateBanner);
+router.patch('/banners/:id', authorizePlatformAdmin, adminUpdateBanner);
+router.post(
+  '/banners/:id/image',
+  authorizePlatformAdmin,
+  bannerUpload.single('image'),
+  adminUploadBannerImage
+);
+router.delete('/banners/:id', authorizePlatformAdmin, adminDeleteBanner);
 
 export default router;

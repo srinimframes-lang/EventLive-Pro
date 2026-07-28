@@ -98,13 +98,16 @@ export const env = {
     isProd || process.env.REQUIRE_SECURE_PLAYBACK === 'true',
   // Shared secret the media server presents to the stream webhooks.
   mediaServerSecret: process.env.MEDIA_SERVER_SECRET || '',
-  // Super Admin bootstrap. On first boot the server ensures this account exists
-  // (role=admin). Set these on Render; change the password after first login.
+  // Super Admin bootstrap. On first boot the server creates this account only
+  // if missing — existing users are never modified. Role migrations require
+  // MIGRATE_MULTI_TENANT=true.
   superAdmin: {
     name: process.env.SUPER_ADMIN_NAME || 'MaaEvents9 Admin',
     email: (process.env.SUPER_ADMIN_EMAIL || 'admin@maaevents9.com').toLowerCase().trim(),
     password: process.env.SUPER_ADMIN_PASSWORD || 'MaaEvents9@Admin',
   },
+  // Optional, idempotent multi-tenant migration (off by default for zero-downtime).
+  migrateMultiTenant: process.env.MIGRATE_MULTI_TENANT === 'true',
   // Optional Cloudinary credentials for durable image storage. When present,
   // uploads go to Cloudinary (surviving redeploys); otherwise local disk is
   // used as a fallback. Set CLOUDINARY_URL or the three discrete vars on Render.

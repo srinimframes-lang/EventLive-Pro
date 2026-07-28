@@ -19,6 +19,8 @@ import {
   validateOnlineStreamPayload,
 } from '../utils/streamType.js';
 import { freshServerStreamUrls } from '../utils/mediaStream.js';
+import { canManageEvent } from '../utils/ownership.js';
+import { createdByFilter, isAdminPanelUser } from '../utils/tenantScope.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -91,13 +93,10 @@ async function applyThemeSelection(target, themeId, res) {
 }
 
 /**
- * Throws a 403 unless the user may manage this event: the Super Admin can
- * manage any event; anyone else can manage only events they created.
+ * Throws a 403 unless the user may manage this event.
  */
 function assertCanModify(event, user, res) {
-  const isAdmin = user.role === 'admin';
-  const isOwner = event.organizer?.toString() === user._id.toString();
-  if (!isAdmin && !isOwner) {
+  if (!canManageEvent(event, user)) {
     res.status(403);
     throw new Error('You do not have permission to manage this event');
   }
@@ -128,6 +127,16 @@ export const listEvents = asyncHandler(async (req, res) => {
   // `mine=true` scopes results to the authenticated organizer.
   if (req.query.mine === 'true' && req.user) {
     filter.organizer = req.user._id;
+  }
+  // Non-public admin catalogs: platform admin sees all; tenant admin is scoped.
+  // Applied even when clients omit adminScope (old frontend + new backend).
+  if (
+    req.user &&
+    isAdminPanelUser(req.user) &&
+    req.query.public !== 'true' &&
+    req.query.mine !== 'true'
+  ) {
+    Object.assign(filter, createdByFilter(req.user));
   }
   if (req.query.public === 'true') {
     filter.status = { $in: ['published', 'live', 'ended'] };
@@ -166,6 +175,7 @@ export const listEvents = asyncHandler(async (req, res) => {
     'recordingStorage',
     'recordingPublicUntil',
     'recordingHidden',
+    'createdBy',
     'createdAt',
   ].join(' ');
 
@@ -283,9 +293,10 @@ export const createEvent = asyncHandler(async (req, res) => {
   if (streamType) applyStreamTypeSelection(payload, streamType, { isCreate: true });
 
   try {
-    // ── Admin: unlimited, no credits consumed ───────────────────────────
-    if (role === 'admin') {
+    // ── Admin / Super Admin: unlimited, no credits consumed ─────────────
+    if (isAdminPanelUser(req.user)) {
       payload.organizer = req.body.organizer || req.user._id;
+      payload.createdBy = req.user._id;
       payload.creditType = 'none';
       const event = await Event.create(payload);
       const populated = await loadVerifiedEvent(event._id);
@@ -299,6 +310,8 @@ export const createEvent = asyncHandler(async (req, res) => {
     const linkType = streamType || (req.body.linkType === 'server' ? 'server' : 'youtube');
     const cost = linkCost(linkType);
     payload.organizer = req.user._id;
+    // Tenant owner is the admin who created this customer/subadmin (if any).
+    payload.createdBy = req.user.createdBy || null;
     payload.creditType = linkType;
 
     const updated = await changeBalance({
