@@ -26,10 +26,18 @@ api.interceptors.response.use(
     const url = error.config?.url || '';
     const status = error.response?.status;
     const serverMessage = error.response?.data?.message;
-    const message =
-      error.code === 'ECONNABORTED'
-        ? 'Request timed out. The server may be waking up — please try again.'
-        : serverMessage || error.message || 'Something went wrong';
+    const dnsReason =
+      error.response?.data?.dnsCheck?.reason || error.response?.data?.dnsCheck?.message;
+    const isNetwork =
+      error.code === 'ERR_NETWORK' ||
+      (!error.response && error.message === 'Network Error');
+    const message = error.code === 'ECONNABORTED'
+      ? 'Request timed out. The server may be waking up — please try again.'
+      : dnsReason ||
+        serverMessage ||
+        (isNetwork
+          ? 'Network error. Could not reach the server — check your connection and try again.'
+          : error.message || 'Something went wrong');
 
     // eslint-disable-next-line no-console
     console.error('[API]', method, url, {

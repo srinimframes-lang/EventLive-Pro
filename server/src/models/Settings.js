@@ -24,7 +24,7 @@ const settingsSchema = new Schema(
 
     // ── SEO & analytics ───────────────────────────────────────
     seo: {
-      siteUrl: { type: String, default: 'https://eventlivepro.com', trim: true },
+      siteUrl: { type: String, default: 'https://livestreamhub.in', trim: true },
       defaultOgImage: { type: String, default: '', trim: true },
       homepageTitle: { type: String, default: '', trim: true, maxlength: 120 },
       homepageDescription: { type: String, default: '', trim: true, maxlength: 300 },

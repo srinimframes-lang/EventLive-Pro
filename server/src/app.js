@@ -53,7 +53,8 @@ app.use(
       const normalised = origin.replace(/\/+$/, '');
       if (allowedOrigins.has(normalised)) return callback(null, true);
       if (isActiveDomainOrigin(normalised)) return callback(null, true);
-      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+      // Reject without throwing — a thrown Error surfaces as a browser "Network Error".
+      return callback(null, false);
     },
     credentials: true,
   })
@@ -78,28 +79,40 @@ if (!env.isProd) {
 // Rate limits tuned for venue Wi‑Fi (many guests, one public IP).
 // GETs are generous so live stream polling + watch page loads do not 429;
 // mutating methods stay stricter to limit spam/abuse.
-app.use(
-  '/api',
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: (req) => (req.method === 'GET' || req.method === 'HEAD' ? 6000 : 400),
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, message: 'Too many requests, please try again later' },
-  })
-);
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: (req) => (req.method === 'GET' || req.method === 'HEAD' ? 6000 : 400),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please try again later' },
+});
+app.use('/api', apiLimiter);
+app.use('/api/v1', apiLimiter);
 
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
+// Root — Render service URL opens cleanly instead of a bare 404.
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    name: 'EventLive Pro API',
+    status: 'ok',
+    health: '/health',
+    api: '/api',
+    authLogin: 'POST /api/auth/login',
+  });
+});
+
 // SEO — crawlers fetch these directly (also proxied from Vercel frontend).
 app.get('/sitemap.xml', getSitemap);
 app.get('/robots.txt', getRobots);
 
-// API routes
+// API routes — canonical mount + /api/v1 alias (same routers, no feature removal)
 app.use('/api', apiRoutes);
+app.use('/api/v1', apiRoutes);
 
 // 404 + error handling
 app.use(notFound);

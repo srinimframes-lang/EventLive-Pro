@@ -2,7 +2,7 @@ import { districtByRegion } from './districts.js';
 import { coupleSlug, watchPath } from './format.js';
 import { API_ORIGIN } from '../config.js';
 
-const DEFAULT_SITE = 'https://eventlivepro.com';
+const DEFAULT_SITE = 'https://livestreamhub.in';
 const DEFAULT_OG =
   'https://images.unsplash.com/photo-1519741497674-05eec4c9a3e0?auto=format&fit=crop&w=1200&q=80';
 

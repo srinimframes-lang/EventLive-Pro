@@ -3,8 +3,39 @@
   "redirects": [
     {
       "source": "/(.*)",
+      "has": [{ "type": "host", "value": "livestreamhub.in" }],
+      "destination": "https://www.livestreamhub.in/$1",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
       "has": [{ "type": "host", "value": "www.eventlivepro.com" }],
       "destination": "https://eventlivepro.com/$1",
+      "permanent": true
+    },
+    {
+      "source": "/live/:code/:slug",
+      "destination": "/:code",
+      "permanent": true
+    },
+    {
+      "source": "/live/:code",
+      "destination": "/:code",
+      "permanent": true
+    },
+    {
+      "source": "/watch/:code/:slug",
+      "destination": "/:code",
+      "permanent": true
+    },
+    {
+      "source": "/watch/:code",
+      "destination": "/:code",
+      "permanent": true
+    },
+    {
+      "source": "/events/:code/live",
+      "destination": "/:code",
       "permanent": true
     }
   ],

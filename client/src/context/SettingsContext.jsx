@@ -14,7 +14,7 @@ const FALLBACK = {
   contactEmail: '',
   address: '',
   seo: {
-    siteUrl: 'https://eventlivepro.com',
+    siteUrl: 'https://livestreamhub.in',
     defaultOgImage: '',
     homepageTitle: '',
     homepageDescription: '',

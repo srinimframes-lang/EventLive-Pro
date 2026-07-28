@@ -6,6 +6,7 @@ import { Event } from '../models/Event.js';
 import { ChatMessage } from '../models/ChatMessage.js';
 import { Question } from '../models/Question.js';
 import { canManageEvent } from '../utils/ownership.js';
+import { isActiveDomainOrigin } from '../utils/domainCache.js';
 
 const roomKey = (eventId) => `event:${eventId}`;
 
@@ -42,7 +43,16 @@ function clean(str, max) {
  */
 export function initSocket(httpServer) {
   const io = new Server(httpServer, {
-    cors: { origin: env.clientUrls, credentials: true },
+    cors: {
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        const normalised = String(origin).replace(/\/+$/, '');
+        if (env.clientUrls.includes(normalised)) return callback(null, true);
+        if (isActiveDomainOrigin(normalised)) return callback(null, true);
+        return callback(null, false);
+      },
+      credentials: true,
+    },
   });
 
   // Optional auth: a valid token attaches the user; otherwise stay anonymous.

@@ -40,7 +40,7 @@ export function buildHlsPlaybackUrl(streamKey) {
 
 /**
  * Upgrade legacy http:// IP:port playback URLs to the configured HTTPS base so
- * https://eventlivepro.com watch pages never hit mixed-content blocks.
+ * https://livestreamhub.in watch pages never hit mixed-content blocks.
  */
 export function normalizePlaybackUrl(url) {
   const trimmed = String(url || '').trim();

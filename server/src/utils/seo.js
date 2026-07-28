@@ -1,7 +1,7 @@
 import { DISTRICTS, districtByRegion } from '../constants/districts.js';
 
 const PUBLIC_STATUSES = ['published', 'live', 'ended'];
-const DEFAULT_SITE = 'https://eventlivepro.com';
+const DEFAULT_SITE = 'https://livestreamhub.in';
 const DEFAULT_OG = 'https://images.unsplash.com/photo-1519741497674-05eec4c9a3e0?auto=format&fit=crop&w=1200&q=80';
 
 function slugify(text) {
@@ -36,8 +36,54 @@ export function coupleSlug(event) {
 export function watchPath(event) {
   if (!event) return '';
   const code = event.shortCode || event.slug || event.id || event._id;
-  const couple = coupleSlug(event);
-  return couple ? `/live/${code}/${couple}` : `/live/${code}`;
+  return code ? `/${code}` : '';
+}
+
+/** App roots that must never be treated as event short-codes. */
+export const RESERVED_PUBLIC_ROOTS = new Set([
+  'login',
+  'register',
+  'book',
+  'events',
+  'districts',
+  'dashboard',
+  'admin',
+  'reseller',
+  'api',
+  'uploads',
+  'assets',
+  'live',
+  'watch',
+  'sitemap.xml',
+  'robots.txt',
+]);
+
+/**
+ * Extract the event id/shortCode/slug from a public pathname.
+ * Supports short URLs and legacy /live|/watch|/events/.../live shapes.
+ */
+export function parsePublicEventCodeFromPath(pathname) {
+  const parts = String(pathname || '')
+    .split('/')
+    .filter(Boolean);
+  if (!parts.length) return null;
+
+  const root = parts[0].toLowerCase();
+
+  if (root === 'live' || root === 'watch') {
+    return parts[1] || null;
+  }
+  if (root === 'events' && parts[2] === 'live') {
+    return parts[1] || null;
+  }
+  if (root === 'events' && parts.length === 2) {
+    return parts[1] || null;
+  }
+  if (root === 'districts') return null;
+  if (!RESERVED_PUBLIC_ROOTS.has(root) && parts.length <= 2) {
+    return parts[0];
+  }
+  return null;
 }
 
 export function eventDetailPath(event) {

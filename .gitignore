@@ -44,6 +44,8 @@ coverage/
 server/uploads/
 .vercel
 .env*
+!.env.example
+!.env.production
 uploads/
 recordings/
 hls-cache/

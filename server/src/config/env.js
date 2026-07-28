@@ -58,9 +58,12 @@ const configuredClientUrls = (process.env.CLIENT_URL || 'http://localhost:5173')
   .map((u) => u.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
-// Production custom-domain origins are always allowed, so the live site keeps
-// working even if CLIENT_URL on the host is not updated. Dev config is untouched.
+// Production site origins are always allowed, so the live site keeps working
+// even if CLIENT_URL on the host is not updated. Dev config is untouched.
+// Keep the previous brand domain alongside the new primary domain.
 const PRODUCTION_ORIGINS = [
+  'https://livestreamhub.in',
+  'https://www.livestreamhub.in',
   'https://eventlivepro.com',
   'https://www.eventlivepro.com',
 ];

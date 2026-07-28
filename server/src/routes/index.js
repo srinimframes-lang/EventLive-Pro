@@ -14,6 +14,24 @@ import bannerRoutes from './banner.routes.js';
 
 const router = Router();
 
+// GET /api and GET /api/v1 — confirm the API is mounted (avoids a bare "Not found")
+router.get('/', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    status: 'ok',
+    routes: {
+      health: '/health',
+      apiHealth: '/api/health',
+      authLogin: 'POST /api/auth/login',
+      authMe: 'GET /api/auth/me',
+    },
+  });
+});
+
+router.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
 router.use('/auth', authRoutes);
 router.use('/events', eventRoutes);
 router.use('/settings', settingsRoutes);

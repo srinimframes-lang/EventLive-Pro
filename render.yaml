@@ -1,0 +1,13 @@
+# Render Blueprint — EventLive Pro API
+# Use Root Directory = server (or this file at repo root with the service below).
+services:
+  - type: web
+    name: eventlive-pro
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production

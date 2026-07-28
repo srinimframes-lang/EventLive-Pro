@@ -15,8 +15,22 @@ export async function refreshDomainCache() {
       const docs = await Domain.find({ status: 'active' }).select('host').lean();
       const next = new Set();
       for (const d of docs) {
-        next.add(`https://${d.host}`);
-        next.add(`http://${d.host}`);
+        const host = String(d.host || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\.$/, '');
+        if (!host) continue;
+        next.add(`https://${host}`);
+        next.add(`http://${host}`);
+        // Allow www twin for apex hosts (and bare host for www registrations).
+        if (host.startsWith('www.')) {
+          const apex = host.slice(4);
+          next.add(`https://${apex}`);
+          next.add(`http://${apex}`);
+        } else if (!host.includes('.') || host.split('.').length <= 3) {
+          next.add(`https://www.${host}`);
+          next.add(`http://www.${host}`);
+        }
       }
       activeOrigins = next;
     } catch {

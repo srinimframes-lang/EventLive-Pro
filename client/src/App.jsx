@@ -55,7 +55,7 @@ export default function App() {
               }
             />
 
-            {/* Public watch */}
+            {/* Public watch — primary URL is /:eventCode; legacy /live and /watch kept */}
             <Route path="/events" element={<Events />} />
             <Route path="/districts" element={<Districts />} />
             <Route path="/districts/:slug" element={<DistrictDetail />} />
@@ -117,6 +117,10 @@ export default function App() {
                 </ResellerRoute>
               }
             />
+
+            {/* Short public event URL: https://livestreamhub.in/<eventCode>[/optional-slug] */}
+            <Route path="/:idOrSlug/:coupleSlug" element={<Watch />} />
+            <Route path="/:idOrSlug" element={<Watch />} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

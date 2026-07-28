@@ -58,7 +58,7 @@ export default function ThemePreviewModal({ theme, onClose, onApply }) {
         <ThemeLayoutRouter
           event={previewEvent}
           coupleTitle={coupleTitle}
-          watchUrl="https://eventlivepro.com/live/preview"
+          watchUrl="https://livestreamhub.in/preview"
           mergedConfig={{ provider: 'youtube', youtubeVideoId: 'M7lc1UVf-VE', isLive: true }}
           room={mockRoom}
           chatOn

@@ -156,7 +156,7 @@ export default function AdminSettings() {
             <input
               name="siteUrl"
               className="input"
-              placeholder="https://eventlivepro.com"
+              placeholder="https://livestreamhub.in"
               value={form.seo?.siteUrl || ''}
               onChange={seoField}
             />
