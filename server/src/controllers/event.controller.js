@@ -128,14 +128,9 @@ export const listEvents = asyncHandler(async (req, res) => {
   if (req.query.mine === 'true' && req.user) {
     filter.organizer = req.user._id;
   }
-  // Non-public admin catalogs: platform admin sees all; tenant admin is scoped.
-  // Applied even when clients omit adminScope (old frontend + new backend).
-  if (
-    req.user &&
-    isAdminPanelUser(req.user) &&
-    req.query.public !== 'true' &&
-    req.query.mine !== 'true'
-  ) {
+  // Tenant isolation for admin dashboards ONLY (explicit adminScope).
+  // Never apply createdBy filters on public catalogs or playback lookups.
+  if (req.query.adminScope === 'true' && req.user && isAdminPanelUser(req.user)) {
     Object.assign(filter, createdByFilter(req.user));
   }
   if (req.query.public === 'true') {

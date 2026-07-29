@@ -581,6 +581,8 @@ export const playRecording = asyncHandler(async (req, res) => {
   }
 
   const isAdmin = Boolean(req.user && canManageEvent(event, req.user));
+  // Public visitors: only publiclyVisible recordings.
+  // Admins (admin/superadmin): may replay hidden/expired — no createdBy gate.
   if (!rec.publiclyVisible && !isAdmin) {
     res.status(404);
     throw new Error('Recording is not available');
@@ -631,6 +633,8 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   }
 
   const isAdmin = Boolean(req.user && canManageEvent(event, req.user));
+  // Public visitors: only publiclyVisible recordings.
+  // Admins (admin/superadmin): may replay hidden/expired — no createdBy gate.
   if (!rec.publiclyVisible && !isAdmin) {
     res.status(404);
     throw new Error('Recording is not available');

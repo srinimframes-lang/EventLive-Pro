@@ -1,22 +1,17 @@
-import { isPlatformAdmin } from './tenantScope.js';
-
 /**
- * Returns true for a platform admin (any event), a tenant Admin who owns the
- * event via createdBy, or the user who created the event (its organizer).
- * Credits are charged at creation time, so the owner may fully manage their
- * own live link (embed, gallery, chat, stream).
+ * Returns true for Super Admin / Admin (full event manage for livestream &
+ * recordings), or the user who created the event (its organizer).
+ *
+ * Tenant isolation for listing/dashboard data lives in admin query filters
+ * (`createdByFilter` + `adminScope`) — not on public playback or stream routes.
  */
 export function canManageEvent(event, user) {
   if (!event || !user) return false;
-  if (isPlatformAdmin(user)) return true;
-  if (user.role === 'admin') {
-    const owner = event.createdBy?._id || event.createdBy;
-    if (owner && owner.toString() === user._id.toString()) return true;
-    // Legacy events: admin who is also the organizer.
-    if (event.organizer?.toString() === user._id.toString()) return true;
-    return false;
-  }
-  return event.organizer?.toString() === user._id.toString();
+  // Restore pre-multitenant behavior: any admin panel role may manage streams
+  // and replay recordings. Dashboard tenant scoping is separate.
+  if (user.role === 'admin' || user.role === 'superadmin') return true;
+  const organizerId = event.organizer?._id || event.organizer;
+  return Boolean(organizerId && String(organizerId) === String(user._id));
 }
 
 /**
