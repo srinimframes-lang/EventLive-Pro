@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { resolveMediaUrl } from '../../utils/format.js';
 import { googleFontsHref, publicEventTypeLabel, themeStyleVars } from '../../utils/eventTheme.js';
+import '../../styles/watch-theme.css';
 import {
   getFooterReadability,
   getHeroReadability,

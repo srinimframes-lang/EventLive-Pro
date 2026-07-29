@@ -6,19 +6,19 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import StaffRoute from './components/StaffRoute.jsx';
 import ResellerRoute from './components/ResellerRoute.jsx';
-import Home from './pages/Home.jsx';
-import Login from './pages/Login.jsx';
-import AdminLogin from './pages/AdminLogin.jsx';
-import Register from './pages/Register.jsx';
-import Book from './pages/Book.jsx';
-import Events from './pages/Events.jsx';
-import EventDetail from './pages/EventDetail.jsx';
-import NotFound from './pages/NotFound.jsx';
-import Districts from './pages/Districts.jsx';
-import DistrictDetail from './pages/DistrictDetail.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
+import Home from './pages/Home.jsx';
 
-// Heavy / authenticated surfaces — load only when navigated to.
+// Route-based code splitting for non-home surfaces.
+const Login = lazy(() => import('./pages/Login.jsx'));
+const AdminLogin = lazy(() => import('./pages/AdminLogin.jsx'));
+const Register = lazy(() => import('./pages/Register.jsx'));
+const Book = lazy(() => import('./pages/Book.jsx'));
+const Events = lazy(() => import('./pages/Events.jsx'));
+const EventDetail = lazy(() => import('./pages/EventDetail.jsx'));
+const NotFound = lazy(() => import('./pages/NotFound.jsx'));
+const Districts = lazy(() => import('./pages/Districts.jsx'));
+const DistrictDetail = lazy(() => import('./pages/DistrictDetail.jsx'));
 const Watch = lazy(() => import('./pages/Watch.jsx'));
 const Studio = lazy(() => import('./pages/Studio.jsx'));
 const BookingNew = lazy(() => import('./pages/BookingNew.jsx'));

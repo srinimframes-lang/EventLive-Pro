@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
-import { resolveMediaUrl } from '../utils/format.js';
+import { resolveMediaUrl, preferWebpUrl } from '../utils/format.js';
 
 export default function Navbar() {
   const { isAuthenticated, isAdmin, isSubAdmin, user, logout } = useAuth();
@@ -55,7 +55,15 @@ export default function Navbar() {
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <Link to="/" onClick={close} className="flex items-center gap-2.5">
           {logoUrl ? (
-            <img src={logoUrl} alt={settings.companyName} className="h-9 w-9 rounded-lg object-cover" />
+            <img
+              src={preferWebpUrl(logoUrl)}
+              alt={settings.companyName}
+              width={36}
+              height={36}
+              decoding="async"
+              fetchPriority="low"
+              className="h-9 w-9 rounded-lg object-cover"
+            />
           ) : (
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-600 text-lg font-bold text-white">
               {(settings.companyName || 'M').charAt(0)}

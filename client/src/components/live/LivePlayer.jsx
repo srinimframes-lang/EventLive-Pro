@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { extractYouTubeId, resolveMediaUrl } from '../../utils/format.js';
 import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
+import '../../styles/watch-theme.css';
 
 const RETRY_MS = 3000;
 const CONTROLS_HIDE_MS = 2600;

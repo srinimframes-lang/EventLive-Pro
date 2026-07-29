@@ -116,16 +116,15 @@ export function coupleSlug(event) {
 }
 
 /**
- * The canonical short public watch path for an event, e.g.
- * "/live/AP24X9/aarav-weds-priya". The couple slug is decorative only —
- * lookups always use the unique short code. Falls back to slug/id for older
- * data that has no short code yet.
+ * The canonical public watch path for an event, e.g. "/AP24X9".
+ * Event code is the unique identifier; couple slug is optional/decorative and
+ * is not part of the primary URL. Falls back to slug/id for older data that
+ * has no short code yet.
  */
 export function watchPath(event) {
   if (!event) return '';
   const code = event.shortCode || event.slug || event.id;
-  const couple = coupleSlug(event);
-  return couple ? `/live/${code}/${couple}` : `/live/${code}`;
+  return code ? `/${code}` : '';
 }
 
 /**
@@ -159,4 +158,25 @@ export function resolveMediaUrl(url) {
     return `${MEDIA_ORIGIN}${path}`;
   }
   return path;
+}
+
+/**
+ * Prefer WebP/auto format when the host supports on-the-fly transforms.
+ * Cloudinary: inject f_auto,q_auto. R2 / local uploads / signed URLs unchanged
+ * (never mutate R2 keys or replay URLs).
+ */
+export function preferWebpUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'https://local');
+    const host = u.hostname.toLowerCase();
+    if (host.includes('cloudinary.com') && u.pathname.includes('/upload/')) {
+      if (/\/upload\/(?:[^/]+,)*f_/.test(u.pathname)) return url;
+      u.pathname = u.pathname.replace('/upload/', '/upload/f_auto,q_auto/');
+      return u.toString();
+    }
+  } catch {
+    /* ignore */
+  }
+  return url;
 }

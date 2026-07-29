@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import '../../styles/watch-theme.css';
 import { themeService } from '../../services/theme.service.js';
 import { THEME_CATEGORY_LABELS, THEME_CATEGORIES, THEME_REGION_LABELS, THEME_REGIONS } from '../../utils/eventTheme.js';
 import { LAYOUT_LABELS, LAYOUT_VARIANTS } from '../../utils/themeLayouts.js';

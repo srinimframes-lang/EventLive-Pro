@@ -34,8 +34,16 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        serif: ['"Playfair Display"', 'Georgia', 'ui-serif', 'serif'],
+        sans: [
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+        serif: ['Georgia', 'Times New Roman', 'ui-serif', 'serif'],
       },
     },
   },

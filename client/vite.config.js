@@ -5,11 +5,27 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
+    target: 'es2020',
+    cssCodeSplit: true,
+    sourcemap: false,
+    minify: 'esbuild',
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom', 'react-helmet-async'],
-          streaming: ['hls.js', 'socket.io-client'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('hls.js')) return 'streaming-hls';
+          if (id.includes('socket.io-client') || id.includes('engine.io')) return 'streaming-socket';
+          if (id.includes('video.js')) return 'streaming-videojs';
+          if (
+            id.includes('react-dom') ||
+            id.includes('/react/') ||
+            id.includes('react-router') ||
+            id.includes('react-helmet')
+          ) {
+            return 'vendor';
+          }
+          if (id.includes('axios')) return 'http';
+          return undefined;
         },
       },
     },
