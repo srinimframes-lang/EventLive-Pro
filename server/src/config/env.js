@@ -96,6 +96,11 @@ export const env = {
   mediamtxApiUrl: trimUrl(process.env.MEDIAMTX_API_URL || `http://${MEDIAMTX_VPS_HOST}:9997`),
   requireSecurePlayback:
     isProd || process.env.REQUIRE_SECURE_PLAYBACK === 'true',
+  // Host that can mint R2 recording URLs / serve local recording files (MediaMTX VPS).
+  // Used when this API process (e.g. Render) does not have R2 credentials.
+  recordingApiOrigin: trimUrl(
+    process.env.RECORDING_API_ORIGIN || `https://${STREAM_PUBLIC_DOMAIN}`
+  ),
   // Shared secret the media server presents to the stream webhooks.
   mediaServerSecret: process.env.MEDIA_SERVER_SECRET || '',
   // Super Admin bootstrap. On first boot the server creates this account only

@@ -40,6 +40,54 @@ import {
 } from '../utils/r2.js';
 import fs from 'fs';
 import path from 'path';
+
+/**
+ * Resolve a browser-playable R2 URL (public base or presigned).
+ * Returns '' when this host cannot mint URLs (typical on Render without R2 env).
+ */
+async function resolveR2BrowserUrl(r2Key, { expiresIn = 3600 } = {}) {
+  if (!r2Key) return '';
+  const publicUrl = r2PublicUrl(r2Key);
+  if (publicUrl) return publicUrl;
+  if (!isR2Configured()) return '';
+  try {
+    return (await presignRecordingUrl(r2Key, { expiresIn })) || '';
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[recording] R2 presign failed:', err?.message || err);
+    return '';
+  }
+}
+
+function recordingPartQuery(part) {
+  const id = part?._id || part?.id;
+  return id ? `?part=${encodeURIComponent(String(id))}` : '';
+}
+
+/** VPS (or RECORDING_API_ORIGIN) play URL — has R2 credentials / local files. */
+function fallbackRecordingPlayUrl(eventId, part) {
+  const origin = String(env.recordingApiOrigin || '').replace(/\/+$/, '');
+  if (!origin) return '';
+  return `${origin}/api/events/${eventId}/stream/recording${recordingPartQuery(part)}`;
+}
+
+function requestOrigin(req) {
+  return `${req.protocol}://${req.get('host') || 'localhost'}`.replace(/\/+$/, '');
+}
+
+/** True when this request is already on the recording fallback host (avoid loops). */
+function isOnRecordingFallbackHost(req) {
+  const fallback = String(env.recordingApiOrigin || '').replace(/\/+$/, '').toLowerCase();
+  if (!fallback) return false;
+  const here = requestOrigin(req).toLowerCase();
+  if (here === fallback) return true;
+  try {
+    return new URL(here).hostname === new URL(fallback).hostname;
+  } catch {
+    return false;
+  }
+}
+
 async function findEventOr404(id, res, { withKey = false } = {}) {
   const query = Event.findById(id);
   if (withKey) query.select('+rtmpStreamKey');
@@ -597,13 +645,18 @@ export const playRecording = asyncHandler(async (req, res) => {
 
   const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
   if (r2Key) {
-    const publicUrl = r2PublicUrl(r2Key);
-    const target = publicUrl || (await presignRecordingUrl(r2Key));
-    if (!target) {
-      res.status(500);
-      throw new Error('R2 recording URL unavailable');
+    const target = await resolveR2BrowserUrl(r2Key);
+    if (target) {
+      return res.redirect(302, target);
     }
-    return res.redirect(302, target);
+    // This API host cannot mint R2 URLs (e.g. Render without R2 env). Hand off to
+    // the stream VPS which already has credentials — do not 500 the player.
+    if (!isOnRecordingFallbackHost(req)) {
+      const fallback = fallbackRecordingPlayUrl(event.id, part);
+      if (fallback) return res.redirect(302, fallback);
+    }
+    res.status(500);
+    throw new Error('R2 recording URL unavailable');
   }
 
   const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
@@ -651,25 +704,40 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
 
   if (r2Key) {
-    const publicUrl = r2PublicUrl(r2Key);
-    const url = publicUrl || (await presignRecordingUrl(r2Key, { expiresIn: 6 * 3600 }));
-    if (!url) {
-      res.status(500);
-      throw new Error('R2 recording URL unavailable');
+    const url = await resolveR2BrowserUrl(r2Key, { expiresIn: 6 * 3600 });
+    if (url) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          url,
+          storage: 'r2',
+          expiresInSec: r2PublicUrl(r2Key) ? null : 6 * 3600,
+          filename,
+          partId: part ? String(part._id || part.id || '') : '',
+        },
+      });
     }
-    return res.status(200).json({
-      success: true,
-      data: {
-        url,
-        storage: 'r2',
-        expiresInSec: publicUrl ? null : 6 * 3600,
-        filename,
-        partId: part ? String(part._id || part.id || '') : '',
-      },
-    });
+    // Render (no R2 credentials): return the VPS recording play URL so <video> works.
+    if (!isOnRecordingFallbackHost(req)) {
+      const fallback = fallbackRecordingPlayUrl(event.id, part);
+      if (fallback) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            url: fallback,
+            storage: 'r2',
+            expiresInSec: null,
+            filename,
+            partId: part ? String(part._id || part.id || '') : '',
+          },
+        });
+      }
+    }
+    res.status(500);
+    throw new Error('R2 recording URL unavailable');
   }
 
-  const apiOrigin = `${req.protocol}://${req.get('host') || 'localhost'}`.replace(/\/+$/, '');
+  const apiOrigin = requestOrigin(req);
   const qs = part && (part._id || part.id) ? `?part=${part._id || part.id}` : '';
   return res.status(200).json({
     success: true,
