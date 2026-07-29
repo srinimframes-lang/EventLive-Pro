@@ -1,6 +1,22 @@
 import { Settings } from '../models/Settings.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
+import { cacheDel, cacheGet, cacheSet } from '../utils/apiCache.js';
+import { env } from '../config/env.js';
+
+const SETTINGS_CACHE_KEY = 'settings:public';
+
+function withFailoverFlag(payload) {
+  return {
+    ...payload,
+    data: {
+      ...(payload.data || {}),
+      // Env-driven; overlaid after cache so flipping FAILOVER_ENABLED does not
+      // require a settings DB write. Default false keeps Backup UI hidden.
+      failoverFeatureEnabled: Boolean(env.failoverEnabled),
+    },
+  };
+}
 
 /**
  * @route GET /api/settings
@@ -8,8 +24,20 @@ import { persistUpload, removeUpload } from '../utils/storage.js';
  * @access Public
  */
 export const getSettings = asyncHandler(async (_req, res) => {
+  const cached = cacheGet(SETTINGS_CACHE_KEY);
+  if (cached) {
+    res.set('Cache-Control', 'public, max-age=30');
+    return res.status(200).json(withFailoverFlag(cached));
+  }
+
   const settings = await Settings.getSingleton();
-  res.status(200).json({ success: true, data: settings });
+  const payload = {
+    success: true,
+    data: typeof settings.toJSON === 'function' ? settings.toJSON() : settings,
+  };
+  cacheSet(SETTINGS_CACHE_KEY, payload, 30_000);
+  res.set('Cache-Control', 'public, max-age=30');
+  res.status(200).json(withFailoverFlag(payload));
 });
 
 /**
@@ -67,6 +95,7 @@ export const updateSettings = asyncHandler(async (req, res) => {
   }
 
   await settings.save();
+  cacheDel(SETTINGS_CACHE_KEY);
   res.status(200).json({ success: true, data: settings });
 });
 
@@ -84,6 +113,7 @@ export const uploadCompanyLogo = asyncHandler(async (req, res) => {
   if (settings.companyLogo) await removeUpload(settings.companyLogo);
   settings.companyLogo = await persistUpload(req.file);
   await settings.save();
+  cacheDel(SETTINGS_CACHE_KEY);
   res.status(201).json({ success: true, data: { companyLogo: settings.companyLogo } });
 });
 
@@ -101,5 +131,6 @@ export const uploadUpiQr = asyncHandler(async (req, res) => {
   if (settings.payment.upiQr) await removeUpload(settings.payment.upiQr);
   settings.payment.upiQr = await persistUpload(req.file);
   await settings.save();
+  cacheDel(SETTINGS_CACHE_KEY);
   res.status(201).json({ success: true, data: { upiQr: settings.payment.upiQr } });
 });

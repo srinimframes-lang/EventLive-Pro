@@ -21,6 +21,7 @@ import {
 import { freshServerStreamUrls } from '../utils/mediaStream.js';
 import { canManageEvent } from '../utils/ownership.js';
 import { createdByFilter, isAdminPanelUser } from '../utils/tenantScope.js';
+import { cacheGet, cacheSet } from '../utils/apiCache.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -59,6 +60,51 @@ const EDITABLE_FIELDS = [
   'webrtcUrl',
   'chatEnabled',
 ];
+
+/**
+ * Normalize + validate backup stream fields for Premium Server events only.
+ * Existing YouTube-primary events are left untouched.
+ */
+function applyBackupStreamFields(target, body, res) {
+  if (body.backupStreamEnabled === undefined && body.backupYoutubeVideoId === undefined) {
+    return;
+  }
+
+  const provider = target.streamProvider || body.streamProvider;
+  const isServer = provider === 'rtmp' || provider === 'hls';
+  if (!isServer) {
+    // Do not attach backup config to YouTube / non-server events.
+    return;
+  }
+
+  if (body.backupStreamEnabled !== undefined) {
+    target.backupStreamEnabled = Boolean(body.backupStreamEnabled);
+  }
+  if (body.backupYoutubeVideoId !== undefined) {
+    const raw = String(body.backupYoutubeVideoId || '').trim();
+    const id = extractYouTubeId(raw);
+    if (raw && !id) {
+      res.status(400);
+      throw new Error('Invalid backup YouTube Video ID');
+    }
+    target.backupYoutubeVideoId = id;
+  }
+
+  if (target.backupStreamEnabled) {
+    const id = extractYouTubeId(target.backupYoutubeVideoId || '');
+    if (!id) {
+      res.status(400);
+      throw new Error('Backup YouTube Video ID is required when Backup Stream is enabled');
+    }
+    target.backupYoutubeVideoId = id;
+    if (!target.backupStatus || target.backupStatus === 'idle') {
+      target.backupStatus = 'monitoring';
+    }
+    target.primaryStream = 'server';
+  } else if (target.backupStreamEnabled === false && target.backupStatus !== 'disabled') {
+    target.backupStatus = 'idle';
+  }
+}
 
 /** Apply theme selection: stores ref + frozen snapshot so catalog edits never affect live pages. */
 async function applyThemeSelection(target, themeId, res) {
@@ -174,6 +220,23 @@ export const listEvents = asyncHandler(async (req, res) => {
     'createdAt',
   ].join(' ');
 
+  const publicCacheable =
+    !req.user &&
+    req.query.mine !== 'true' &&
+    req.query.adminScope !== 'true' &&
+    !req.query.search &&
+    !req.query.organizer;
+  const publicCacheKey = publicCacheable
+    ? `events:list:${page}:${limit}:${req.query.status || ''}:${req.query.category || ''}:${req.query.public || ''}:${req.query.district || ''}:${req.query.sort || ''}`
+    : null;
+  if (publicCacheKey) {
+    const cached = cacheGet(publicCacheKey);
+    if (cached) {
+      res.set('Cache-Control', 'public, max-age=20');
+      return res.status(200).json(cached);
+    }
+  }
+
   const [items, total] = await Promise.all([
     Event.find(filter)
       .select(listSelect)
@@ -190,14 +253,19 @@ export const listEvents = asyncHandler(async (req, res) => {
     return { ...doc, id, _id: undefined };
   });
 
-  res.status(200).json({
+  const payload = {
     success: true,
     count: data.length,
     total,
     page,
     pages: Math.ceil(total / limit) || 1,
     data,
-  });
+  };
+  if (publicCacheKey) {
+    cacheSet(publicCacheKey, payload, 20_000);
+    res.set('Cache-Control', 'public, max-age=20');
+  }
+  res.status(200).json(payload);
 });
 
 /**
@@ -213,7 +281,9 @@ export const getEvent = asyncHandler(async (req, res) => {
     ? { _id: raw }
     : { $or: [{ shortCode: raw.toUpperCase() }, { slug: raw.toLowerCase() }, { slug: raw }] };
 
-  const event = await Event.findOne(query).populate('organizer', 'name email');
+  const event = await Event.findOne(query)
+    .populate('organizer', 'name email')
+    .lean({ virtuals: true });
 
   if (!event) {
     res.status(404);
@@ -222,7 +292,9 @@ export const getEvent = asyncHandler(async (req, res) => {
 
   // White-label: surface the organizer's active custom domain so share/watch
   // links can be built on it (falls back to the platform domain when absent).
-  const data = event.toJSON();
+  const data = { ...event };
+  if (data._id && data.id == null) data.id = String(data._id);
+  delete data.__v;
 
   const streamUrls = freshServerStreamUrls(event);
   if (streamUrls) {
@@ -255,6 +327,7 @@ export const getEvent = asyncHandler(async (req, res) => {
     data.brandDomain = dom ? dom.host : '';
   }
 
+  res.set('Cache-Control', 'public, max-age=10');
   res.status(200).json({ success: true, data });
 });
 
@@ -286,6 +359,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     throw new Error(streamError);
   }
   if (streamType) applyStreamTypeSelection(payload, streamType, { isCreate: true });
+  applyBackupStreamFields(payload, req.body, res);
 
   try {
     // ── Admin / Super Admin: unlimited, no credits consumed ─────────────
@@ -390,6 +464,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     }
     applyStreamTypeSelection(event, streamType);
   }
+  applyBackupStreamFields(event, req.body, res);
 
   try {
     await event.save();

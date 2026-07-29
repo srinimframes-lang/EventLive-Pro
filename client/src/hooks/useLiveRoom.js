@@ -17,6 +17,8 @@ export function useLiveRoom(eventId, { guestName } = {}) {
   const [questions, setQuestions] = useState([]);
   const [liveStatus, setLiveStatus] = useState(null);
   const [playerNonce, setPlayerNonce] = useState(0);
+  const [failoverNotice, setFailoverNotice] = useState(null);
+  const [failoverState, setFailoverState] = useState(null);
 
   // Load initial history once per event.
   useEffect(() => {
@@ -79,6 +81,35 @@ export function useLiveRoom(eventId, { guestName } = {}) {
     });
     socket.on('stream:restart', () => setPlayerNonce((n) => n + 1));
 
+    const applyFailoverPayload = (payload) => {
+      if (!payload || payload.eventId !== eventId) return;
+      setFailoverState(payload);
+      setLiveStatus((prev) => ({
+        ...(prev || {}),
+        failoverFeatureEnabled: payload.failoverFeatureEnabled,
+        activeSource: payload.activeSource,
+        backupStatus: payload.backupStatus,
+        backupYoutubeVideoId: payload.backupYoutubeVideoId,
+        failoverPlaybackMode: payload.failoverPlaybackMode,
+        emergencyOverride: payload.emergencyOverride,
+      }));
+    };
+
+    socket.on('stream:failover', (payload) => {
+      applyFailoverPayload(payload);
+      setFailoverNotice(
+        payload?.message || 'Server issue detected. Switching to backup stream...'
+      );
+      setPlayerNonce((n) => n + 1);
+    });
+    socket.on('stream:server-recovered', (payload) => {
+      applyFailoverPayload(payload);
+    });
+    socket.on('stream:playback-mode', (payload) => {
+      applyFailoverPayload(payload);
+      setPlayerNonce((n) => n + 1);
+    });
+
     return () => {
       socket.emit('room:leave');
       socket.removeAllListeners();
@@ -107,6 +138,8 @@ export function useLiveRoom(eventId, { guestName } = {}) {
     socketRef.current?.emit('qa:answer', { questionId, answer });
   }, []);
 
+  const clearFailoverNotice = useCallback(() => setFailoverNotice(null), []);
+
   return {
     connected,
     viewers,
@@ -114,6 +147,9 @@ export function useLiveRoom(eventId, { guestName } = {}) {
     questions,
     liveStatus,
     playerNonce,
+    failoverNotice,
+    failoverState,
+    clearFailoverNotice,
     sendMessage,
     askQuestion,
     upvoteQuestion,

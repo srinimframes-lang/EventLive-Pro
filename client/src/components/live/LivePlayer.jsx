@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { extractYouTubeId, resolveMediaUrl } from '../../utils/format.js';
 import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
+import {
+  failoverBackupVideoId,
+  shouldPlayYoutubeBackup,
+} from '../../utils/streamFailover.js';
 import '../../styles/watch-theme.css';
 
 const RETRY_MS = 3000;
@@ -979,6 +983,14 @@ export default function LivePlayer({ config }) {
   const videoId = resolveYoutubeVideoId(config);
   const isServerProvider =
     config.provider === 'rtmp' || config.provider === 'hls' || config.provider === 'webrtc';
+
+  // Feature-flagged failover: only when server sends failoverFeatureEnabled.
+  // When FAILOVER_ENABLED=false the API omits that flag — this branch never runs.
+  if (shouldPlayYoutubeBackup(config)) {
+    const backupId = failoverBackupVideoId(config, extractYouTubeId);
+    if (backupId) return <YouTubePlayer videoId={backupId} />;
+  }
+
   const isYoutube = !isServerProvider && (config.provider === 'youtube' || Boolean(videoId));
 
   if (isYoutube) {

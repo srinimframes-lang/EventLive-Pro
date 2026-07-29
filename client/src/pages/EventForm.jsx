@@ -7,6 +7,7 @@ import {
   EVENT_STATUSES,
 } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useSettings } from '../context/SettingsContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
 import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
@@ -15,6 +16,9 @@ import EventQrCard from '../components/EventQrCard.jsx';
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
 import { streamService } from '../services/stream.service.js';
+import BackupStreamSettings, {
+  validateBackupStreamFields,
+} from '../components/live/BackupStreamSettings.jsx';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
 
@@ -57,6 +61,8 @@ const EMPTY = {
   qrCodeImage: '',
   qrCodeTargetUrl: '',
   brandDomain: '',
+  backupStreamEnabled: false,
+  backupYoutubeVideoId: '',
 };
 
 export default function EventForm() {
@@ -64,7 +70,8 @@ export default function EventForm() {
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, isAdmin, refreshUser } = useAuth();
+  const { user, isAdmin, isSuperAdmin, refreshUser } = useAuth();
+  const { settings } = useSettings();
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
   const heroInputRef = useRef(null);
@@ -99,6 +106,19 @@ export default function EventForm() {
   const [error, setError] = useState('');
   const [allThemes, setAllThemes] = useState([]);
   const [themesLoading, setThemesLoading] = useState(true);
+  const [eventOwnerIds, setEventOwnerIds] = useState({ organizer: '', createdBy: '' });
+
+  const failoverFeatureEnabled = Boolean(settings?.failoverFeatureEnabled);
+  const isEventOwner =
+    !isEdit ||
+    Boolean(
+      user &&
+        (String(eventOwnerIds.organizer) === String(user.id) ||
+          String(eventOwnerIds.createdBy) === String(user.id))
+    );
+  const canEditBackup = failoverFeatureEnabled && (isSuperAdmin || isEventOwner);
+  const showBackupSection =
+    canEditBackup && form.isOnline && streamType === 'server';
 
   useEffect(() => {
     if (!isEdit) return;
@@ -149,6 +169,12 @@ export default function EventForm() {
           qrCodeImage: event.qrCodeImage || '',
           qrCodeTargetUrl: event.qrCodeTargetUrl || '',
           brandDomain: event.brandDomain || '',
+          backupStreamEnabled: Boolean(event.backupStreamEnabled),
+          backupYoutubeVideoId: event.backupYoutubeVideoId || '',
+        });
+        setEventOwnerIds({
+          organizer: event.organizer?.id || event.organizer?._id || event.organizer || '',
+          createdBy: event.createdBy?.id || event.createdBy?._id || event.createdBy || '',
         });
         const provider = event.streamProvider || '';
         const credit = event.creditType || '';
@@ -327,6 +353,28 @@ export default function EventForm() {
       return;
     }
 
+    if (showBackupSection) {
+      const backupErr = validateBackupStreamFields({
+        backupStreamEnabled: form.backupStreamEnabled,
+        backupYoutubeVideoId: form.backupYoutubeVideoId,
+      });
+      if (backupErr) {
+        setError(backupErr);
+        saveInFlightRef.current = false;
+        setSubmitting(false);
+        return;
+      }
+      if (
+        form.backupYoutubeVideoId?.trim() &&
+        !extractYouTubeId(form.backupYoutubeVideoId)
+      ) {
+        setError('Enter a valid backup YouTube Video ID or Live URL.');
+        saveInFlightRef.current = false;
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const payload = {
       title: form.title.trim(),
       description: form.description.trim(),
@@ -356,6 +404,12 @@ export default function EventForm() {
         payload.youtubeVideoId = '';
         payload.streamUrl = '';
         if (form.hlsUrl?.trim()) payload.hlsUrl = form.hlsUrl.trim();
+        if (showBackupSection) {
+          payload.backupStreamEnabled = Boolean(form.backupStreamEnabled);
+          payload.backupYoutubeVideoId = form.backupStreamEnabled
+            ? extractYouTubeId(form.backupYoutubeVideoId) || ''
+            : '';
+        }
       }
     }
 
@@ -862,6 +916,22 @@ export default function EventForm() {
                       onChange={handleChange}
                     />
                   </Field>
+                  {showBackupSection ? (
+                    <BackupStreamSettings
+                      enabled
+                      value={{
+                        backupStreamEnabled: form.backupStreamEnabled,
+                        backupYoutubeVideoId: form.backupYoutubeVideoId,
+                      }}
+                      onChange={(next) =>
+                        setForm((f) => ({
+                          ...f,
+                          backupStreamEnabled: Boolean(next.backupStreamEnabled),
+                          backupYoutubeVideoId: next.backupYoutubeVideoId || '',
+                        }))
+                      }
+                    />
+                  ) : null}
                 </div>
               )}
             </>

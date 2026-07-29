@@ -228,6 +228,44 @@ const eventSchema = new Schema(
     // Private-server controls (Phase 2). Additive — defaults keep prior behaviour.
     streamDisabled: { type: Boolean, default: false }, // admin can block publishing
     autoRecord: { type: Boolean, default: false }, // record the private-server stream
+
+    // ── Server → YouTube failover (additive; inert unless FAILOVER_ENABLED=true) ──
+    backupStreamEnabled: { type: Boolean, default: false },
+    backupYoutubeVideoId: { type: String, trim: true, default: '' },
+    backupStatus: {
+      type: String,
+      enum: ['idle', 'monitoring', 'active', 'server_recovered', 'disabled'],
+      default: 'idle',
+    },
+    // Effective mode: auto follows health; force_* set by Super Admin emergency.
+    playbackMode: {
+      type: String,
+      enum: ['auto', 'force_server', 'force_youtube'],
+      default: 'auto',
+    },
+    primaryStream: {
+      type: String,
+      enum: ['server', 'youtube'],
+      default: 'server',
+    },
+    streamHealth: {
+      consecutiveFailures: { type: Number, default: 0, min: 0 },
+      consecutiveSuccesses: { type: Number, default: 0, min: 0 },
+      lastCheckedAt: { type: Date, default: null },
+      lastHealthyAt: { type: Date, default: null },
+      lastFailoverAt: { type: Date, default: null },
+      lastError: { type: String, trim: true, default: '' },
+    },
+    emergencyOverride: {
+      enabled: { type: Boolean, default: false },
+      mode: {
+        type: String,
+        enum: ['none', 'force_server', 'force_youtube', 'disabled'],
+        default: 'none',
+      },
+      updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+      updatedAt: { type: Date, default: null },
+    },
     // Recorded replay (MediaMTX finalize → MongoDB). File stays on disk 30+ days.
     recordingUrl: { type: String, trim: true, default: '' }, // public/admin play API path
     recordingPath: { type: String, trim: true, default: '' }, // absolute MP4 path on server
@@ -341,6 +379,11 @@ eventSchema.index({ status: 1, createdAt: -1 });
 eventSchema.index({ status: 1, startTime: 1 });
 eventSchema.index({ 'themeSnapshot.region': 1, status: 1 });
 eventSchema.index({ organizer: 1, createdAt: -1 });
+// Tenant-scoped + chronological hot paths (additive; no document changes).
+eventSchema.index({ createdBy: 1, createdAt: -1 });
+eventSchema.index({ createdBy: 1, status: 1, createdAt: -1 });
+eventSchema.index({ createdAt: -1 });
+eventSchema.index({ isLive: 1, status: 1 });
 
 /**
  * Generates a unique short code for an event: an initials prefix plus a random

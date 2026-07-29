@@ -69,6 +69,14 @@ export const streamService = {
     const { data } = await api.get(`/api/events/${eventId}/questions`);
     return data.data;
   },
+  async getHealth(eventId) {
+    const { data } = await api.get(`/api/events/${eventId}/stream/health`);
+    return data.data;
+  },
+  async emergency(eventId, action) {
+    const { data } = await api.post(`/api/events/${eventId}/stream/emergency`, { action });
+    return data.data;
+  },
 };
 
 export const STREAM_PROVIDERS = ['none', 'youtube', 'hls', 'webrtc', 'rtmp'];

@@ -4,6 +4,7 @@ import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { initSocket } from './realtime/socket.js';
 import { runSeed } from './config/seed.js';
+import { startFailoverHealthWorker } from './services/failoverHealthWorker.js';
 
 async function start() {
   await connectDB();
@@ -21,6 +22,9 @@ async function start() {
   // Attach Socket.IO and expose it to controllers via app.get('io').
   const io = initSocket(server);
   app.set('io', io);
+
+  // Dormant unless FAILOVER_ENABLED=true — does not alter livestream when off.
+  startFailoverHealthWorker({ getIo: () => app.get('io') });
 
   server.listen(env.port, () => {
     // eslint-disable-next-line no-console

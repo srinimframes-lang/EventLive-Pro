@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
@@ -9,6 +9,9 @@ import { hasEventTheme, ensureSafeEventTheme, publicEventTypeLabel } from '../ut
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
 import StreamingDetailsBox from '../components/live/StreamingDetailsBox.jsx';
+import FailoverToast from '../components/live/FailoverToast.jsx';
+import FailoverRecoveryBanner from '../components/live/FailoverRecoveryBanner.jsx';
+import EmergencyStreamControls from '../components/live/EmergencyStreamControls.jsx';
 import BannerSlot from '../components/BannerSlot.jsx';
 import ShareButtons from '../components/ShareButtons.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
@@ -28,13 +31,14 @@ function PanelFallback() {
 
 export default function Watch() {
   const { idOrSlug } = useParams();
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
 
   const [event, setEvent] = useState(null);
   const [config, setConfig] = useState(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('chat');
+  const [emergencyBusy, setEmergencyBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -83,24 +87,46 @@ export default function Watch() {
 
   const mergedConfig = useMemo(() => {
     if (!config) return null;
-    if (!room.liveStatus) return config;
-    const next = {
-      ...config,
-      isLive: room.liveStatus.isLive,
-    };
-    if (room.liveStatus.recordingUrl !== undefined) {
-      next.recordingUrl = room.liveStatus.recordingUrl || '';
-      next.recordingAvailable = Boolean(room.liveStatus.recordingAvailable);
-      next.playbackMode =
-        room.liveStatus.playbackMode ||
-        (room.liveStatus.isLive ? 'live' : room.liveStatus.recordingUrl ? 'recorded' : 'offline');
+    const next = { ...config };
+    if (room.liveStatus) {
+      next.isLive = room.liveStatus.isLive;
+      if (room.liveStatus.recordingUrl !== undefined) {
+        next.recordingUrl = room.liveStatus.recordingUrl || '';
+        next.recordingAvailable = Boolean(room.liveStatus.recordingAvailable);
+        next.playbackMode =
+          room.liveStatus.playbackMode ||
+          (room.liveStatus.isLive ? 'live' : room.liveStatus.recordingUrl ? 'recorded' : 'offline');
+      }
+      if (room.liveStatus.recordings) {
+        next.recordings = room.liveStatus.recordings;
+        next.recordingCount = room.liveStatus.recordingCount ?? room.liveStatus.recordings.length;
+      }
+      // Failover fields from sockets (only present when FAILOVER_ENABLED=true).
+      if (room.liveStatus.failoverFeatureEnabled) {
+        next.failoverFeatureEnabled = true;
+        if (room.liveStatus.activeSource) next.activeSource = room.liveStatus.activeSource;
+        if (room.liveStatus.backupStatus) next.backupStatus = room.liveStatus.backupStatus;
+        if (room.liveStatus.backupYoutubeVideoId !== undefined) {
+          next.backupYoutubeVideoId = room.liveStatus.backupYoutubeVideoId;
+        }
+        if (room.liveStatus.failoverPlaybackMode) {
+          next.failoverPlaybackMode = room.liveStatus.failoverPlaybackMode;
+        }
+        if (room.liveStatus.emergencyOverride) {
+          next.emergencyOverride = room.liveStatus.emergencyOverride;
+        }
+      }
     }
-    if (room.liveStatus.recordings) {
-      next.recordings = room.liveStatus.recordings;
-      next.recordingCount = room.liveStatus.recordingCount ?? room.liveStatus.recordings.length;
+    if (room.failoverState?.failoverFeatureEnabled) {
+      next.failoverFeatureEnabled = true;
+      next.activeSource = room.failoverState.activeSource || next.activeSource;
+      next.backupStatus = room.failoverState.backupStatus || next.backupStatus;
+      if (room.failoverState.backupYoutubeVideoId !== undefined) {
+        next.backupYoutubeVideoId = room.failoverState.backupYoutubeVideoId;
+      }
     }
     return next;
-  }, [config, room.liveStatus]);
+  }, [config, room.liveStatus, room.failoverState]);
 
   const isRecordedReplay = Boolean(
     mergedConfig &&
@@ -111,6 +137,26 @@ export default function Watch() {
   const canAnswer = useMemo(
     () => user?.role === 'admin' || user?.role === 'superadmin',
     [user]
+  );
+
+  const failoverOn = Boolean(mergedConfig?.failoverFeatureEnabled);
+  const showRecovery =
+    isSuperAdmin && failoverOn && mergedConfig?.backupStatus === 'server_recovered';
+
+  const runEmergency = useCallback(
+    async (action) => {
+      if (!eventId) return;
+      setEmergencyBusy(true);
+      try {
+        const data = await streamService.emergency(eventId, action);
+        setConfig((prev) => (prev ? { ...prev, ...data } : data));
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setEmergencyBusy(false);
+      }
+    },
+    [eventId]
   );
 
   const coupleTitle = useMemo(() => {
@@ -149,20 +195,37 @@ export default function Watch() {
   // Opt-in Classic Wedding template — does not affect default or other themes.
   if (isClassicWedding) {
     return (
-      <Suspense fallback={<ThemeLoadingScreen label="Loading wedding page…" />}>
-        <ClassicWeddingPage
-          event={event}
-          coupleTitle={coupleTitle}
-          watchUrl={watchUrl}
-          mergedConfig={mergedConfig}
-          room={room}
-          chatOn={chatOn}
-          activeTab={activeTab}
-          setTab={setTab}
-          canAnswer={canAnswer}
-          isRecordedReplay={isRecordedReplay}
+      <>
+        <FailoverToast
+          message={room.failoverNotice}
+          visible={Boolean(room.failoverNotice)}
+          onDismiss={room.clearFailoverNotice}
         />
-      </Suspense>
+        {showRecovery ? (
+          <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-4">
+            <FailoverRecoveryBanner
+              visible
+              busy={emergencyBusy}
+              onContinueYoutube={() => runEmergency('continue_youtube')}
+              onSwitchServer={() => runEmergency('switch_server')}
+            />
+          </div>
+        ) : null}
+        <Suspense fallback={<ThemeLoadingScreen label="Loading wedding page…" />}>
+          <ClassicWeddingPage
+            event={event}
+            coupleTitle={coupleTitle}
+            watchUrl={watchUrl}
+            mergedConfig={mergedConfig}
+            room={room}
+            chatOn={chatOn}
+            activeTab={activeTab}
+            setTab={setTab}
+            canAnswer={canAnswer}
+            isRecordedReplay={isRecordedReplay}
+          />
+        </Suspense>
+      </>
     );
   }
 
@@ -170,6 +233,21 @@ export default function Watch() {
     return (
       <>
         <EventSeo event={event} pageType="watch" />
+        <FailoverToast
+          message={room.failoverNotice}
+          visible={Boolean(room.failoverNotice)}
+          onDismiss={room.clearFailoverNotice}
+        />
+        {showRecovery ? (
+          <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-4">
+            <FailoverRecoveryBanner
+              visible
+              busy={emergencyBusy}
+              onContinueYoutube={() => runEmergency('continue_youtube')}
+              onSwitchServer={() => runEmergency('switch_server')}
+            />
+          </div>
+        ) : null}
         <Suspense fallback={<ThemeLoadingScreen label="Loading watch page…" />}>
           <ThemedWatchLayout
             event={event}
@@ -191,7 +269,30 @@ export default function Watch() {
   return (
     <>
       <EventSeo event={event} pageType="watch" />
+      <FailoverToast
+        message={room.failoverNotice}
+        visible={Boolean(room.failoverNotice)}
+        onDismiss={room.clearFailoverNotice}
+      />
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+      {showRecovery ? (
+        <FailoverRecoveryBanner
+          visible
+          busy={emergencyBusy}
+          onContinueYoutube={() => runEmergency('continue_youtube')}
+          onSwitchServer={() => runEmergency('switch_server')}
+        />
+      ) : null}
+      {isSuperAdmin && failoverOn ? (
+        <div className="mb-3">
+          <EmergencyStreamControls
+            eventId={eventId}
+            enabled
+            status={mergedConfig}
+            onUpdated={(data) => setConfig((prev) => (prev ? { ...prev, ...data } : data))}
+          />
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           to={`/events/${event.slug || event.id}`}

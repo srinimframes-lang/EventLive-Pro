@@ -22,6 +22,7 @@ const FALLBACK = {
   googleAnalyticsId: '',
   googleSearchConsoleVerification: '',
   footer: '',
+  failoverFeatureEnabled: false,
   payment: {
     gpayNumber: '',
     phonepeNumber: '',

@@ -113,6 +113,9 @@ export const env = {
   },
   // Optional, idempotent multi-tenant migration (off by default for zero-downtime).
   migrateMultiTenant: process.env.MIGRATE_MULTI_TENANT === 'true',
+  // Server → YouTube failover (OFF by default). When false, health worker and
+  // player failover paths stay dormant; existing livestream behaviour is unchanged.
+  failoverEnabled: process.env.FAILOVER_ENABLED === 'true',
   // Optional Cloudinary credentials for durable image storage. When present,
   // uploads go to Cloudinary (surviving redeploys); otherwise local disk is
   // used as a fallback. Set CLOUDINARY_URL or the three discrete vars on Render.

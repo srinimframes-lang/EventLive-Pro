@@ -38,6 +38,16 @@ import {
   r2PublicUrl,
   uploadRecordingToR2,
 } from '../utils/r2.js';
+import {
+  applyEmergencyAction,
+  evaluateStreamHealth,
+  isFailoverCandidate,
+  probeHlsPlaylist,
+  publicFailoverSlice,
+  resolveActiveSource,
+  resolveBackupYoutubeId,
+} from '../utils/streamFailover.js';
+import { isPlatformAdmin } from '../utils/tenantScope.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -126,7 +136,7 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const recordingUrl = isLive ? '' : buildPublicRecordingUrl(event);
   const playbackMode = isLive ? 'live' : recordingUrl ? 'recorded' : 'offline';
 
-  return {
+  const base = {
     eventId: event.id,
     provider,
     youtubeVideoId,
@@ -164,6 +174,13 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
         }))
       : [],
   };
+
+  // Additive failover fields only when FAILOVER_ENABLED=true. When off, response
+  // shape matches historical livestream config (no player behaviour change).
+  const failover = publicFailoverSlice(event, { failoverEnabled: env.failoverEnabled });
+  if (failover) Object.assign(base, failover);
+
+  return base;
 }
 
 /** Admin-only recording metadata (includes hidden/expired files that still exist). */
@@ -223,6 +240,29 @@ export const updateStreamConfig = asyncHandler(async (req, res) => {
     }
   }
   if (req.body.autoRecord !== undefined) event.autoRecord = Boolean(req.body.autoRecord);
+
+  // Backup stream settings (safe to store even when FAILOVER_ENABLED=false;
+  // worker/player stay dormant until the flag is on).
+  if (req.body.backupStreamEnabled !== undefined) {
+    event.backupStreamEnabled = Boolean(req.body.backupStreamEnabled);
+    if (event.backupStreamEnabled && event.backupStatus === 'idle') {
+      event.backupStatus = 'monitoring';
+    }
+    if (!event.backupStreamEnabled && event.backupStatus !== 'disabled') {
+      event.backupStatus = 'idle';
+    }
+  }
+  if (req.body.backupYoutubeVideoId !== undefined) {
+    event.backupYoutubeVideoId =
+      extractYouTubeId(req.body.backupYoutubeVideoId) ||
+      String(req.body.backupYoutubeVideoId || '').trim();
+  }
+  if (event.streamProvider === 'rtmp' || event.streamProvider === 'hls') {
+    event.primaryStream = 'server';
+  } else if (event.streamProvider === 'youtube') {
+    event.primaryStream = 'youtube';
+  }
+
   await event.save();
 
   const isPublishing = await publishingStatusForEvent(event);
@@ -346,6 +386,114 @@ export const setStreamDisabled = asyncHandler(async (req, res) => {
   }
   const isPublishing = await publishingStatusForEvent(event);
   res.status(200).json({ success: true, data: publicStreamConfig(event, { isPublishing }) });
+});
+
+/**
+ * @route GET /api/events/:id/stream/health
+ * @desc  Stream health / failover status (dormant payload when feature off)
+ * @access Public
+ */
+export const getStreamHealth = asyncHandler(async (req, res) => {
+  if (!env.failoverEnabled) {
+    return res.status(200).json({
+      success: true,
+      data: { failoverFeatureEnabled: false },
+    });
+  }
+
+  const event = await findEventOr404(req.params.id, res);
+  const playbackUrl = deriveHlsPlaybackUrl(event);
+  const [playlistOk, publishing] = await Promise.all([
+    event.streamProvider === 'rtmp' || event.streamProvider === 'hls'
+      ? probeHlsPlaylist(playbackUrl)
+      : Promise.resolve(null),
+    publishingStatusForEvent(event),
+  ]);
+
+  let healthy = null;
+  let reason = '';
+  if (playlistOk !== null) {
+    const verdict = evaluateStreamHealth({ playlistOk, publishing });
+    healthy = verdict.healthy;
+    reason = verdict.reason;
+  }
+
+  const slice = publicFailoverSlice(event, { failoverEnabled: true });
+  return res.status(200).json({
+    success: true,
+    data: {
+      ...slice,
+      healthy,
+      reason,
+      isFailoverCandidate: isFailoverCandidate(event, { failoverEnabled: true }),
+      hasBackupYoutube: Boolean(resolveBackupYoutubeId(event)),
+    },
+  });
+});
+
+/**
+ * @route POST /api/events/:id/stream/emergency
+ * @desc  Super Admin emergency failover controls
+ * @access Private (platform admin)
+ * Body: { action: force_server|force_youtube|override|disable|enable|continue_youtube|switch_server }
+ */
+export const emergencyStreamControl = asyncHandler(async (req, res) => {
+  if (!env.failoverEnabled) {
+    res.status(503);
+    throw new Error('Stream failover is disabled (FAILOVER_ENABLED!=true)');
+  }
+
+  const event = await findEventOr404(req.params.id, res);
+  if (!isPlatformAdmin(req.user)) {
+    res.status(403);
+    throw new Error('Only Super Admin can use emergency stream controls');
+  }
+
+  const action = req.body?.action;
+  let patch;
+  try {
+    patch = applyEmergencyAction(event, action, {
+      userId: req.user._id || req.user.id,
+    });
+  } catch (err) {
+    res.status(400);
+    throw err;
+  }
+
+  event.playbackMode = patch.playbackMode;
+  event.backupStatus = patch.backupStatus;
+  event.emergencyOverride = {
+    ...(event.emergencyOverride?.toObject?.() || event.emergencyOverride || {}),
+    ...patch.emergencyOverride,
+  };
+  event.streamHealth = {
+    ...(event.streamHealth?.toObject?.() || event.streamHealth || {}),
+    ...patch.streamHealth,
+  };
+  await event.save();
+
+  const slice = publicFailoverSlice(event, { failoverEnabled: true });
+  const io = req.app.get('io');
+  if (io && slice) {
+    const payload = { eventId: event.id, ...slice, transition: patch.transition };
+    io.to(`event:${event.id}`).emit('stream:playback-mode', payload);
+    if (slice.activeSource === 'youtube' && patch.transition === 'force_youtube') {
+      io.to(`event:${event.id}`).emit('stream:failover', {
+        ...payload,
+        message: 'Emergency override: switching to backup stream...',
+      });
+    }
+  }
+
+  const isPublishing = await publishingStatusForEvent(event);
+  res.status(200).json({
+    success: true,
+    data: {
+      ...publicStreamConfig(event, { isPublishing }),
+      transition: patch.transition,
+      activeSource: resolveActiveSource(event, { failoverEnabled: true }),
+    },
+  });
 });
 
 /**

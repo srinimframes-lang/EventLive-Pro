@@ -10,10 +10,14 @@ import LiveChat from '../components/live/LiveChat.jsx';
 import QAPanel from '../components/live/QAPanel.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
 import EventGalleryManager from '../components/admin/EventGalleryManager.jsx';
+import BackupStreamSettings from '../components/live/BackupStreamSettings.jsx';
+import EmergencyStreamControls from '../components/live/EmergencyStreamControls.jsx';
+import FailoverToast from '../components/live/FailoverToast.jsx';
+import FailoverRecoveryBanner from '../components/live/FailoverRecoveryBanner.jsx';
 
 export default function Studio() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
 
   const [event, setEvent] = useState(null);
   const [config, setConfig] = useState(null);
@@ -192,6 +196,11 @@ export default function Studio() {
 
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+      <FailoverToast
+        message={room.failoverNotice}
+        visible={Boolean(room.failoverNotice)}
+        onDismiss={room.clearFailoverNotice}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <Link to={`/events/${event.slug || event.id}`} className="text-sm text-brand-600 hover:underline">
@@ -228,7 +237,32 @@ export default function Studio() {
         <div className="space-y-6 lg:col-span-2">
           <div>
             <h2 className="mb-2 font-bold text-slate-900">Preview</h2>
-            <LivePlayer config={room.liveStatus ? { ...config, isLive } : config} />
+            <LivePlayer
+              config={
+                room.liveStatus || room.failoverState
+                  ? {
+                      ...config,
+                      isLive,
+                      ...(config?.failoverFeatureEnabled
+                        ? {
+                            activeSource:
+                              room.failoverState?.activeSource ||
+                              room.liveStatus?.activeSource ||
+                              config.activeSource,
+                            backupStatus:
+                              room.failoverState?.backupStatus ||
+                              room.liveStatus?.backupStatus ||
+                              config.backupStatus,
+                            backupYoutubeVideoId:
+                              room.failoverState?.backupYoutubeVideoId ||
+                              room.liveStatus?.backupYoutubeVideoId ||
+                              config.backupYoutubeVideoId,
+                          }
+                        : {}),
+                    }
+                  : config
+              }
+            />
           </div>
 
           <form onSubmit={saveConfig} className="card space-y-4">
@@ -302,6 +336,53 @@ export default function Studio() {
               {busy ? 'Saving…' : 'Save settings'}
             </button>
           </form>
+
+          {(form.streamProvider === 'rtmp' || form.streamProvider === 'hls') && (
+            <BackupStreamSettings
+              eventId={eventId}
+              enabled={Boolean(config?.failoverFeatureEnabled)}
+              value={{
+                backupStreamEnabled: Boolean(config?.backupStreamEnabled),
+                backupYoutubeVideoId: config?.backupYoutubeVideoId || '',
+              }}
+              onChange={(next) =>
+                setConfig((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        backupStreamEnabled: Boolean(next.backupStreamEnabled),
+                        backupYoutubeVideoId: next.backupYoutubeVideoId || '',
+                      }
+                    : prev
+                )
+              }
+              showSaveButton
+              statusLabel={config?.backupStatus || ''}
+              onSaved={(data) => setConfig((prev) => (prev ? { ...prev, ...data } : data))}
+            />
+          )}
+
+          {isSuperAdmin && config?.failoverFeatureEnabled ? (
+            <>
+              <FailoverRecoveryBanner
+                visible={config?.backupStatus === 'server_recovered'}
+                onContinueYoutube={async () => {
+                  const data = await streamService.emergency(eventId, 'continue_youtube');
+                  setConfig((prev) => (prev ? { ...prev, ...data } : data));
+                }}
+                onSwitchServer={async () => {
+                  const data = await streamService.emergency(eventId, 'switch_server');
+                  setConfig((prev) => (prev ? { ...prev, ...data } : data));
+                }}
+              />
+              <EmergencyStreamControls
+                eventId={eventId}
+                enabled
+                status={config}
+                onUpdated={(data) => setConfig((prev) => (prev ? { ...prev, ...data } : data))}
+              />
+            </>
+          ) : null}
 
           {/* Photo gallery management */}
           <div className="card space-y-3">

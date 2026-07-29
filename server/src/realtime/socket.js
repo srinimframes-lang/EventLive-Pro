@@ -7,8 +7,10 @@ import { ChatMessage } from '../models/ChatMessage.js';
 import { Question } from '../models/Question.js';
 import { canManageEvent } from '../utils/ownership.js';
 import { isActiveDomainOrigin } from '../utils/domainCache.js';
+import { isPlatformAdmin } from '../utils/tenantScope.js';
 
 const roomKey = (eventId) => `event:${eventId}`;
+const SUPER_ADMIN_ROOM = 'admins:super';
 
 // In-memory presence: eventId -> Set<socketId>
 const viewers = new Map();
@@ -63,7 +65,12 @@ export function initSocket(httpServer) {
         const decoded = jwt.verify(token, env.jwt.secret);
         const user = await User.findById(decoded.id);
         if (user) {
-          socket.user = { id: user.id, name: user.name, role: user.role };
+          socket.user = {
+            id: user.id,
+            name: user.name,
+            role: user.role,
+            createdBy: user.createdBy || null,
+          };
         }
       }
     } catch {
@@ -77,6 +84,11 @@ export function initSocket(httpServer) {
     socket.data.displayName = socket.user?.name || 'Guest';
     socket.data.lastChatAt = 0;
     socket.data.lastQaAt = 0;
+
+    // Platform Super Admin room for failover recovery notices.
+    if (socket.user && isPlatformAdmin(socket.user)) {
+      socket.join(SUPER_ADMIN_ROOM);
+    }
 
     const emitViewers = (eventId) => {
       io.to(roomKey(eventId)).emit('presence:viewers', {
