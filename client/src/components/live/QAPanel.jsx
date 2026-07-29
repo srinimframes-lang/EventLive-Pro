@@ -1,8 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function QuestionItem({ question, onUpvote, canAnswer, onAnswer }) {
   const [answering, setAnswering] = useState(false);
   const [answer, setAnswer] = useState('');
+  const answerInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!answering) return;
+    // Focus without scrolling the page (user already clicked Answer).
+    answerInputRef.current?.focus({ preventScroll: true });
+  }, [answering]);
 
   const submitAnswer = (e) => {
     e.preventDefault();
@@ -42,10 +49,10 @@ function QuestionItem({ question, onUpvote, canAnswer, onAnswer }) {
         answering ? (
           <form onSubmit={submitAnswer} className="mt-2 flex gap-2">
             <input
+              ref={answerInputRef}
               className="input"
               placeholder="Type an answer…"
               value={answer}
-              autoFocus
               onChange={(e) => setAnswer(e.target.value)}
             />
             <button type="submit" className="btn-primary">Reply</button>

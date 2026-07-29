@@ -6,6 +6,7 @@ import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { SettingsProvider } from './context/SettingsContext.jsx';
 import SiteAnalytics, { useGaPageView } from './components/seo/SiteAnalytics.jsx';
+import ScrollToTop from './components/ScrollToTop.jsx';
 import './index.css';
 
 function GaRouteTracker() {
@@ -20,6 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <SettingsProvider>
           <AuthProvider>
+            <ScrollToTop />
             <SiteAnalytics />
             <GaRouteTracker />
             <App />

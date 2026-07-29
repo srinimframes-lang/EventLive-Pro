@@ -18,7 +18,8 @@
     --brand-900: 80 7 36;
   }
   html {
-    scroll-behavior: smooth;
+    /* Instant jumps only — smooth scroll is reserved for user-driven in-panel scrolls */
+    scroll-behavior: auto;
   }
   body {
     @apply bg-slate-50 text-slate-800 antialiased;

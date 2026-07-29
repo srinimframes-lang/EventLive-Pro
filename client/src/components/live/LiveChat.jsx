@@ -3,10 +3,13 @@ import { formatDateTime } from '../../utils/format.js';
 
 export default function LiveChat({ messages, onSend, disabled }) {
   const [text, setText] = useState('');
-  const endRef = useRef(null);
+  const listRef = useRef(null);
 
+  // Keep newest messages visible inside the chat panel only — never scroll the page.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const handleSubmit = (e) => {
@@ -23,7 +26,7 @@ export default function LiveChat({ messages, onSend, disabled }) {
         <h3 className="font-bold text-slate-900">Live chat</h3>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {messages.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-400">
             No messages yet. Say hello! 👋
@@ -39,7 +42,6 @@ export default function LiveChat({ messages, onSend, disabled }) {
             </div>
           ))
         )}
-        <div ref={endRef} />
       </div>
 
       <form onSubmit={handleSubmit} className="flex gap-2 border-t border-slate-200 p-3">
