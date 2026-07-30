@@ -141,6 +141,128 @@ export function buildWatchUrl(event, originOverride) {
   return `${origin}${watchPath(event)}`;
 }
 
+/** Resolve share origin (brand domain → override → window). Does not change watchPath. */
+function resolveShareOrigin(event, originOverride) {
+  let origin = originOverride;
+  if (!origin && event?.brandDomain) origin = `https://${event.brandDomain}`;
+  if (!origin && typeof window !== 'undefined') origin = window.location.origin;
+  return origin ? String(origin).replace(/\/+$/, '') : '';
+}
+
+/**
+ * Marketing / share live path: /live/{shortCode}/{slug}
+ * Additive — does not replace the canonical short watchPath.
+ */
+export function liveSharePath(event) {
+  if (!event) return '';
+  const code = event.shortCode || event.slug || event.id;
+  if (!code) return '';
+  const slug = coupleSlug(event) || event.slug || '';
+  return slug ? `/live/${code}/${slug}` : `/live/${code}`;
+}
+
+/** Absolute Live URL for Share & Embed (existing short URLs unchanged). */
+export function buildLiveShareUrl(event, originOverride) {
+  const origin = resolveShareOrigin(event, originOverride);
+  const path = liveSharePath(event);
+  return origin && path ? `${origin}${path}` : '';
+}
+
+/** Embed player path: /embed/{shortCode} */
+export function embedPath(event) {
+  if (!event) return '';
+  const code = event.shortCode || event.slug || event.id;
+  return code ? `/embed/${code}` : '';
+}
+
+/** Absolute embed URL for iframes. */
+export function buildEmbedUrl(event, originOverride) {
+  const origin = resolveShareOrigin(event, originOverride);
+  const path = embedPath(event);
+  return origin && path ? `${origin}${path}` : '';
+}
+
+/**
+ * White-label embed origin when the event has an active custom domain.
+ * Returns '' when no brand domain is configured.
+ */
+export function whiteLabelEmbedOrigin(event) {
+  const host = String(event?.brandDomain || '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '');
+  return host ? `https://${host}` : '';
+}
+
+/** White-label embed URL, or '' when no custom domain. */
+export function buildWhiteLabelEmbedUrl(event) {
+  const origin = whiteLabelEmbedOrigin(event);
+  return origin ? buildEmbedUrl(event, origin) : '';
+}
+
+export const EMBED_SIZE_OPTIONS = [
+  { id: 'responsive', label: 'Responsive (default)', width: null, height: null },
+  { id: '1920x1080', label: '1920×1080', width: 1920, height: 1080 },
+  { id: '1280x720', label: '1280×720', width: 1280, height: 720 },
+  { id: '854x480', label: '854×480', width: 854, height: 480 },
+];
+
+function resolveEmbedSize(sizeId) {
+  return EMBED_SIZE_OPTIONS.find((s) => s.id === sizeId) || EMBED_SIZE_OPTIONS[0];
+}
+
+/** Bare iframe tag (no wrapper). */
+export function buildIframeCode(event, { originOverride, sizeId = 'responsive' } = {}) {
+  const src = buildEmbedUrl(event, originOverride);
+  if (!src) return '';
+  const size = resolveEmbedSize(sizeId);
+  if (size.width && size.height) {
+    return `<iframe
+  src="${src}"
+  width="${size.width}"
+  height="${size.height}"
+  style="border:0;max-width:100%;"
+  allow="autoplay; fullscreen; picture-in-picture"
+  allowfullscreen>
+</iframe>`;
+  }
+  return `<iframe
+  src="${src}"
+  style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"
+  allow="autoplay; fullscreen; picture-in-picture"
+  allowfullscreen>
+</iframe>`;
+}
+
+/** Full embed snippet (responsive wrapper or fixed-size iframe). */
+export function buildEmbedCode(event, originOrOpts, maybeSizeId) {
+  // Backward compatible: buildEmbedCode(event, originOverride)
+  let originOverride;
+  let sizeId = 'responsive';
+  if (originOrOpts && typeof originOrOpts === 'object' && !Array.isArray(originOrOpts)) {
+    originOverride = originOrOpts.originOverride;
+    sizeId = originOrOpts.sizeId || 'responsive';
+  } else {
+    originOverride = originOrOpts;
+    if (maybeSizeId) sizeId = maybeSizeId;
+  }
+
+  const src = buildEmbedUrl(event, originOverride);
+  if (!src) return '';
+  const size = resolveEmbedSize(sizeId);
+  if (size.width && size.height) {
+    return buildIframeCode(event, { originOverride, sizeId });
+  }
+  return `<div style="position:relative;padding-top:56.25%;width:100%;">
+  <iframe
+    src="${src}"
+    style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"
+    allow="autoplay; fullscreen; picture-in-picture"
+    allowfullscreen>
+  </iframe>
+</div>`;
+}
+
 /**
  * Resolves a media URL for display. Uploaded files are stored as relative
  * `/uploads/...` paths that live on the backend, not the frontend origin —

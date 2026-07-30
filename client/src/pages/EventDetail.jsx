@@ -9,6 +9,7 @@ import PhotographyStudio from '../components/PhotographyStudio.jsx';
 import EventSeo from '../components/seo/EventSeo.jsx';
 import { coverImageAlt } from '../utils/seo.js';
 import EventQrCard from '../components/EventQrCard.jsx';
+import ShareEmbedCard from '../components/ShareEmbedCard.jsx';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 
 export default function EventDetail() {
@@ -127,7 +128,8 @@ export default function EventDetail() {
       </div>
 
       {canManage && (
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
+          <ShareEmbedCard event={event} />
           <EventQrCard event={event} />
         </div>
       )}

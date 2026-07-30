@@ -74,6 +74,7 @@ const userSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'User',
       default: null,
+      index: true,
     },
     // ── White-label branding (Phase 3) ───────────────────────────
     // Shown on the customer's own custom-domain site instead of the default
@@ -89,10 +90,17 @@ const userSchema = new Schema(
       contactEmail: { type: String, default: '', trim: true },
       address: { type: String, default: '', trim: true, maxlength: 200 },
       footer: { type: String, default: '', trim: true, maxlength: 300 },
+      // Super Admin: hide EventLivePro logo on /embed player for this tenant.
+      disableBranding: { type: Boolean, default: false },
     },
   },
   { timestamps: true }
 );
+
+// Compound indexes for tenant-scoped admin lists (additive; no data changes).
+userSchema.index({ createdBy: 1, createdAt: -1 });
+userSchema.index({ role: 1, createdBy: 1, createdAt: -1 });
+userSchema.index({ createdAt: -1 });
 
 // Hash the password before saving when it has been modified.
 userSchema.pre('save', async function hashPassword(next) {

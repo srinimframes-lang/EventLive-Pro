@@ -4,8 +4,9 @@ import { eventService } from '../../services/event.service.js';
 import { streamService } from '../../services/stream.service.js';
 import api from '../../services/api.js';
 import EventQrCard from '../EventQrCard.jsx';
+import ShareEmbedCard from '../ShareEmbedCard.jsx';
 import EventGalleryManager from './EventGalleryManager.jsx';
-import { formatDateTime, buildWatchUrl } from '../../utils/format.js';
+import { formatDateTime, buildWatchUrl, buildEmbedCode } from '../../utils/format.js';
 
 export default function AdminEvents() {
   const [events, setEvents] = useState([]);
@@ -13,6 +14,7 @@ export default function AdminEvents() {
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [expandedQrId, setExpandedQrId] = useState(null);
+  const [expandedEmbedId, setExpandedEmbedId] = useState(null);
   const [expandedStreamId, setExpandedStreamId] = useState(null);
   const [expandedGalleryId, setExpandedGalleryId] = useState(null);
   const [galleryByEvent, setGalleryByEvent] = useState({});
@@ -42,6 +44,21 @@ export default function AdminEvents() {
       setTimeout(() => setCopiedId(null), 1500);
     } catch {
       window.prompt('Copy this live link:', liveLink(ev));
+    }
+  };
+
+  const copyEmbedCode = async (ev) => {
+    const code = buildEmbedCode(ev);
+    if (!code) {
+      setError('Embed code unavailable for this event');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedId(`${ev.id}-embed`);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      window.prompt('Copy embed code:', code);
     }
   };
 
@@ -223,6 +240,16 @@ export default function AdminEvents() {
                   <button type="button" className="btn-outline" onClick={() => copyLink(ev)}>
                     {copiedId === ev.id ? 'Copied!' : 'Copy live link'}
                   </button>
+                  <button type="button" className="btn-outline" onClick={() => copyEmbedCode(ev)}>
+                    {copiedId === `${ev.id}-embed` ? 'Copied!' : 'Copy Embed Code'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setExpandedEmbedId(expandedEmbedId === ev.id ? null : ev.id)}
+                  >
+                    {expandedEmbedId === ev.id ? 'Hide Share & Embed' : 'Share & Embed'}
+                  </button>
                   <button
                     type="button"
                     className="btn-outline"
@@ -251,6 +278,11 @@ export default function AdminEvents() {
                     Delete
                   </button>
                 </div>
+                {expandedEmbedId === ev.id && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <ShareEmbedCard event={ev} className="!shadow-none border border-slate-200" />
+                  </div>
+                )}
                 {expandedQrId === ev.id && (
                   <div className="mt-4 border-t border-slate-100 pt-4">
                     <EventQrCard event={ev} className="!shadow-none !p-0 border-0" />

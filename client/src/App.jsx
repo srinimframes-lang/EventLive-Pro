@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
@@ -20,6 +20,7 @@ const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 const Districts = lazy(() => import('./pages/Districts.jsx'));
 const DistrictDetail = lazy(() => import('./pages/DistrictDetail.jsx'));
 const Watch = lazy(() => import('./pages/Watch.jsx'));
+const Embed = lazy(() => import('./pages/Embed.jsx'));
 const Studio = lazy(() => import('./pages/Studio.jsx'));
 const BookingNew = lazy(() => import('./pages/BookingNew.jsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
@@ -28,13 +29,20 @@ const Reseller = lazy(() => import('./pages/Reseller.jsx'));
 const EventForm = lazy(() => import('./pages/EventForm.jsx'));
 
 function PageLoader() {
-  return <p className="py-20 text-center text-slate-500">Loading…</p>;
+  return (
+    <div className="mx-auto min-h-[60vh] max-w-6xl px-4 py-20" aria-busy="true">
+      <p className="text-center text-slate-500">Loading…</p>
+    </div>
+  );
 }
 
 export default function App() {
+  const { pathname } = useLocation();
+  const isEmbed = pathname.startsWith('/embed/');
+
   return (
     <div className="flex min-h-screen flex-col">
-      <Navbar />
+      {!isEmbed && <Navbar />}
       <main className="flex-1">
         <Suspense fallback={<PageLoader />}>
           <ErrorBoundary>
@@ -64,6 +72,8 @@ export default function App() {
             <Route path="/live/:idOrSlug/:coupleSlug" element={<Watch />} />
             <Route path="/watch/:idOrSlug" element={<Watch />} />
             <Route path="/watch/:idOrSlug/:coupleSlug" element={<Watch />} />
+            {/* Minimal iframe player — no site chrome */}
+            <Route path="/embed/:shortCode" element={<Embed />} />
 
             {/* Event management (admin or reseller who owns the event) */}
             <Route
@@ -127,7 +137,7 @@ export default function App() {
           </ErrorBoundary>
         </Suspense>
       </main>
-      <Footer />
+      {!isEmbed && <Footer />}
     </div>
   );
 }

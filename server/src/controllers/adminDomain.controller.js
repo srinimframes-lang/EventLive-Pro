@@ -350,6 +350,7 @@ const BRANDING_FIELDS = [
   'contactEmail',
   'address',
   'footer',
+  'disableBranding',
 ];
 
 /**
@@ -366,7 +367,12 @@ export const updateCustomerBranding = asyncHandler(async (req, res) => {
   assertOwnsRecord(user, req.user, res, 'customer');
   if (!user.branding) user.branding = {};
   for (const key of BRANDING_FIELDS) {
-    if (req.body[key] !== undefined) user.branding[key] = req.body[key];
+    if (req.body[key] === undefined) continue;
+    if (key === 'disableBranding') {
+      user.branding.disableBranding = Boolean(req.body.disableBranding);
+    } else {
+      user.branding[key] = req.body[key];
+    }
   }
   await user.save();
   res.status(200).json({ success: true, data: user });

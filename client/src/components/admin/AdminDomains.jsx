@@ -94,9 +94,27 @@ export default function AdminDomains() {
     const result = await act(adminService.verifyDomain, id);
     if (result?.domain) {
       replaceDomain(result.domain);
-      flash(
-        result.message ||
-          (result.domain.dnsVerified ? 'DNS verified' : 'TXT record not found yet')
+      if (result.domain.dnsVerified) {
+        flash(
+          result.message ||
+            'DNS verified. Custom domain attached, cache refreshed, SSL provisioning started.'
+        );
+      } else {
+        const check = result.dnsCheck || {};
+        const lookedUp = check.lookedUp ? ` Queried: ${check.lookedUp}.` : '';
+        const found =
+          Array.isArray(check.found) && check.found.length
+            ? ` Returned: ${check.found.join(', ')}.`
+            : ' Returned records: (none).';
+        setError(
+          `${result.message || check.reason || 'DNS verification failed'}${lookedUp}${found}`
+        );
+      }
+    } else if (!result) {
+      setError((prev) =>
+        !prev || prev === 'Network Error'
+          ? 'Network error while verifying DNS. Check connectivity and try again.'
+          : prev
       );
     }
   };
@@ -329,6 +347,25 @@ export default function AdminDomains() {
                 />
               </div>
             ))}
+            <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="flex items-start gap-2 text-sm text-slate-800">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={Boolean(branding.disableBranding)}
+                  onChange={(e) =>
+                    setBranding((b) => ({ ...b, disableBranding: e.target.checked }))
+                  }
+                />
+                <span>
+                  <span className="font-medium">Disable Branding</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Hide the EventLivePro logo on the embed player for this customer
+                    (white-label embeds).
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="sm:col-span-2">
               <button type="submit" className="btn-primary" disabled={savingBrand}>
                 {savingBrand ? 'Saving…' : 'Save branding'}

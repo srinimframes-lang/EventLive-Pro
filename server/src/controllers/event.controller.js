@@ -325,6 +325,18 @@ export const getEvent = asyncHandler(async (req, res) => {
       .select('host')
       .lean();
     data.brandDomain = dom ? dom.host : '';
+    // Embed page: hide EventLivePro logo when WL domain is active or Super Admin
+    // enabled disableBranding on the customer.
+    try {
+      const { User } = await import('../models/User.js');
+      const owner = await User.findById(organizerId).select('branding.disableBranding').lean();
+      data.embedHidePlatformLogo =
+        Boolean(data.brandDomain) || Boolean(owner?.branding?.disableBranding);
+    } catch {
+      data.embedHidePlatformLogo = Boolean(data.brandDomain);
+    }
+  } else {
+    data.embedHidePlatformLogo = false;
   }
 
   res.set('Cache-Control', 'public, max-age=10');
