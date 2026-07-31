@@ -6,6 +6,10 @@ function keyFor(eventId, kind, partId = '') {
   return `elp-pos:live:${id}`;
 }
 
+function dvrIntentKey(eventId) {
+  return `elp-dvr-intent:${String(eventId || '').trim() || 'unknown'}`;
+}
+
 export function loadPlaybackPosition(eventId, kind = 'live', partId = '') {
   try {
     const raw = sessionStorage.getItem(keyFor(eventId, kind, partId));
@@ -29,6 +33,28 @@ export function savePlaybackPosition(eventId, seconds, kind = 'live', partId = '
 export function clearPlaybackPosition(eventId, kind = 'live', partId = '') {
   try {
     sessionStorage.removeItem(keyFor(eventId, kind, partId));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * LIVE DVR viewing intent for this session.
+ * 'live' = follow live edge (auto-recovery jumps to LIVE)
+ * 'dvr'  = viewer intentionally rewound/paused behind — do not force LIVE
+ */
+export function loadLiveDvrIntent(eventId) {
+  try {
+    const v = sessionStorage.getItem(dvrIntentKey(eventId));
+    return v === 'dvr' ? 'dvr' : 'live';
+  } catch {
+    return 'live';
+  }
+}
+
+export function saveLiveDvrIntent(eventId, intent) {
+  try {
+    sessionStorage.setItem(dvrIntentKey(eventId), intent === 'dvr' ? 'dvr' : 'live');
   } catch {
     /* ignore */
   }

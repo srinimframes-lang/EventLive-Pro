@@ -305,14 +305,44 @@
   .elp-player-center-play {
     @apply absolute left-1/2 top-1/2 z-20 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/25 backdrop-blur-sm transition hover:bg-black/70 sm:h-20 sm:w-20;
   }
+  .elp-player-scrub-wrap {
+    @apply relative h-3 w-full;
+  }
+  .elp-player-scrub-track {
+    @apply pointer-events-none absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/25;
+  }
+  .elp-player-scrub-buffer {
+    @apply absolute inset-y-0 left-0 bg-white/40;
+  }
+  .elp-player-scrub-played {
+    @apply absolute inset-y-0 left-0 bg-red-500;
+  }
   .elp-player-scrub {
-    @apply h-1 w-full cursor-pointer appearance-none rounded-full bg-white/25 accent-red-500;
+    @apply absolute inset-0 z-10 m-0 h-full w-full cursor-pointer appearance-none bg-transparent accent-red-500;
+  }
+  .elp-player-scrub::-webkit-slider-runnable-track {
+    height: 4px;
+    background: transparent;
   }
   .elp-player-scrub::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 14px;
     height: 14px;
+    margin-top: -5px;
+    border-radius: 9999px;
+    background: #ef4444;
+    cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  }
+  .elp-player-scrub::-moz-range-track {
+    height: 4px;
+    background: transparent;
+  }
+  .elp-player-scrub::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: none;
     border-radius: 9999px;
     background: #ef4444;
     cursor: pointer;
@@ -328,6 +358,21 @@
   }
   .elp-status-chip {
     @apply rounded bg-black/65 px-2 py-1 text-[11px] font-semibold text-white/90;
+  }
+  .elp-new-live-chip {
+    @apply rounded bg-amber-500/95 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-950;
+  }
+  .elp-go-live-btn {
+    @apply rounded bg-red-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-sm transition hover:bg-red-500;
+  }
+  .elp-go-live-btn--bar {
+    @apply ml-1;
+  }
+  .elp-skip-btn {
+    @apply relative;
+  }
+  .elp-skip-label {
+    @apply absolute bottom-0.5 right-0.5 text-[8px] font-bold leading-none text-white/90;
   }
 
   /* â”€â”€ Photography studio section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

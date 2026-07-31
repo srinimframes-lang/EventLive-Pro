@@ -7,8 +7,11 @@ import {
   shouldPlayYoutubeBackup,
 } from '../../utils/streamFailover.js';
 import {
+  clearPlaybackPosition,
+  loadLiveDvrIntent,
   loadPlaybackPosition,
   loadUserStarted,
+  saveLiveDvrIntent,
   savePlaybackPosition,
   saveUserStarted,
 } from '../../utils/playerPrefs.js';
@@ -21,11 +24,17 @@ import '../../styles/watch-theme.css';
 
 const RETRY_MS = 2500;
 const CONTROLS_HIDE_MS = 2600;
+/** Seconds behind live edge before UI shows Behind Live / GO LIVE. */
+const BEHIND_LIVE_SEC = 2.5;
+/** Show DVR scrub when seekable window exceeds this. */
+const DVR_SCRUB_MIN_WINDOW_SEC = 2;
+const DVR_SKIP_SEC = 10;
 const OFFLINE_MSG = 'Live stream is currently offline.';
 const SERVER_WAITING_MSG = 'Waiting for live…';
 const ENDED_MSG = 'This live stream has ended.';
 const RECONNECTING_MSG = 'Reconnecting…';
 const LIVE_INTERRUPTED_MSG = 'Live connection interrupted.\nTrying to reconnect…';
+const NEW_LIVE_MSG = 'New LIVE available';
 
 const OVERLAY = {
   NONE: 'none',
@@ -172,6 +181,22 @@ function IconFullscreen() {
   );
 }
 
+function IconSkipBack() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M11 18V6l-8.5 6 8.5 6zm1-12v12l8.5-6L12 6z" />
+    </svg>
+  );
+}
+
+function IconSkipForward() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M13 6v12l8.5-6L13 6zM4 6v12l8.5-6L4 6z" />
+    </svg>
+  );
+}
+
 function formatClock(totalSec) {
   const s = Math.max(0, Math.floor(Number(totalSec) || 0));
   const h = Math.floor(s / 3600);
@@ -223,8 +248,11 @@ function isActivelyPlaying(video) {
 
 /**
  * Shared chrome: auto-hiding controls, center play, volume, fullscreen, scrubber.
+ * @param {{ current: React.MutableRefObject, }} videoRef
+ * @param {{ current: React.MutableRefObject }} shellRef
+ * @param {{ isLiveMode?: boolean, onUserSeek?: (t: number) => void }} [options]
  */
-function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
+function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek } = {}) {
   const [paused, setPaused] = useState(true);
   const [muted, setMuted] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -232,7 +260,10 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
   const [duration, setDuration] = useState(0);
   const [seekMin, setSeekMin] = useState(0);
   const [seekMax, setSeekMax] = useState(0);
+  const [bufferedEnd, setBufferedEnd] = useState(0);
   const hideTimer = useRef(null);
+  const onUserSeekRef = useRef(onUserSeek);
+  onUserSeekRef.current = onUserSeek;
 
   const bumpControls = useCallback(() => {
     setControlsVisible(true);
@@ -260,6 +291,13 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
         setSeekMin(0);
         setSeekMax(dur);
       }
+      if (video.buffered && video.buffered.length > 0) {
+        try {
+          setBufferedEnd(video.buffered.end(video.buffered.length - 1));
+        } catch {
+          /* ignore */
+        }
+      }
     };
 
     const onPlay = () => {
@@ -277,6 +315,7 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
     video.addEventListener('timeupdate', sync);
     video.addEventListener('durationchange', sync);
     video.addEventListener('loadedmetadata', sync);
+    video.addEventListener('progress', sync);
     video.addEventListener('volumechange', sync);
     sync();
 
@@ -286,6 +325,7 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
       video.removeEventListener('timeupdate', sync);
       video.removeEventListener('durationchange', sync);
       video.removeEventListener('loadedmetadata', sync);
+      video.removeEventListener('progress', sync);
       video.removeEventListener('volumechange', sync);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
@@ -308,17 +348,33 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
   }, [videoRef, bumpControls]);
 
   const seekTo = useCallback(
-    (t) => {
+    (t, { user = true } = {}) => {
       const video = videoRef.current;
       if (!video || !Number.isFinite(t)) return;
+      let target = t;
+      if (video.seekable && video.seekable.length > 0) {
+        const start = video.seekable.start(0);
+        const end = video.seekable.end(video.seekable.length - 1);
+        target = Math.min(Math.max(t, start), end);
+      }
       try {
-        video.currentTime = t;
+        video.currentTime = target;
       } catch {
         /* ignore */
       }
+      if (user) onUserSeekRef.current?.(target);
       bumpControls();
     },
     [videoRef, bumpControls]
+  );
+
+  const seekBy = useCallback(
+    (deltaSec) => {
+      const video = videoRef.current;
+      if (!video) return;
+      seekTo((video.currentTime || 0) + deltaSec, { user: true });
+    },
+    [videoRef, seekTo]
   );
 
   const toggleFullscreen = useCallback(() => {
@@ -342,10 +398,12 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false } = {}) {
     duration,
     seekMin,
     seekMax,
+    bufferedEnd,
     bumpControls,
     togglePlay,
     toggleMute,
     seekTo,
+    seekBy,
     toggleFullscreen,
     setControlsVisible,
   };
@@ -361,13 +419,20 @@ function PlayerChrome({
   currentLevel = -1,
   onPickLevel,
   statusLabel = '',
+  newLiveAvailable = false,
 }) {
   const showChrome = chrome.controlsVisible || chrome.paused;
   const scrubMin = chrome.seekMin;
   const scrubMax = Math.max(chrome.seekMax, scrubMin + 0.01);
+  const scrubSpan = Math.max(scrubMax - scrubMin, 0.01);
   const scrubVal = Math.min(Math.max(chrome.current, scrubMin), scrubMax);
+  const playedPct = ((scrubVal - scrubMin) / scrubSpan) * 100;
+  const bufferPct = Math.min(
+    100,
+    Math.max(0, ((Math.min(chrome.bufferedEnd || scrubMin, scrubMax) - scrubMin) / scrubSpan) * 100)
+  );
   const showScrub = isLiveMode
-    ? chrome.seekMax - chrome.seekMin > 4
+    ? chrome.seekMax - chrome.seekMin > DVR_SCRUB_MIN_WINDOW_SEC
     : chrome.duration > 0 || chrome.seekMax > 0;
 
   return (
@@ -390,25 +455,26 @@ function PlayerChrome({
       >
         <div className="elp-player-gradient-top px-2 pt-2 sm:px-3">
           <div className="flex flex-wrap items-center gap-2">
-            {isLiveMode && (
-              <button
-                type="button"
-                onClick={onGoLive}
-                disabled={!behindLive}
-                title={behindLive ? 'Jump to live' : 'Watching live'}
-                className={`elp-live-pill ${behindLive ? 'elp-live-pill-behind' : 'elp-live-pill-on'}`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full bg-white ${behindLive ? '' : 'animate-pulse'}`}
-                  aria-hidden
-                />
-                Live
-              </button>
+            {isLiveMode && !behindLive && (
+              <span className="elp-live-pill elp-live-pill-on" title="Watching live">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />
+                LIVE
+              </span>
             )}
-            {isLiveMode && behindLive && lagSec >= 3 && (
-              <span className="elp-status-chip">−{formatClock(lagSec)} behind</span>
+            {isLiveMode && behindLive && (
+              <span className="elp-status-chip" title={`${formatClock(lagSec)} behind live`}>
+                Behind Live · −{formatClock(lagSec)}
+              </span>
+            )}
+            {isLiveMode && behindLive && newLiveAvailable && (
+              <span className="elp-new-live-chip">{NEW_LIVE_MSG}</span>
             )}
             {statusLabel && <span className="elp-status-chip">{statusLabel}</span>}
+            {isLiveMode && behindLive && (
+              <button type="button" className="elp-go-live-btn" onClick={onGoLive}>
+                GO LIVE
+              </button>
+            )}
           </div>
         </div>
 
@@ -416,22 +482,52 @@ function PlayerChrome({
 
         <div className="elp-player-gradient-bottom">
           {showScrub && (
-            <input
-              type="range"
-              className="elp-player-scrub mb-2"
-              min={scrubMin}
-              max={scrubMax}
-              step="any"
-              value={scrubVal}
-              aria-label={isLiveMode ? 'Seek in live timeline' : 'Seek'}
-              onChange={(e) => chrome.seekTo(Number(e.target.value))}
-              onPointerDown={chrome.bumpControls}
-            />
+            <div className="elp-player-scrub-wrap mb-2">
+              <div className="elp-player-scrub-track" aria-hidden>
+                <div className="elp-player-scrub-buffer" style={{ width: `${bufferPct}%` }} />
+                <div className="elp-player-scrub-played" style={{ width: `${playedPct}%` }} />
+              </div>
+              <input
+                type="range"
+                className="elp-player-scrub"
+                min={scrubMin}
+                max={scrubMax}
+                step="any"
+                value={scrubVal}
+                aria-label={isLiveMode ? 'Seek in live DVR timeline' : 'Seek'}
+                onChange={(e) => chrome.seekTo(Number(e.target.value), { user: true })}
+                onPointerDown={chrome.bumpControls}
+              />
+            </div>
           )}
           <div className="elp-player-bar">
             <button type="button" className="elp-player-btn" aria-label={chrome.paused ? 'Play' : 'Pause'} onClick={chrome.togglePlay}>
               {chrome.paused ? <IconPlay /> : <IconPause />}
             </button>
+
+            {isLiveMode && showScrub && (
+              <>
+                <button
+                  type="button"
+                  className="elp-player-btn elp-skip-btn"
+                  aria-label={`Back ${DVR_SKIP_SEC} seconds`}
+                  onClick={() => chrome.seekBy(-DVR_SKIP_SEC)}
+                >
+                  <IconSkipBack />
+                  <span className="elp-skip-label">10</span>
+                </button>
+                <button
+                  type="button"
+                  className="elp-player-btn elp-skip-btn"
+                  aria-label={`Forward ${DVR_SKIP_SEC} seconds`}
+                  onClick={() => chrome.seekBy(DVR_SKIP_SEC)}
+                >
+                  <IconSkipForward />
+                  <span className="elp-skip-label">10</span>
+                </button>
+              </>
+            )}
+
             <button
               type="button"
               className="elp-player-btn"
@@ -449,12 +545,8 @@ function PlayerChrome({
             )}
 
             {isLiveMode && behindLive && (
-              <button
-                type="button"
-                className="ml-1 rounded bg-red-600 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-white hover:bg-red-500"
-                onClick={onGoLive}
-              >
-                Go live
+              <button type="button" className="elp-go-live-btn elp-go-live-btn--bar" onClick={onGoLive}>
+                GO LIVE
               </button>
             )}
 
@@ -513,14 +605,34 @@ function HlsPlayer({
   const [showOffline, setShowOffline] = useState(false);
   const [behindLive, setBehindLive] = useState(false);
   const [lagSec, setLagSec] = useState(0);
+  const [newLiveAvailable, setNewLiveAvailable] = useState(false);
   const [userStarted, setUserStarted] = useState(() => loadUserStarted(eventId));
+  const dvrIntentRef = useRef(loadLiveDvrIntent(eventId));
 
-  const chrome = usePlayerChrome(videoRef, shellRef, { isLiveMode: true });
+  const markDvrIntent = useCallback(
+    (intent) => {
+      const next = intent === 'dvr' ? 'dvr' : 'live';
+      dvrIntentRef.current = next;
+      saveLiveDvrIntent(eventId, next);
+      if (next === 'live') setNewLiveAvailable(false);
+    },
+    [eventId]
+  );
+
+  const handleUserSeek = useCallback(() => {
+    markDvrIntent('dvr');
+  }, [markDvrIntent]);
+
+  const chrome = usePlayerChrome(videoRef, shellRef, {
+    isLiveMode: true,
+    onUserSeek: handleUserSeek,
+  });
 
   useEffect(() => {
     setUserStarted(loadUserStarted(eventId));
     restoredPosRef.current = false;
     setPlaybackHealthy(false);
+    dvrIntentRef.current = loadLiveDvrIntent(eventId);
   }, [eventId]);
 
   const clearRetry = useCallback(() => {
@@ -577,6 +689,9 @@ function HlsPlayer({
     const video = videoRef.current;
     const hls = hlsRef.current;
     if (!video) return;
+    markDvrIntent('live');
+    clearPlaybackPosition(eventId, 'live');
+    setNewLiveAvailable(false);
     let target = null;
     if (hls && Number.isFinite(hls.liveSyncPosition)) {
       target = hls.liveSyncPosition;
@@ -595,32 +710,57 @@ function HlsPlayer({
     setBehindLive(false);
     setLagSec(0);
     chrome.bumpControls();
-  }, [chrome]);
+  }, [chrome, eventId, markDvrIntent]);
 
   const tryRestoreOrLive = useCallback(
     (video, hls) => {
       if (!video || restoredPosRef.current) return;
       restoredPosRef.current = true;
-      const saved = loadPlaybackPosition(eventId, 'live');
+
+      const preferDvr = dvrIntentRef.current === 'dvr';
       const seekable = video.seekable;
-      if (
-        saved != null &&
-        seekable &&
-        seekable.length > 0
-      ) {
-        const start = seekable.start(0);
-        const end = seekable.end(seekable.length - 1);
-        if (saved >= start && saved <= end) {
+      const liveEdge =
+        hls && Number.isFinite(hls.liveSyncPosition)
+          ? hls.liveSyncPosition
+          : seekable && seekable.length > 0
+            ? seekable.end(seekable.length - 1)
+            : null;
+
+      // Intentional DVR: restore position; do not force LIVE edge.
+      if (preferDvr) {
+        const saved = loadPlaybackPosition(eventId, 'live');
+        if (
+          saved != null &&
+          seekable &&
+          seekable.length > 0
+        ) {
+          const start = seekable.start(0);
+          const end = seekable.end(seekable.length - 1);
+          if (saved >= start && saved <= end) {
+            try {
+              video.currentTime = saved;
+            } catch {
+              /* ignore */
+            }
+            if (liveEdge != null && liveEdge - saved > BEHIND_LIVE_SEC) {
+              setNewLiveAvailable(true);
+            }
+            return;
+          }
+        }
+        // Saved position expired from DVR window — stay near start of window.
+        if (seekable && seekable.length > 0) {
           try {
-            video.currentTime = saved;
+            video.currentTime = seekable.start(0);
           } catch {
             /* ignore */
           }
+          setNewLiveAvailable(true);
           return;
         }
       }
-      const liveEdge =
-        hls && Number.isFinite(hls.liveSyncPosition) ? hls.liveSyncPosition : null;
+
+      // Follow LIVE (default / at-edge viewers) — same as production today.
       if (liveEdge != null) {
         try {
           video.currentTime = liveEdge;
@@ -628,6 +768,7 @@ function HlsPlayer({
           /* ignore */
         }
       }
+      setNewLiveAvailable(false);
     },
     [eventId]
   );
@@ -665,7 +806,15 @@ function HlsPlayer({
       }
       const lag = Math.max(0, liveEdge - video.currentTime);
       setLagSec(lag);
-      setBehindLive(lag > 3.5);
+      const behind = lag > BEHIND_LIVE_SEC;
+      setBehindLive(behind);
+      // Catching up to the live edge clears DVR intent automatically.
+      if (!behind && dvrIntentRef.current === 'dvr' && !video.paused) {
+        markDvrIntent('live');
+      }
+      if (behind && dvrIntentRef.current === 'dvr') {
+        setNewLiveAvailable(true);
+      }
     };
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -842,6 +991,7 @@ function HlsPlayer({
     markPlaying,
     showOverlayIfNotPlaying,
     tryRestoreOrLive,
+    markDvrIntent,
   ]);
 
   const pickLevel = (index) => {
@@ -903,6 +1053,7 @@ function HlsPlayer({
           levels={levels}
           currentLevel={currentLevel}
           onPickLevel={pickLevel}
+          newLiveAvailable={newLiveAvailable}
         />
       )}
     </Frame>
