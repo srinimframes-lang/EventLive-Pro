@@ -6,6 +6,12 @@ import {
   STREAM_PUBLIC_DOMAIN,
   normalizeRtmpIngestUrl,
 } from '../config/env.js';
+import {
+  getOriginHlsPlaybackBase,
+  getViewerHlsPlaybackBase,
+  isHlsCdnEnabled,
+  rewriteViewerHlsUrl,
+} from './hlsCdn.js';
 
 export { MEDIAMTX_VPS_HOST, STREAM_PUBLIC_DOMAIN };
 
@@ -31,45 +37,72 @@ export function resolveStreamKey(event) {
   return event.rtmpStreamKey || streamKeyFromEventId(event._id || event.id);
 }
 
-/** Build canonical HLS URL for a stream key using the configured (HTTPS) base. */
-export function buildHlsPlaybackUrl(streamKey) {
+/** Origin HLS URL (stream.eventlivepro.com) — for DB storage / health probes. */
+export function buildOriginHlsPlaybackUrl(streamKey) {
   const key = String(streamKey || '').trim();
-  if (!env.hlsPlaybackBase || !key) return '';
-  return `${env.hlsPlaybackBase}/live/${key}/index.m3u8`;
+  const base = getOriginHlsPlaybackBase();
+  if (!base || !key) return '';
+  return `${base}/live/${key}/index.m3u8`;
 }
 
 /**
- * Upgrade legacy http:// IP:port playback URLs to the configured HTTPS base so
- * https://livestreamhub.in watch pages never hit mixed-content blocks.
+ * Viewer HLS URL — respects CDN toggle.
+ * OFF → https://stream.eventlivepro.com/live/{key}/index.m3u8
+ * ON  → https://cdn.eventlivepro.com/live/{key}/index.m3u8
+ */
+export function buildHlsPlaybackUrl(streamKey) {
+  const key = String(streamKey || '').trim();
+  const base = getViewerHlsPlaybackBase();
+  if (!base || !key) return '';
+  return `${base}/live/${key}/index.m3u8`;
+}
+
+/**
+ * Upgrade legacy http:// IP:port playback URLs to HTTPS, then apply viewer base
+ * (stream or CDN) for /live/... playlists only.
  */
 export function normalizePlaybackUrl(url) {
   const trimmed = String(url || '').trim();
   if (!trimmed) return '';
 
-  if (!env.requireSecurePlayback) return trimmed;
-  if (trimmed.startsWith('https://')) return trimmed;
-
-  if (trimmed.startsWith('http://')) {
-    const pathMatch = trimmed.match(/(\/live\/[^/]+\/index\.m3u8)$/);
-    if (pathMatch && env.hlsPlaybackBase) {
-      return `${env.hlsPlaybackBase}${pathMatch[1]}`;
-    }
-    if (env.hlsPlaybackBase) {
-      return trimmed.replace(/^http:\/\/[^/]+/, env.hlsPlaybackBase);
+  let next = trimmed;
+  if (env.requireSecurePlayback && next.startsWith('http://')) {
+    const pathMatch = next.match(/(\/live\/[^/]+\/index\.m3u8)$/i);
+    const origin = getOriginHlsPlaybackBase();
+    if (pathMatch && origin) {
+      next = `${origin}${pathMatch[1]}`;
+    } else if (origin) {
+      next = next.replace(/^http:\/\/[^/]+/, origin);
     }
   }
 
-  return trimmed;
+  // Viewer CDN rewrite — only /live/... HLS paths; never RTMP or recording URLs.
+  return rewriteViewerHlsUrl(next);
 }
 
-/** MediaMTX native HLS via HTTPS reverse proxy. */
+/**
+ * Viewer-facing MediaMTX HLS URL (CDN-aware).
+ * Prefer rebuilding from stream key so the CDN toggle applies immediately.
+ */
 export function deriveHlsPlaybackUrl(event) {
   const key = resolveStreamKey(event);
+  if (key) return buildHlsPlaybackUrl(key);
   if (event.hlsUrl) return normalizePlaybackUrl(event.hlsUrl);
-  return buildHlsPlaybackUrl(key);
+  return '';
 }
 
-/** MediaMTX WebRTC/WHEP via HTTPS reverse proxy. */
+/** Origin playlist for health probes — never the CDN host. */
+export function deriveOriginHlsPlaybackUrl(event) {
+  const key = resolveStreamKey(event);
+  if (key) return buildOriginHlsPlaybackUrl(key);
+  if (event.hlsUrl) {
+    const pathMatch = String(event.hlsUrl).match(/(\/live\/[^/]+\/index\.m3u8)$/i);
+    if (pathMatch) return `${getOriginHlsPlaybackBase()}${pathMatch[1]}`;
+  }
+  return '';
+}
+
+/** MediaMTX WebRTC/WHEP via HTTPS reverse proxy (origin — not CDN). */
 export function deriveWebRtcPlaybackUrl(event) {
   if (event.webrtcUrl) {
     const trimmed = String(event.webrtcUrl).trim();
@@ -90,9 +123,12 @@ export function buildRtmpCredentials(event) {
     ingestUrl,
     streamKey,
     fullUrl: `${ingestUrl}/${streamKey}`,
+    // Viewer playback may use CDN; OBS ingest URLs are unchanged above.
     playbackUrl: buildHlsPlaybackUrl(streamKey),
     webrtcUrl: deriveWebRtcPlaybackUrl({ ...(event.toObject?.() || event), rtmpStreamKey: streamKey }),
     mediamtxPath: mediamtxPathName(streamKey),
+    hlsCdnEnabled: isHlsCdnEnabled(),
+    hlsPlaybackBase: getViewerHlsPlaybackBase(),
   };
 }
 
@@ -102,7 +138,10 @@ export function freshServerStreamUrls(event) {
   return buildRtmpCredentials(event);
 }
 
-/** Persist RTMP URL, stream key, and HTTPS HLS playback URL on Premium Server events. */
+/**
+ * Persist RTMP URL, stream key, and ORIGIN HLS URL on Premium Server events.
+ * DB always stores stream.eventlivepro.com — CDN is applied at read/viewer time only.
+ */
 export function syncServerStreamFields(event) {
   if (event.streamProvider !== 'rtmp') return null;
   const key = streamKeyFromEventId(event._id || event.id);
@@ -110,7 +149,7 @@ export function syncServerStreamFields(event) {
   const creds = buildRtmpCredentials({ ...(event.toObject?.() || event), rtmpStreamKey: key });
   event.rtmpStreamKey = creds.streamKey;
   event.rtmpPublishUrl = creds.fullUrl;
-  event.hlsUrl = creds.playbackUrl;
+  event.hlsUrl = buildOriginHlsPlaybackUrl(key);
   return creds;
 }
 

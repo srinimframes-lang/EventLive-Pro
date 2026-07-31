@@ -32,6 +32,11 @@ const settingsSchema = new Schema(
     googleAnalyticsId: { type: String, default: '', trim: true },
     googleSearchConsoleVerification: { type: String, default: '', trim: true },
 
+    // ── Live HLS CDN (viewer playback host only — never OBS/RTMP/MediaMTX) ──
+    // false → https://stream.eventlivepro.com/live/...
+    // true  → https://cdn.eventlivepro.com/live/...
+    hlsCdnEnabled: { type: Boolean, default: false },
+
     // ── Reseller credit pricing (₹ per credit) ────────────────
     creditPricing: {
       youtube: { type: Number, default: 100, min: 0 }, // 1 YouTube event

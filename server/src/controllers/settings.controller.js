@@ -3,10 +3,11 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
 import { cacheDel, cacheGet, cacheSet } from '../utils/apiCache.js';
 import { env } from '../config/env.js';
+import { isHlsCdnEnabled, setHlsCdnEnabled } from '../utils/hlsCdn.js';
 
 const SETTINGS_CACHE_KEY = 'settings:public';
 
-function withFailoverFlag(payload) {
+function withRuntimeFlags(payload) {
   return {
     ...payload,
     data: {
@@ -14,8 +15,26 @@ function withFailoverFlag(payload) {
       // Env-driven; overlaid after cache so flipping FAILOVER_ENABLED does not
       // require a settings DB write. Default false keeps Backup UI hidden.
       failoverFeatureEnabled: Boolean(env.failoverEnabled),
+      // Viewer HLS CDN toggle (Settings-backed; env default until first sync).
+      hlsCdnEnabled: isHlsCdnEnabled(),
+      hlsCdnPlaybackBase: env.hlsCdnPlaybackBase,
+      hlsOriginPlaybackBase: env.hlsPlaybackBase,
     },
   };
+}
+
+/** Sync in-memory CDN flag from Settings (or env default). */
+export async function syncHlsCdnFromSettings() {
+  try {
+    const settings = await Settings.getSingleton();
+    if (typeof settings.hlsCdnEnabled === 'boolean') {
+      setHlsCdnEnabled(settings.hlsCdnEnabled);
+    } else {
+      setHlsCdnEnabled(env.hlsCdnEnabled);
+    }
+  } catch {
+    setHlsCdnEnabled(env.hlsCdnEnabled);
+  }
 }
 
 /**
@@ -27,7 +46,7 @@ export const getSettings = asyncHandler(async (_req, res) => {
   const cached = cacheGet(SETTINGS_CACHE_KEY);
   if (cached) {
     res.set('Cache-Control', 'public, max-age=30');
-    return res.status(200).json(withFailoverFlag(cached));
+    return res.status(200).json(withRuntimeFlags(cached));
   }
 
   const settings = await Settings.getSingleton();
@@ -37,7 +56,7 @@ export const getSettings = asyncHandler(async (_req, res) => {
   };
   cacheSet(SETTINGS_CACHE_KEY, payload, 30_000);
   res.set('Cache-Control', 'public, max-age=30');
-  res.status(200).json(withFailoverFlag(payload));
+  res.status(200).json(withRuntimeFlags(payload));
 });
 
 /**
@@ -62,6 +81,11 @@ export const updateSettings = asyncHandler(async (req, res) => {
   ];
   for (const key of topLevel) {
     if (b[key] !== undefined) settings[key] = b[key];
+  }
+
+  if (b.hlsCdnEnabled !== undefined) {
+    settings.hlsCdnEnabled = Boolean(b.hlsCdnEnabled);
+    setHlsCdnEnabled(settings.hlsCdnEnabled);
   }
 
   if (b.seo) {
@@ -96,7 +120,7 @@ export const updateSettings = asyncHandler(async (req, res) => {
 
   await settings.save();
   cacheDel(SETTINGS_CACHE_KEY);
-  res.status(200).json({ success: true, data: settings });
+  res.status(200).json(withRuntimeFlags({ success: true, data: settings }));
 });
 
 /**

@@ -5,6 +5,7 @@ import { connectDB } from './config/db.js';
 import { initSocket } from './realtime/socket.js';
 import { runSeed } from './config/seed.js';
 import { startFailoverHealthWorker } from './services/failoverHealthWorker.js';
+import { syncHlsCdnFromSettings } from './controllers/settings.controller.js';
 
 async function start() {
   await connectDB();
@@ -15,6 +16,14 @@ async function start() {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[server] Seed failed:', err.message);
+  }
+
+  // Viewer HLS CDN toggle from Settings (default OFF — origin stream host).
+  try {
+    await syncHlsCdnFromSettings();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[server] HLS CDN sync failed:', err.message);
   }
 
   const server = http.createServer(app);

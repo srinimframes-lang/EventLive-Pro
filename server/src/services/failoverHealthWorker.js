@@ -1,7 +1,7 @@
 import { Event } from '../models/Event.js';
 import { env } from '../config/env.js';
 import {
-  deriveHlsPlaybackUrl,
+  deriveOriginHlsPlaybackUrl,
   probeMediaMtxPublishing,
   resolveStreamKey,
 } from '../utils/mediaStream.js';
@@ -44,7 +44,7 @@ function emitFailoverEvents(io, event, transition) {
 async function checkOneEvent(event, io) {
   if (!isFailoverCandidate(event, { failoverEnabled: true })) return;
 
-  const playbackUrl = deriveHlsPlaybackUrl(event);
+  const playbackUrl = deriveOriginHlsPlaybackUrl(event);
   const [playlistOk, publishing] = await Promise.all([
     probeHlsPlaylist(playbackUrl),
     probeMediaMtxPublishing(resolveStreamKey(event)),

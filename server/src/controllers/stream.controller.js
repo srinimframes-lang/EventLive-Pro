@@ -6,8 +6,10 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { assertCanManageEvent, canManageEvent } from '../utils/ownership.js';
 import { extractYouTubeId } from '../utils/youtube.js';
 import {
+  buildOriginHlsPlaybackUrl,
   buildRtmpCredentials,
   deriveHlsPlaybackUrl,
+  deriveOriginHlsPlaybackUrl,
   deriveWebRtcPlaybackUrl,
   ensureEventStreamKey,
   findEventByStreamKey,
@@ -17,6 +19,7 @@ import {
   resolveStreamKey,
   streamKeyFromEventId,
 } from '../utils/mediaStream.js';
+import { getViewerHlsPlaybackBase, isHlsCdnEnabled } from '../utils/hlsCdn.js';
 import {
   addDays,
   applyRecordingToEvent,
@@ -167,6 +170,8 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     streamUrl: event.streamUrl || '',
     hlsUrl: isServer ? playbackUrl : event.hlsUrl,
     playbackUrl,
+    hlsCdnEnabled: isHlsCdnEnabled(),
+    hlsPlaybackBase: getViewerHlsPlaybackBase(),
     webrtcUrl,
     poster: event.coverImage || '',
     isLive,
@@ -498,7 +503,7 @@ export const getStreamHealth = asyncHandler(async (req, res) => {
   }
 
   const event = await findEventOr404(req.params.id, res);
-  const playbackUrl = deriveHlsPlaybackUrl(event);
+  const playbackUrl = deriveOriginHlsPlaybackUrl(event);
   const [playlistOk, publishing] = await Promise.all([
     event.streamProvider === 'rtmp' || event.streamProvider === 'hls'
       ? probeHlsPlaylist(playbackUrl)
@@ -681,7 +686,7 @@ export const streamStarted = asyncHandler(async (req, res) => {
   event.liveStartedAt = event.liveStartedAt || new Date();
   event.liveEndedAt = undefined;
   if (event.streamProvider === 'none') event.streamProvider = 'rtmp';
-  const playbackUrl = deriveHlsPlaybackUrl(event);
+  const playbackUrl = buildOriginHlsPlaybackUrl(resolveStreamKey(event));
   if (playbackUrl) event.hlsUrl = playbackUrl;
   if (['draft', 'published', 'ended'].includes(event.status)) event.status = 'live';
   await event.save();

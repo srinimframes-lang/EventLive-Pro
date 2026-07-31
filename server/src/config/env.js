@@ -29,6 +29,11 @@ function defaultHlsPlaybackBase() {
   return `https://${STREAM_PUBLIC_DOMAIN}`;
 }
 
+function defaultHlsCdnPlaybackBase() {
+  if (process.env.HLS_CDN_PLAYBACK_BASE) return trimUrl(process.env.HLS_CDN_PLAYBACK_BASE);
+  return 'https://cdn.eventlivepro.com';
+}
+
 function defaultWebrtcPlaybackBase() {
   if (process.env.WEBRTC_PLAYBACK_BASE) return trimUrl(process.env.WEBRTC_PLAYBACK_BASE);
   return `https://${STREAM_PUBLIC_DOMAIN}`;
@@ -89,8 +94,13 @@ export const env = {
   rtmpIngestUrl: normalizeRtmpIngestUrl(
     process.env.RTMP_INGEST_URL || `rtmp://${STREAM_PUBLIC_DOMAIN}:1935/live`
   ),
-  // Browser HLS playback — HTTPS on the public stream domain (mixed-content safe).
+  // Browser HLS playback — HTTPS origin (stream.eventlivepro.com). CDN toggle may
+  // rewrite viewer URLs to hlsCdnPlaybackBase at runtime without changing this origin.
   hlsPlaybackBase: defaultHlsPlaybackBase(),
+  // Optional Cloudflare (or other) CDN front for viewer HLS only. Never used for OBS/RTMP.
+  hlsCdnPlaybackBase: defaultHlsCdnPlaybackBase(),
+  // Default CDN toggle when Settings has not been synced yet (OFF unless env says true).
+  hlsCdnEnabled: process.env.HLS_CDN_ENABLED === 'true',
   webrtcPlaybackBase: defaultWebrtcPlaybackBase(),
   // Server-side MediaMTX API probe (internal HTTP is fine).
   mediamtxApiUrl: trimUrl(process.env.MEDIAMTX_API_URL || `http://${MEDIAMTX_VPS_HOST}:9997`),

@@ -40,6 +40,7 @@ export default function AdminSettings() {
         address: form.address,
         googleAnalyticsId: form.googleAnalyticsId,
         googleSearchConsoleVerification: form.googleSearchConsoleVerification,
+        hlsCdnEnabled: Boolean(form.hlsCdnEnabled),
         seo: form.seo,
         payment: form.payment,
       });
@@ -320,6 +321,33 @@ export default function AdminSettings() {
             <input name="branch" className="input" value={b.branch || ''} onChange={bank} />
           </div>
         </div>
+      </div>
+
+      {/* Live HLS CDN — viewer playback host only */}
+      <div className="card space-y-3">
+        <h2 className="text-lg font-bold text-slate-900">Live HLS CDN</h2>
+        <p className="text-sm text-slate-600">
+          Changes <strong>viewer</strong> HLS playback host only. OBS publish URL, stream key,
+          MediaMTX, recording, and Replay are never modified.
+        </p>
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4"
+            checked={Boolean(form.hlsCdnEnabled)}
+            onChange={(e) => setForm((f) => ({ ...f, hlsCdnEnabled: e.target.checked }))}
+          />
+          <span>
+            <span className="block font-semibold text-slate-900">
+              Use CDN for viewer HLS {form.hlsCdnEnabled ? '(ON)' : '(OFF)'}
+            </span>
+            <span className="mt-1 block text-xs text-slate-500">
+              OFF → <code className="text-slate-700">https://stream.eventlivepro.com/live/…</code>
+              <br />
+              ON → <code className="text-slate-700">https://cdn.eventlivepro.com/live/…</code>
+            </span>
+          </span>
+        </label>
       </div>
 
       <button type="submit" className="btn-primary px-6 py-3" disabled={saving}>
