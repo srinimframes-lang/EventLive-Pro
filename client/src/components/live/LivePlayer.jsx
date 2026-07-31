@@ -12,6 +12,11 @@ import {
   savePlaybackPosition,
   saveUserStarted,
 } from '../../utils/playerPrefs.js';
+import {
+  LIVE_PRIORITY_POLL_MS,
+  isTemporaryRecordingFallback,
+  probeLiveHlsPlaylist,
+} from '../../utils/livePriority.js';
 import '../../styles/watch-theme.css';
 
 const RETRY_MS = 2500;
@@ -20,6 +25,7 @@ const OFFLINE_MSG = 'Live stream is currently offline.';
 const SERVER_WAITING_MSG = 'Waiting for live…';
 const ENDED_MSG = 'This live stream has ended.';
 const RECONNECTING_MSG = 'Reconnecting…';
+const LIVE_INTERRUPTED_MSG = 'Live connection interrupted.\nTrying to reconnect…';
 
 const OVERLAY = {
   NONE: 'none',
@@ -88,10 +94,20 @@ function QuietSpinner({ show }) {
 
 function StatusOverlay({ show, message, spinner = true }) {
   if (!show) return null;
+  const lines = String(message || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
   return (
     <div className="player-status-overlay" role="status" aria-live="polite">
       {spinner ? <div className="player-overlay-spinner" aria-hidden /> : null}
-      {message ? <p className="player-status-overlay__text">{message}</p> : null}
+      {lines.length > 0 ? (
+        <div className="player-status-overlay__text">
+          {lines.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -980,7 +996,7 @@ function formatPartDuration(sec) {
   return `${r}s`;
 }
 
-function Mp4Player({ src, poster, eventId = '', parts = [] }) {
+function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume = false }) {
   const videoRef = useRef(null);
   const shellRef = useRef(null);
   const posSaveTimer = useRef(null);
@@ -1141,13 +1157,15 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
     );
   }
 
-  const statusLabel =
-    sortedParts.length > 1
+  const statusLabel = awaitingLiveResume
+    ? 'Reconnecting…'
+    : sortedParts.length > 1
       ? `Replay · Part ${partIndex + 1}/${sortedParts.length}`
       : 'Replay';
 
-  const showReconnecting = overlay === OVERLAY.RECONNECTING;
-  const showBuffering = overlay === OVERLAY.BUFFERING;
+  const showInterrupted = awaitingLiveResume;
+  const showReconnecting = !showInterrupted && overlay === OVERLAY.RECONNECTING;
+  const showBuffering = overlay === OVERLAY.BUFFERING && !showInterrupted;
 
   return (
     <Frame shellRef={shellRef}>
@@ -1163,6 +1181,7 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
         onMouseMove={chrome.bumpControls}
         onTouchStart={chrome.bumpControls}
       />
+      <StatusOverlay show={showInterrupted} message={LIVE_INTERRUPTED_MSG} />
       <StatusOverlay show={showReconnecting} message={RECONNECTING_MSG} />
       <StatusOverlay show={showBuffering && !showReconnecting} />
       <PlayerChrome
@@ -1173,7 +1192,7 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
         onGoLive={() => {}}
         statusLabel={statusLabel}
       />
-      {sortedParts.length > 1 ? (
+      {!awaitingLiveResume && sortedParts.length > 1 ? (
         <div className="recording-parts" role="tablist" aria-label="Recording parts">
           {sortedParts.map((p, idx) => (
             <button
@@ -1198,8 +1217,57 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
 
 /**
  * Renders the appropriate live player for the configured provider.
+ * LIVE HLS always wins over recording parts; parts are temporary fallback only.
  */
 export default function LivePlayer({ config }) {
+  const [hlsLiveResume, setHlsLiveResume] = useState(false);
+
+  useEffect(() => {
+    if (!config) {
+      setHlsLiveResume(false);
+      return;
+    }
+    // Parent/API confirmed LIVE — drop local override (player already on HLS).
+    if (config.isLive) setHlsLiveResume(false);
+  }, [config]);
+
+  // While recording parts play (or local LIVE resume), re-check HLS every 3s.
+  // Never cache "parts forever" — if LIVE playlist returns, switch immediately.
+  useEffect(() => {
+    if (!config) return undefined;
+    if (config.isLive) return undefined;
+    const isMediaMtx = config.provider === 'rtmp' || config.provider === 'hls';
+    if (!isMediaMtx) return undefined;
+    const hasParts =
+      Boolean(config.recordingUrl) ||
+      (Array.isArray(config.recordings) && config.recordings.length > 0);
+    if (!hasParts && !hlsLiveResume) return undefined;
+
+    const playback = resolveServerPlaybackUrl(config);
+    if (!playback) return undefined;
+
+    let cancelled = false;
+    let failStreak = 0;
+    const tick = async () => {
+      const ok = await probeLiveHlsPlaylist(playback);
+      if (cancelled) return;
+      if (ok) {
+        failStreak = 0;
+        setHlsLiveResume(true);
+        return;
+      }
+      failStreak += 1;
+      // Require two misses so a single flaky fetch doesn't bounce off LIVE.
+      if (hlsLiveResume && failStreak >= 2) setHlsLiveResume(false);
+    };
+    tick();
+    const timer = setInterval(tick, LIVE_PRIORITY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [config, hlsLiveResume]);
+
   if (!config) {
     return <Frame />;
   }
@@ -1227,19 +1295,20 @@ export default function LivePlayer({ config }) {
 
   const { provider, isLive } = config;
   const poster = config.poster || '';
-  const live = Boolean(isLive);
+  const live = Boolean(isLive) || hlsLiveResume;
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
   const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
-
-  const reconnecting = Boolean(config.reconnecting);
+  const awaitingLiveResume = isTemporaryRecordingFallback(config);
+  const reconnecting = Boolean(config.reconnecting) || (hlsLiveResume && !isLive);
 
   if (isMediaMtx && live) {
     const playback = resolveServerPlaybackUrl(config);
     if (!playback) return <Offline message={SERVER_WAITING_MSG} />;
     return (
       <HlsPlayer
+        key={`live-${eventId}-${hlsLiveResume ? 'resume' : 'cfg'}`}
         src={playback}
         poster={poster}
         isLive
@@ -1257,6 +1326,7 @@ export default function LivePlayer({ config }) {
         poster={poster}
         eventId={eventId}
         parts={recordingParts}
+        awaitingLiveResume={awaitingLiveResume}
       />
     );
   }
@@ -1283,6 +1353,7 @@ export default function LivePlayer({ config }) {
         poster={poster}
         eventId={eventId}
         parts={recordingParts}
+        awaitingLiveResume={awaitingLiveResume}
       />
     );
   }

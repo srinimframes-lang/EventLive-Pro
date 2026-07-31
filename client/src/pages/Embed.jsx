@@ -8,6 +8,7 @@ import { ensureSafeEventTheme } from '../utils/eventTheme.js';
 import { resolveMediaUrl } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import FailoverToast from '../components/live/FailoverToast.jsx';
+import { livePollIntervalMs, mergeLivePriorityConfig } from '../utils/livePriority.js';
 
 /**
  * Minimal embeddable player — video only (no chrome, chat, gallery, ads).
@@ -49,69 +50,35 @@ export default function Embed() {
   const room = useLiveRoom(eventId, { guestName: 'Guest' });
 
   const streamProvider = config?.provider;
+  const pollIsLive = Boolean(config?.isLive);
+  const pollRecordingKey = config?.recordingUrl
+    ? '1'
+    : Array.isArray(config?.recordings) && config.recordings.length > 0
+      ? String(config.recordings.length)
+      : '';
   useEffect(() => {
     if (!eventId || !streamProvider) return undefined;
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
     if (!isServer) return undefined;
-    const intervalMs = room.connected ? 30000 : 10000;
+    const intervalMs = livePollIntervalMs(
+      {
+        isLive: pollIsLive,
+        recordingUrl: pollRecordingKey ? '1' : '',
+        recordings: pollRecordingKey ? [{}] : [],
+      },
+      { socketConnected: room.connected }
+    );
     const timer = setInterval(async () => {
       const cfg = await streamService.getConfig(eventId).catch(() => null);
       if (cfg) setConfig((prev) => (prev ? { ...prev, ...cfg } : cfg));
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, room.connected]);
+  }, [eventId, streamProvider, room.connected, pollIsLive, pollRecordingKey]);
 
-  const mergedConfig = useMemo(() => {
-    if (!config) return null;
-    const next = { ...config };
-    if (room.liveStatus) {
-      next.isLive = room.liveStatus.isLive;
-      if (room.liveStatus.reconnecting !== undefined) {
-        next.reconnecting = Boolean(room.liveStatus.reconnecting);
-      }
-      if (room.liveStatus.playbackMode) {
-        next.playbackMode = room.liveStatus.playbackMode;
-      }
-      if (room.liveStatus.recordingUrl !== undefined) {
-        next.recordingUrl = room.liveStatus.recordingUrl || '';
-        next.recordingAvailable = Boolean(room.liveStatus.recordingAvailable);
-        if (!room.liveStatus.playbackMode) {
-          next.playbackMode =
-            room.liveStatus.isLive
-              ? room.liveStatus.reconnecting
-                ? 'reconnecting'
-                : 'live'
-              : room.liveStatus.recordingUrl
-                ? 'recorded'
-                : 'offline';
-        }
-      }
-      if (room.liveStatus.recordings) {
-        next.recordings = room.liveStatus.recordings;
-        next.recordingCount = room.liveStatus.recordingCount ?? room.liveStatus.recordings.length;
-      }
-      if (room.liveStatus.recordingMergeStatus !== undefined) {
-        next.recordingMergeStatus = room.liveStatus.recordingMergeStatus;
-      }
-      if (room.liveStatus.failoverFeatureEnabled) {
-        next.failoverFeatureEnabled = true;
-        if (room.liveStatus.activeSource) next.activeSource = room.liveStatus.activeSource;
-        if (room.liveStatus.backupStatus) next.backupStatus = room.liveStatus.backupStatus;
-        if (room.liveStatus.backupYoutubeVideoId !== undefined) {
-          next.backupYoutubeVideoId = room.liveStatus.backupYoutubeVideoId;
-        }
-      }
-    }
-    if (room.failoverState?.failoverFeatureEnabled) {
-      next.failoverFeatureEnabled = true;
-      next.activeSource = room.failoverState.activeSource || next.activeSource;
-      next.backupStatus = room.failoverState.backupStatus || next.backupStatus;
-      if (room.failoverState.backupYoutubeVideoId !== undefined) {
-        next.backupYoutubeVideoId = room.failoverState.backupYoutubeVideoId;
-      }
-    }
-    return next;
-  }, [config, room.liveStatus, room.failoverState]);
+  const mergedConfig = useMemo(
+    () => mergeLivePriorityConfig(config, room.liveStatus, room.failoverState),
+    [config, room.liveStatus, room.failoverState]
+  );
 
   const title = useMemo(() => {
     if (!event) return '';

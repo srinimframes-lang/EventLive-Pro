@@ -17,6 +17,11 @@ import ShareButtons from '../components/ShareButtons.jsx';
 import PhotographyStudio from '../components/PhotographyStudio.jsx';
 import ThemeLoadingScreen from '../components/theme/ThemeLoadingScreen.jsx';
 import EventSeo from '../components/seo/EventSeo.jsx';
+import {
+  isTemporaryRecordingFallback,
+  livePollIntervalMs,
+  mergeLivePriorityConfig,
+} from '../utils/livePriority.js';
 
 // Defer chat / Q&A / gallery / themed shell so the player can load first.
 const LiveChat = lazy(() => import('../components/live/LiveChat.jsx'));
@@ -69,14 +74,27 @@ export default function Watch() {
   const guestName = user?.name || 'Guest';
   const room = useLiveRoom(eventId, { guestName });
 
-  // Poll MediaMTX-backed stream status while watching a Premium Server event.
-  // When Socket.IO is connected, live status is also pushed — poll less often.
+  // Poll MediaMTX-backed stream status. While on recording parts, poll every 3s
+  // so LIVE resume is detected without a page refresh (LIVE has highest priority).
   const streamProvider = config?.provider;
+  const pollIsLive = Boolean(config?.isLive);
+  const pollRecordingKey = config?.recordingUrl
+    ? '1'
+    : Array.isArray(config?.recordings) && config.recordings.length > 0
+      ? String(config.recordings.length)
+      : '';
   useEffect(() => {
     if (!eventId || !streamProvider) return undefined;
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
     if (!isServer) return undefined;
-    const intervalMs = room.connected ? 30000 : 10000;
+    const intervalMs = livePollIntervalMs(
+      {
+        isLive: pollIsLive,
+        recordingUrl: pollRecordingKey ? '1' : '',
+        recordings: pollRecordingKey ? [{}] : [],
+      },
+      { socketConnected: room.connected }
+    );
     const timer = setInterval(async () => {
       const cfg = await streamService.getConfig(eventId).catch(() => null);
       if (cfg) {
@@ -84,70 +102,17 @@ export default function Watch() {
       }
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, room.connected]);
+  }, [eventId, streamProvider, room.connected, pollIsLive, pollRecordingKey]);
 
-  const mergedConfig = useMemo(() => {
-    if (!config) return null;
-    const next = { ...config };
-    if (room.liveStatus) {
-      next.isLive = room.liveStatus.isLive;
-      if (room.liveStatus.reconnecting !== undefined) {
-        next.reconnecting = Boolean(room.liveStatus.reconnecting);
-      }
-      if (room.liveStatus.playbackMode) {
-        next.playbackMode = room.liveStatus.playbackMode;
-      }
-      if (room.liveStatus.recordingUrl !== undefined) {
-        next.recordingUrl = room.liveStatus.recordingUrl || '';
-        next.recordingAvailable = Boolean(room.liveStatus.recordingAvailable);
-        if (!room.liveStatus.playbackMode) {
-          next.playbackMode =
-            room.liveStatus.isLive
-              ? room.liveStatus.reconnecting
-                ? 'reconnecting'
-                : 'live'
-              : room.liveStatus.recordingUrl
-                ? 'recorded'
-                : 'offline';
-        }
-      }
-      if (room.liveStatus.recordings) {
-        next.recordings = room.liveStatus.recordings;
-        next.recordingCount = room.liveStatus.recordingCount ?? room.liveStatus.recordings.length;
-      }
-      if (room.liveStatus.recordingMergeStatus !== undefined) {
-        next.recordingMergeStatus = room.liveStatus.recordingMergeStatus;
-      }
-      // Failover fields from sockets (only present when FAILOVER_ENABLED=true).
-      if (room.liveStatus.failoverFeatureEnabled) {
-        next.failoverFeatureEnabled = true;
-        if (room.liveStatus.activeSource) next.activeSource = room.liveStatus.activeSource;
-        if (room.liveStatus.backupStatus) next.backupStatus = room.liveStatus.backupStatus;
-        if (room.liveStatus.backupYoutubeVideoId !== undefined) {
-          next.backupYoutubeVideoId = room.liveStatus.backupYoutubeVideoId;
-        }
-        if (room.liveStatus.failoverPlaybackMode) {
-          next.failoverPlaybackMode = room.liveStatus.failoverPlaybackMode;
-        }
-        if (room.liveStatus.emergencyOverride) {
-          next.emergencyOverride = room.liveStatus.emergencyOverride;
-        }
-      }
-    }
-    if (room.failoverState?.failoverFeatureEnabled) {
-      next.failoverFeatureEnabled = true;
-      next.activeSource = room.failoverState.activeSource || next.activeSource;
-      next.backupStatus = room.failoverState.backupStatus || next.backupStatus;
-      if (room.failoverState.backupYoutubeVideoId !== undefined) {
-        next.backupYoutubeVideoId = room.failoverState.backupYoutubeVideoId;
-      }
-    }
-    return next;
-  }, [config, room.liveStatus, room.failoverState]);
+  const mergedConfig = useMemo(
+    () => mergeLivePriorityConfig(config, room.liveStatus, room.failoverState),
+    [config, room.liveStatus, room.failoverState]
+  );
 
   const isRecordedReplay = Boolean(
     mergedConfig &&
       !mergedConfig.isLive &&
+      !isTemporaryRecordingFallback(mergedConfig) &&
       (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
   );
 

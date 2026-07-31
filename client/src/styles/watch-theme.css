@@ -249,6 +249,12 @@
     @apply text-sm font-semibold tracking-wide text-white sm:text-base;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
   }
+  .player-status-overlay__text p {
+    @apply m-0 leading-snug;
+  }
+  .player-status-overlay__text p + p {
+    @apply mt-1 font-medium text-white/85;
+  }
   .player-click-to-play {
     @apply absolute inset-0 z-40 flex items-center justify-center overflow-hidden border-0 bg-black p-0;
     cursor: pointer;

@@ -19,6 +19,7 @@ export function useLiveRoom(eventId, { guestName } = {}) {
   const [playerNonce, setPlayerNonce] = useState(0);
   const [failoverNotice, setFailoverNotice] = useState(null);
   const [failoverState, setFailoverState] = useState(null);
+  const prevIsLiveRef = useRef(null);
 
   // Load initial history once per event.
   useEffect(() => {
@@ -74,9 +75,21 @@ export function useLiveRoom(eventId, { guestName } = {}) {
     });
     socket.on('stream:status', (status) => {
       setLiveStatus(status);
-      // Remount only when entering recorded replay — not during reconnect grace.
-      if (status?.reconnecting) return;
+      // Remount when entering recorded replay, or when LIVE resumes after parts —
+      // not during reconnect grace (stay on the same HLS player).
+      if (status?.reconnecting) {
+        prevIsLiveRef.current = true;
+        return;
+      }
+      const nowLive = status?.isLive === true;
+      const wasLive = prevIsLiveRef.current;
+      prevIsLiveRef.current = nowLive;
       if (status && status.isLive === false && status.recordingUrl) {
+        setPlayerNonce((n) => n + 1);
+        return;
+      }
+      // LIVE returned after offline/parts — force destroy Mp4Player and remount HLS.
+      if (nowLive && wasLive === false) {
         setPlayerNonce((n) => n + 1);
       }
     });
