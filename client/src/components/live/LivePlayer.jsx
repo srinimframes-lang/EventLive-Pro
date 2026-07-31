@@ -509,6 +509,7 @@ function HlsPlayer({
   const [currentLevel, setCurrentLevel] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
   const hasPlayedRef = useRef(false);
+  const [playbackHealthy, setPlaybackHealthy] = useState(false);
   const [showOffline, setShowOffline] = useState(false);
   const [behindLive, setBehindLive] = useState(false);
   const [lagSec, setLagSec] = useState(0);
@@ -519,6 +520,7 @@ function HlsPlayer({
   useEffect(() => {
     setUserStarted(loadUserStarted(eventId));
     restoredPosRef.current = false;
+    setPlaybackHealthy(false);
   }, [eventId]);
 
   const clearRetry = useCallback(() => {
@@ -532,6 +534,7 @@ function HlsPlayer({
     clearRetry();
     setShowOffline(false);
     setOverlay(OVERLAY.NONE);
+    setPlaybackHealthy(true);
   }, [clearRetry]);
 
   const markPlaying = useCallback(() => {
@@ -541,16 +544,27 @@ function HlsPlayer({
 
   const showOverlayIfNotPlaying = useCallback((state) => {
     if (hasPlayedRef.current && isActivelyPlaying(videoRef.current)) return;
+    setPlaybackHealthy(false);
     setOverlay(state);
   }, []);
 
   const scheduleRetry = useCallback(() => {
     clearRetry();
+    setPlaybackHealthy(false);
     setOverlay(OVERLAY.RECONNECTING);
     retryTimer.current = setTimeout(() => {
       setReloadKey((k) => k + 1);
     }, RETRY_MS);
   }, [clearRetry]);
+
+  // When parent clears reconnecting (LIVE confirmed), drop stale overlay if media is playing.
+  useEffect(() => {
+    if (reconnecting) return undefined;
+    if (isActivelyPlaying(videoRef.current) || hasPlayedRef.current) {
+      hideOverlay();
+    }
+    return undefined;
+  }, [reconnecting, hideOverlay]);
 
   const handleFirstPlay = useCallback(() => {
     setUserStarted(true);
@@ -627,6 +641,7 @@ function HlsPlayer({
     setShowOffline(false);
     hasPlayedRef.current = false;
     restoredPosRef.current = false;
+    setPlaybackHealthy(false);
     setOverlay(OVERLAY.BUFFERING);
     setBehindLive(false);
     setLagSec(0);
@@ -846,10 +861,14 @@ function HlsPlayer({
     );
   }
 
+  // Never keep "Reconnecting..." once media is healthy — even if a stale
+  // reconnecting prop arrives from socket/API lag.
   const showReconnecting =
-    (reconnecting || overlay === OVERLAY.RECONNECTING) && !showOffline;
+    !showOffline &&
+    !playbackHealthy &&
+    (reconnecting || overlay === OVERLAY.RECONNECTING);
   const showBuffering =
-    overlay === OVERLAY.BUFFERING && !showOffline && !showReconnecting;
+    overlay === OVERLAY.BUFFERING && !showOffline && !showReconnecting && !playbackHealthy;
 
   return (
     <Frame shellRef={shellRef}>
@@ -1218,8 +1237,10 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
 /**
  * Renders the appropriate live player for the configured provider.
  * LIVE HLS always wins over recording parts; parts are temporary fallback only.
+ *
+ * @param {{ config: object, onLiveUiChange?: (state: { isLive: boolean, reconnecting: boolean }) => void }} props
  */
-export default function LivePlayer({ config }) {
+export default function LivePlayer({ config, onLiveUiChange }) {
   const [hlsLiveResume, setHlsLiveResume] = useState(false);
 
   useEffect(() => {
@@ -1268,6 +1289,17 @@ export default function LivePlayer({ config }) {
     };
   }, [config, hlsLiveResume]);
 
+  const live = Boolean(config?.isLive) || hlsLiveResume;
+  // HLS probe confirmation clears reconnect UI immediately. Server grace flag may
+  // still be true — HlsPlayer hides overlay once media is actually playing.
+  const reconnecting = hlsLiveResume ? false : Boolean(config?.reconnecting);
+
+  useEffect(() => {
+    if (!onLiveUiChange) return undefined;
+    onLiveUiChange({ isLive: live, reconnecting: live ? false : reconnecting });
+    return undefined;
+  }, [live, reconnecting, onLiveUiChange]);
+
   if (!config) {
     return <Frame />;
   }
@@ -1293,15 +1325,16 @@ export default function LivePlayer({ config }) {
     return <YouTubePlayer videoId={videoId} />;
   }
 
-  const { provider, isLive } = config;
+  const { provider } = config;
   const poster = config.poster || '';
-  const live = Boolean(isLive) || hlsLiveResume;
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
   const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
-  const awaitingLiveResume = isTemporaryRecordingFallback(config);
-  const reconnecting = Boolean(config.reconnecting) || (hlsLiveResume && !isLive);
+  const awaitingLiveResume = isTemporaryRecordingFallback({
+    ...config,
+    isLive: live,
+  }) && !live;
 
   if (isMediaMtx && live) {
     const playback = resolveServerPlaybackUrl(config);

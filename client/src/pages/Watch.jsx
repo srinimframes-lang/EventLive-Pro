@@ -104,14 +104,23 @@ export default function Watch() {
     return () => clearInterval(timer);
   }, [eventId, streamProvider, room.connected, pollIsLive, pollRecordingKey]);
 
+  const [playerLiveConfirmed, setPlayerLiveConfirmed] = useState(false);
+
+  const handleLiveUiChange = useCallback((state) => {
+    setPlayerLiveConfirmed(Boolean(state?.isLive));
+  }, []);
+
   const mergedConfig = useMemo(
     () => mergeLivePriorityConfig(config, room.liveStatus, room.failoverState),
     [config, room.liveStatus, room.failoverState]
   );
 
+  // Badge/status only — do not write back into stream config (keeps parts fallback intact).
+  const displayIsLive = Boolean(mergedConfig?.isLive || playerLiveConfirmed);
+
   const isRecordedReplay = Boolean(
     mergedConfig &&
-      !mergedConfig.isLive &&
+      !displayIsLive &&
       !isTemporaryRecordingFallback(mergedConfig) &&
       (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
   );
@@ -204,6 +213,8 @@ export default function Watch() {
             activeTab={activeTab}
             setTab={setTab}
             canAnswer={canAnswer}
+            onLiveUiChange={handleLiveUiChange}
+            displayIsLive={displayIsLive}
             isRecordedReplay={isRecordedReplay}
           />
         </Suspense>
@@ -242,6 +253,8 @@ export default function Watch() {
             setTab={setTab}
             canAnswer={canAnswer}
             playerNonce={room.playerNonce}
+            onLiveUiChange={handleLiveUiChange}
+            displayIsLive={displayIsLive}
           />
         </Suspense>
       </>
@@ -335,13 +348,17 @@ export default function Watch() {
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <LivePlayer key={room.playerNonce} config={mergedConfig} />
+          <LivePlayer
+            key={room.playerNonce}
+            config={mergedConfig}
+            onLiveUiChange={handleLiveUiChange}
+          />
           <BannerSlot location="live_player" className="mt-3" />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{event.title}</h2>
             <ViewerCount
               count={room.viewers}
-              isLive={mergedConfig?.isLive}
+              isLive={displayIsLive}
               isRecorded={isRecordedReplay}
             />
           </div>

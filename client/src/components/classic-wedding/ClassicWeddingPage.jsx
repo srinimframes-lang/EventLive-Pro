@@ -33,6 +33,8 @@ export default function ClassicWeddingPage({
   setTab,
   canAnswer,
   isRecordedReplay,
+  onLiveUiChange,
+  displayIsLive,
 }) {
   const { settings } = useSettings();
   const [tab, setLocalTab] = useState(activeTab || 'chat');
@@ -161,12 +163,16 @@ export default function ClassicWeddingPage({
             <h2 className="cw-section-title">Live Ceremony</h2>
             <ViewerCount
               count={room.viewers}
-              isLive={mergedConfig?.isLive}
+              isLive={displayIsLive ?? mergedConfig?.isLive}
               isRecorded={isRecordedReplay}
             />
           </div>
           <div className="cw-player-frame">
-            <LivePlayer key={room.playerNonce} config={mergedConfig} />
+            <LivePlayer
+              key={room.playerNonce}
+              config={mergedConfig}
+              onLiveUiChange={onLiveUiChange}
+            />
           </div>
           <BannerSlot location="live_player" className="mt-3" />
           <div className="cw-share-row">

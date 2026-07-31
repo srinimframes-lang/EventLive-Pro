@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { streamService } from '../services/stream.service.js';
@@ -80,6 +80,10 @@ export default function Embed() {
     [config, room.liveStatus, room.failoverState]
   );
 
+  const handleLiveUiChange = useCallback((_state) => {
+    // Embed has no status badge; LivePlayer clears reconnect overlay internally.
+  }, []);
+
   const title = useMemo(() => {
     if (!event) return '';
     if (event.brideName && event.groomName) return `${event.groomName} & ${event.brideName}`;
@@ -120,7 +124,11 @@ export default function Embed() {
       ) : null}
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0">
-          <LivePlayer key={room.playerNonce} config={mergedConfig} />
+          <LivePlayer
+            key={room.playerNonce}
+            config={mergedConfig}
+            onLiveUiChange={handleLiveUiChange}
+          />
         </div>
         {!hidePlatformLogo ? (
           <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1.5 rounded-md bg-black/55 px-2 py-1 text-[10px] text-white/85 backdrop-blur-sm sm:text-xs">

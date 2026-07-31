@@ -85,6 +85,8 @@ export function buildThemeWatchContext(props) {
     setTab,
     canAnswer,
     playerNonce,
+    onLiveUiChange,
+    displayIsLive,
   } = props;
 
   const snap = event.themeSnapshot || {};
@@ -112,6 +114,8 @@ export function buildThemeWatchContext(props) {
     setTab,
     canAnswer,
     playerNonce,
+    onLiveUiChange,
+    displayIsLive,
     themeBg,
     couplePhoto,
     hasBgImage,

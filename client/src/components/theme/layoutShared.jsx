@@ -45,8 +45,17 @@ export function WatchMeta({ event, className = '' }) {
   );
 }
 
-export function WatchPlayerBlock({ mergedConfig, playerNonce, surfaceDark, className = '', bare = false }) {
-  const player = <LivePlayer key={playerNonce} config={mergedConfig} />;
+export function WatchPlayerBlock({
+  mergedConfig,
+  playerNonce,
+  surfaceDark,
+  className = '',
+  bare = false,
+  onLiveUiChange,
+}) {
+  const player = (
+    <LivePlayer key={playerNonce} config={mergedConfig} onLiveUiChange={onLiveUiChange} />
+  );
   const ad = <BannerSlot location="live_player" className="mt-3" />;
   if (bare) {
     return (
@@ -105,10 +114,11 @@ export function WatchChatBlock({
   );
 }
 
-export function WatchPlayerHeader({ event, title, watchUrl, mergedConfig, room }) {
+export function WatchPlayerHeader({ event, title, watchUrl, mergedConfig, room, displayIsLive }) {
+  const isLive = displayIsLive ?? mergedConfig?.isLive;
   const isRecorded = Boolean(
     mergedConfig &&
-      !mergedConfig.isLive &&
+      !isLive &&
       (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
   );
   return (
@@ -121,7 +131,7 @@ export function WatchPlayerHeader({ event, title, watchUrl, mergedConfig, room }
       </h2>
       <ViewerCount
         count={room?.viewers || 0}
-        isLive={mergedConfig?.isLive}
+        isLive={isLive}
         isRecorded={isRecorded}
       />
       <ShareButtons url={watchUrl} title={title} />

@@ -117,15 +117,23 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
     next.recordings = [];
     next.recordingCount = 0;
     next.recordingAvailable = false;
-    if (config.isPublishing === true || (socketLive && !liveStatus?.reconnecting)) {
+    // Publishing / confirmed live clears reconnect UI. Keep reconnecting only
+    // during grace when MediaMTX is not publishing yet.
+    const publishing = config.isPublishing === true;
+    const socketStillReconnecting = liveStatus?.reconnecting === true;
+    const apiStillReconnecting = config.reconnecting === true && !publishing;
+    if (publishing || (socketLive && !socketStillReconnecting) || (configLive && !apiStillReconnecting && !socketStillReconnecting)) {
       next.reconnecting = false;
       next.playbackMode = 'live';
-    } else if (next.reconnecting || liveStatus?.reconnecting) {
+    } else if (socketStillReconnecting || apiStillReconnecting) {
       next.reconnecting = true;
       next.playbackMode = 'reconnecting';
     } else {
+      next.reconnecting = false;
       next.playbackMode = 'live';
     }
+  } else {
+    next.reconnecting = false;
   }
 
   return next;
