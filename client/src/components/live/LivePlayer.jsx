@@ -248,12 +248,13 @@ function isActivelyPlaying(video) {
 
 /**
  * Shared chrome: auto-hiding controls, center play, volume, fullscreen, scrubber.
- * @param {{ current: React.MutableRefObject, }} videoRef
- * @param {{ current: React.MutableRefObject }} shellRef
- * @param {{ isLiveMode?: boolean, onUserSeek?: (t: number) => void }} [options]
+ * @param {React.MutableRefObject} videoRef
+ * @param {React.MutableRefObject} shellRef
+ * @param {{ isLiveMode?: boolean, onUserSeek?: (t: number) => void, mediaActive?: boolean, syncKey?: string|number }} [options]
  */
-function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek } = {}) {
+function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek, mediaActive = true, syncKey = 0 } = {}) {
   const [paused, setPaused] = useState(true);
+  const [ended, setEnded] = useState(false);
   const [muted, setMuted] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [current, setCurrent] = useState(0);
@@ -274,68 +275,93 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek } 
     }
   }, [videoRef]);
 
+  const syncFromVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setPaused(Boolean(video.paused));
+    setEnded(Boolean(video.ended));
+    setMuted(Boolean(video.muted));
+    setCurrent(video.currentTime || 0);
+    const dur = Number.isFinite(video.duration) ? video.duration : 0;
+    setDuration(dur > 0 && Number.isFinite(dur) ? dur : 0);
+    if (video.seekable && video.seekable.length > 0) {
+      setSeekMin(video.seekable.start(0));
+      setSeekMax(video.seekable.end(video.seekable.length - 1));
+    } else if (!isLiveMode && dur > 0) {
+      setSeekMin(0);
+      setSeekMax(dur);
+    }
+    if (video.buffered && video.buffered.length > 0) {
+      try {
+        setBufferedEnd(video.buffered.end(video.buffered.length - 1));
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [videoRef, isLiveMode]);
+
   useEffect(() => {
+    if (!mediaActive) return undefined;
     const video = videoRef.current;
     if (!video) return undefined;
 
-    const sync = () => {
-      setPaused(video.paused);
-      setMuted(video.muted);
-      setCurrent(video.currentTime || 0);
-      const dur = Number.isFinite(video.duration) ? video.duration : 0;
-      setDuration(dur > 0 && Number.isFinite(dur) ? dur : 0);
-      if (video.seekable && video.seekable.length > 0) {
-        setSeekMin(video.seekable.start(0));
-        setSeekMax(video.seekable.end(video.seekable.length - 1));
-      } else if (!isLiveMode && dur > 0) {
-        setSeekMin(0);
-        setSeekMax(dur);
-      }
-      if (video.buffered && video.buffered.length > 0) {
-        try {
-          setBufferedEnd(video.buffered.end(video.buffered.length - 1));
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-
     const onPlay = () => {
       setPaused(false);
+      setEnded(false);
       bumpControls();
+    };
+    const onPlaying = () => {
+      setPaused(false);
+      setEnded(false);
     };
     const onPause = () => {
       setPaused(true);
       setControlsVisible(true);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
+    const onEnded = () => {
+      setPaused(true);
+      setEnded(true);
+      setControlsVisible(true);
+    };
 
     video.addEventListener('play', onPlay);
+    video.addEventListener('playing', onPlaying);
     video.addEventListener('pause', onPause);
-    video.addEventListener('timeupdate', sync);
-    video.addEventListener('durationchange', sync);
-    video.addEventListener('loadedmetadata', sync);
-    video.addEventListener('progress', sync);
-    video.addEventListener('volumechange', sync);
-    sync();
+    video.addEventListener('ended', onEnded);
+    video.addEventListener('timeupdate', syncFromVideo);
+    video.addEventListener('durationchange', syncFromVideo);
+    video.addEventListener('loadedmetadata', syncFromVideo);
+    video.addEventListener('progress', syncFromVideo);
+    video.addEventListener('volumechange', syncFromVideo);
+    syncFromVideo();
 
     return () => {
       video.removeEventListener('play', onPlay);
+      video.removeEventListener('playing', onPlaying);
       video.removeEventListener('pause', onPause);
-      video.removeEventListener('timeupdate', sync);
-      video.removeEventListener('durationchange', sync);
-      video.removeEventListener('loadedmetadata', sync);
-      video.removeEventListener('progress', sync);
-      video.removeEventListener('volumechange', sync);
+      video.removeEventListener('ended', onEnded);
+      video.removeEventListener('timeupdate', syncFromVideo);
+      video.removeEventListener('durationchange', syncFromVideo);
+      video.removeEventListener('loadedmetadata', syncFromVideo);
+      video.removeEventListener('progress', syncFromVideo);
+      video.removeEventListener('volumechange', syncFromVideo);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [videoRef, bumpControls, isLiveMode]);
+  }, [videoRef, bumpControls, mediaActive, syncKey, syncFromVideo]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) video.play?.().catch(() => {});
-    else video.pause();
+    if (video.paused) {
+      setPaused(false);
+      video.play?.().catch(() => {
+        setPaused(true);
+      });
+    } else {
+      setPaused(true);
+      video.pause();
+    }
     bumpControls();
   }, [videoRef, bumpControls]);
 
@@ -390,8 +416,14 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek } 
     bumpControls();
   }, [shellRef, videoRef, bumpControls]);
 
+  const markMediaPlaying = useCallback(() => {
+    setPaused(false);
+    setEnded(false);
+  }, []);
+
   return {
     paused,
+    ended,
     muted,
     controlsVisible,
     current,
@@ -406,6 +438,8 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek } 
     seekBy,
     toggleFullscreen,
     setControlsVisible,
+    syncFromVideo,
+    markMediaPlaying,
   };
 }
 
@@ -420,8 +454,12 @@ function PlayerChrome({
   onPickLevel,
   statusLabel = '',
   newLiveAvailable = false,
+  mediaPlaying = false,
 }) {
-  const showChrome = chrome.controlsVisible || chrome.paused;
+  // Hide center Play while media is confirmed playing (even if paused state is stale).
+  // Show when user paused, not started, or ended.
+  const showCenterPlay = (chrome.paused || chrome.ended) && !mediaPlaying;
+  const showChrome = chrome.controlsVisible || showCenterPlay;
   const scrubMin = chrome.seekMin;
   const scrubMax = Math.max(chrome.seekMax, scrubMin + 0.01);
   const scrubSpan = Math.max(scrubMax - scrubMin, 0.01);
@@ -437,7 +475,7 @@ function PlayerChrome({
 
   return (
     <>
-      {chrome.paused && (
+      {showCenterPlay && (
         <button
           type="button"
           className="elp-player-center-play"
@@ -626,7 +664,13 @@ function HlsPlayer({
   const chrome = usePlayerChrome(videoRef, shellRef, {
     isLiveMode: true,
     onUserSeek: handleUserSeek,
+    mediaActive: userStarted,
+    syncKey: reloadKey,
   });
+  const markMediaPlayingRef = useRef(chrome.markMediaPlaying);
+  markMediaPlayingRef.current = chrome.markMediaPlaying;
+  const syncFromVideoRef = useRef(chrome.syncFromVideo);
+  syncFromVideoRef.current = chrome.syncFromVideo;
 
   useEffect(() => {
     setUserStarted(loadUserStarted(eventId));
@@ -651,8 +695,32 @@ function HlsPlayer({
 
   const markPlaying = useCallback(() => {
     hasPlayedRef.current = true;
+    // Keep center Play in sync with HTML5/HLS playing (fixes stale paused=true).
+    markMediaPlayingRef.current?.();
     hideOverlay();
   }, [hideOverlay]);
+
+  // When user pauses, drop "playing" health so center Play can show again.
+  useEffect(() => {
+    if (!userStarted) return undefined;
+    const video = videoRef.current;
+    if (!video) return undefined;
+    const onPause = () => {
+      setPlaybackHealthy(false);
+      syncFromVideoRef.current?.();
+    };
+    const onPlaying = () => {
+      markMediaPlayingRef.current?.();
+      setPlaybackHealthy(true);
+      setOverlay(OVERLAY.NONE);
+    };
+    video.addEventListener('pause', onPause);
+    video.addEventListener('playing', onPlaying);
+    return () => {
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('playing', onPlaying);
+    };
+  }, [userStarted, reloadKey]);
 
   const showOverlayIfNotPlaying = useCallback((state) => {
     if (hasPlayedRef.current && isActivelyPlaying(videoRef.current)) return;
@@ -709,6 +777,8 @@ function HlsPlayer({
     video.play?.().catch(() => {});
     setBehindLive(false);
     setLagSec(0);
+    markMediaPlayingRef.current?.();
+    setPlaybackHealthy(true);
     chrome.bumpControls();
   }, [chrome, eventId, markDvrIntent]);
 
@@ -1054,6 +1124,7 @@ function HlsPlayer({
           currentLevel={currentLevel}
           onPickLevel={pickLevel}
           newLiveAvailable={newLiveAvailable}
+          mediaPlaying={Boolean(playbackHealthy && !chrome.ended)}
         />
       )}
     </Frame>
@@ -1185,7 +1256,10 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
     [sortedParts]
   );
   const [partIndex, setPartIndex] = useState(0);
-  const chrome = usePlayerChrome(videoRef, shellRef, { isLiveMode: false });
+  const chrome = usePlayerChrome(videoRef, shellRef, {
+    isLiveMode: false,
+    mediaActive: userStarted,
+  });
 
   useEffect(() => {
     setUserStarted(loadUserStarted(eventId));
