@@ -283,6 +283,62 @@ export function resolveRecordingPartForPlayback(event, partId) {
   return null;
 }
 
+/**
+ * Soft-delete all active parts and register a single merged replay file.
+ * Keeps the same public play URL shape (`/api/events/:id/stream/recording`).
+ */
+export function replacePartsWithMergedRecording(
+  event,
+  { filePath, durationSec = 0, startedAt = null, endedAt = null, recordedAt = new Date() }
+) {
+  const abs = resolveRecordingAbsolutePath(filePath);
+  if (!abs) throw new Error('Invalid recording path');
+  if (!fs.existsSync(abs)) throw new Error('Recording file not found');
+
+  const when = recordedAt instanceof Date ? recordedAt : new Date(recordedAt);
+  const filename = path.basename(abs);
+  let sizeBytes = 0;
+  try {
+    sizeBytes = fs.statSync(abs).size;
+  } catch {
+    sizeBytes = 0;
+  }
+
+  const parts = ensureRecordingsArray(event);
+  for (const p of parts) {
+    if (p && !p.deletedAt) p.deletedAt = when;
+  }
+
+  parts.push({
+    r2Key: '',
+    r2Url: '',
+    filename,
+    localPath: abs,
+    storage: 'local',
+    startedAt: startedAt ? new Date(startedAt) : parseRecordingFilenameTimestamp(filename) || when,
+    endedAt: endedAt ? new Date(endedAt) : when,
+    durationSec: Math.max(0, Number(durationSec) || 0),
+    sizeBytes,
+    createdAt: when,
+  });
+
+  event.recordingHidden = false;
+  event.recordingDeletedAt = undefined;
+  if (!event.recordingPublicUntil) {
+    event.recordingPublicUntil = addDays(when, RECORDING_PUBLIC_DAYS);
+  } else {
+    event.recordingPublicUntil = addDays(when, RECORDING_PUBLIC_DAYS);
+  }
+
+  syncLegacyRecordingFields(event);
+  event.recordingStorage = 'local';
+  event.recordingR2Key = '';
+  event.recordingR2Url = '';
+  event.recordingPath = abs;
+  event.recordingFilename = filename;
+  return event;
+}
+
 /** Persist a newly finalized recording as a new history entry (never replaces prior parts). */
 export function applyRecordingToEvent(event, { filePath, durationSec = 0, recordedAt = new Date() }) {
   const abs = resolveRecordingAbsolutePath(filePath);

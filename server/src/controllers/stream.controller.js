@@ -47,6 +47,16 @@ import {
   resolveActiveSource,
   resolveBackupYoutubeId,
 } from '../utils/streamFailover.js';
+import {
+  clearMergeTimer,
+  clearOfflineTimer,
+  isWithinReconnectGrace,
+  LIVE_RECONNECT_GRACE_MS,
+  RECORDING_MERGE_GRACE_MS,
+  scheduleMergeTimer,
+  scheduleOfflineTimer,
+} from '../utils/streamReconnect.js';
+import { mergeEventRecordings } from '../utils/mergeRecordings.js';
 import { isPlatformAdmin } from '../utils/tenantScope.js';
 import fs from 'fs';
 import path from 'path';
@@ -131,10 +141,24 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const webrtcUrl = isServer ? deriveWebRtcPlaybackUrl(event) : event.webrtcUrl;
   const liveFromProbe = isPublishing === true;
   const offlineFromProbe = isPublishing === false;
-  const isLive = liveFromProbe ? true : offlineFromProbe ? false : event.isLive;
+  const reconnecting = isWithinReconnectGrace(event);
+  // Keep viewers on live during short OBS drops even if MediaMTX probe is briefly false.
+  const isLive = liveFromProbe
+    ? true
+    : reconnecting
+      ? true
+      : offlineFromProbe
+        ? false
+        : Boolean(event.isLive);
   const rec = getRecordingState(event);
   const recordingUrl = isLive ? '' : buildPublicRecordingUrl(event);
-  const playbackMode = isLive ? 'live' : recordingUrl ? 'recorded' : 'offline';
+  const playbackMode = isLive
+    ? reconnecting
+      ? 'reconnecting'
+      : 'live'
+    : recordingUrl
+      ? 'recorded'
+      : 'offline';
 
   const base = {
     eventId: event.id,
@@ -146,6 +170,7 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     webrtcUrl,
     poster: event.coverImage || '',
     isLive,
+    reconnecting,
     isPublishing: isPublishing === null ? undefined : isPublishing,
     streamDisabled: event.streamDisabled,
     autoRecord: event.autoRecord,
@@ -162,7 +187,9 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     recordingRecordedAt: rec.recordingRecordedAt,
     recordingDurationSec: rec.recordingDurationSec,
     recordingCount: rec.recordingCount,
+    recordingMergeStatus: event.recordingMergeStatus || '',
     // Lightweight part list for the player (no R2 URLs — resolve per part on demand).
+    // After a successful merge only one part remains active — Parts UI stays hidden.
     recordings: recordingUrl
       ? rec.parts.map((p) => ({
           id: p.id,
@@ -198,6 +225,73 @@ async function publishingStatusForEvent(event) {
   return probeMediaMtxPublishing(resolveStreamKey(event));
 }
 
+function emitLiveStatus(io, event, extra = {}) {
+  if (!io) return;
+  const rec = getRecordingState(event);
+  const reconnecting = isWithinReconnectGrace(event);
+  const isLive = Boolean(event.isLive) || reconnecting;
+  io.to(`event:${event.id}`).emit('stream:status', {
+    isLive,
+    reconnecting,
+    status: event.status,
+    liveStartedAt: event.liveStartedAt,
+    liveEndedAt: event.liveEndedAt,
+    playbackMode: isLive ? (reconnecting ? 'reconnecting' : 'live') : rec.publiclyVisible ? 'recorded' : 'offline',
+    recordingUrl: isLive ? '' : buildPublicRecordingUrl(event),
+    recordingAvailable: !isLive && rec.publiclyVisible,
+    recordingCount: rec.recordingCount,
+    recordingMergeStatus: event.recordingMergeStatus || '',
+    recordings: !isLive && rec.publiclyVisible
+      ? rec.parts.map((p) => ({
+          id: p.id,
+          part: p.part,
+          durationSec: p.durationSec,
+          startedAt: p.startedAt,
+          createdAt: p.createdAt,
+          filename: p.filename,
+        }))
+      : [],
+    ...extra,
+  });
+}
+
+function scheduleRecordingMerge(eventId, io) {
+  scheduleMergeTimer(eventId, RECORDING_MERGE_GRACE_MS, async () => {
+    await mergeEventRecordings(eventId, { io });
+  });
+}
+
+/** Persist true offline after reconnect grace expires (or immediately when forced). */
+async function finalizeEventOffline(eventId, { io = null } = {}) {
+  const event = await Event.findById(eventId);
+  if (!event) return null;
+
+  // Publisher came back before we ran — abort.
+  if (isWithinReconnectGrace(event) && event.isLive) {
+    return event;
+  }
+
+  event.isLive = false;
+  event.liveReconnecting = false;
+  event.liveReconnectUntil = undefined;
+  event.liveEndedAt = event.liveEndedAt || new Date();
+  if (event.status === 'live') event.status = 'ended';
+  await event.save();
+
+  emitLiveStatus(io, event);
+  scheduleRecordingMerge(event.id, io);
+  return event;
+}
+
+/**
+ * If reconnect grace expired while the API process was restarted, finalize lazily.
+ */
+async function resolveExpiredReconnect(event, io) {
+  if (!event.liveReconnecting) return event;
+  if (isWithinReconnectGrace(event)) return event;
+  return (await finalizeEventOffline(event.id, { io })) || event;
+}
+
 /**
  * Guards the media-server webhooks with a shared secret. Returns true when the
  * request is authorised (or when no secret is configured, for local dev).
@@ -213,7 +307,9 @@ function mediaSecretOk(req) {
  * @access Public
  */
 export const getStreamConfig = asyncHandler(async (req, res) => {
-  const event = await findEventOr404(req.params.id, res);
+  let event = await findEventOr404(req.params.id, res);
+  const io = req.app.get('io');
+  event = (await resolveExpiredReconnect(event, io)) || event;
   const isPublishing = await publishingStatusForEvent(event);
   res.status(200).json({
     success: true,
@@ -576,8 +672,13 @@ export const streamStarted = asyncHandler(async (req, res) => {
   const event = await findEventByStreamKey(streamKey);
   if (!event) return res.status(404).json({ ok: false });
 
+  clearOfflineTimer(event.id);
+  clearMergeTimer(event.id);
+
   event.isLive = true;
-  event.liveStartedAt = new Date();
+  event.liveReconnecting = false;
+  event.liveReconnectUntil = undefined;
+  event.liveStartedAt = event.liveStartedAt || new Date();
   event.liveEndedAt = undefined;
   if (event.streamProvider === 'none') event.streamProvider = 'rtmp';
   const playbackUrl = deriveHlsPlaybackUrl(event);
@@ -586,19 +687,14 @@ export const streamStarted = asyncHandler(async (req, res) => {
   await event.save();
 
   const io = req.app.get('io');
-  if (io) {
-    io.to(`event:${event.id}`).emit('stream:status', {
-      isLive: true,
-      status: event.status,
-      liveStartedAt: event.liveStartedAt,
-    });
-  }
+  emitLiveStatus(io, event, { liveStartedAt: event.liveStartedAt });
   return res.status(200).json({ ok: true });
 });
 
 /**
  * @route POST /api/events/stream/stopped
- * @desc  Media server reports a publish ended; flip the event offline.
+ * @desc  Media server reports a publish ended.
+ *        Short drops (<30s) keep the event live with reconnecting=true.
  * @access Media server (x-media-secret)
  */
 export const streamStopped = asyncHandler(async (req, res) => {
@@ -610,24 +706,20 @@ export const streamStopped = asyncHandler(async (req, res) => {
   const event = await findEventByStreamKey(streamKey);
   if (!event) return res.status(404).json({ ok: false });
 
-  event.isLive = false;
-  event.liveEndedAt = new Date();
-  if (event.status === 'live') event.status = 'ended';
+  const io = req.app.get('io');
+  event.liveReconnecting = true;
+  event.liveReconnectUntil = new Date(Date.now() + LIVE_RECONNECT_GRACE_MS);
+  event.isLive = true;
+  if (event.status === 'ended') event.status = 'live';
   await event.save();
 
-  const rec = getRecordingState(event);
-  const io = req.app.get('io');
-  if (io) {
-    io.to(`event:${event.id}`).emit('stream:status', {
-      isLive: false,
-      status: event.status,
-      liveEndedAt: event.liveEndedAt,
-      playbackMode: rec.publiclyVisible ? 'recorded' : 'offline',
-      recordingUrl: buildPublicRecordingUrl(event),
-      recordingAvailable: rec.publiclyVisible,
-    });
-  }
-  return res.status(200).json({ ok: true });
+  emitLiveStatus(io, event, { reconnecting: true, playbackMode: 'reconnecting' });
+
+  scheduleOfflineTimer(event.id, LIVE_RECONNECT_GRACE_MS, async () => {
+    await finalizeEventOffline(event.id, { io });
+  });
+
+  return res.status(200).json({ ok: true, reconnecting: true, graceMs: LIVE_RECONNECT_GRACE_MS });
 });
 
 /* ─────────────────── Recorded replay ──────────────────────────────────────── */
@@ -663,35 +755,25 @@ export const recordingReady = asyncHandler(async (req, res) => {
     return res.status(400).json({ ok: false, error: err.message || 'invalid_recording' });
   }
 
-  // Stream has finished recording — ensure event is offline / ended.
-  event.isLive = false;
-  event.liveEndedAt = event.liveEndedAt || new Date();
-  if (event.status === 'live' || event.status === 'published' || event.status === 'draft') {
-    event.status = 'ended';
-  }
-  await event.save();
-
-  const rec = getRecordingState(event);
   const io = req.app.get('io');
-  if (io) {
-    io.to(`event:${event.id}`).emit('stream:status', {
-      isLive: false,
-      status: event.status,
-      liveEndedAt: event.liveEndedAt,
-      playbackMode: 'recorded',
-      recordingUrl: buildPublicRecordingUrl(event),
-      recordingAvailable: true,
-      recordingPublicUntil: rec.recordingPublicUntil,
-      recordingCount: rec.recordingCount,
-      recordings: rec.parts.map((p) => ({
-        id: p.id,
-        part: p.part,
-        durationSec: p.durationSec,
-        startedAt: p.startedAt,
-        createdAt: p.createdAt,
-        filename: p.filename,
-      })),
-    });
+  const keepLive = Boolean(event.isLive) || isWithinReconnectGrace(event);
+
+  if (keepLive) {
+    // Mid-stream reconnect segment — register the part but do NOT flip offline.
+    event.recordingMergeStatus = '';
+    await event.save();
+    emitLiveStatus(io, event);
+  } else {
+    event.isLive = false;
+    event.liveReconnecting = false;
+    event.liveReconnectUntil = undefined;
+    event.liveEndedAt = event.liveEndedAt || new Date();
+    if (event.status === 'live' || event.status === 'published' || event.status === 'draft') {
+      event.status = 'ended';
+    }
+    await event.save();
+    emitLiveStatus(io, event);
+    scheduleRecordingMerge(event.id, io);
   }
 
   // Durable storage: upload to Cloudflare R2 in the background, verify, then
@@ -711,6 +793,7 @@ export const recordingReady = asyncHandler(async (req, res) => {
     recordingUrl: event.recordingUrl,
     recordingPath: event.recordingPath,
     recordingPublicUntil: event.recordingPublicUntil,
+    keptLive: keepLive,
   });
 });
 

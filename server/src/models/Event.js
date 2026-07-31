@@ -281,7 +281,8 @@ const eventSchema = new Schema(
     recordingDurationSec: { type: Number, default: 0, min: 0 },
     recordingHidden: { type: Boolean, default: false }, // admin hide (or keep after restore window)
     recordingDeletedAt: { type: Date }, // permanent delete timestamp (all parts removed)
-    // Multi-session history: every OBS stop creates a new entry; prior parts are kept.
+    // Multi-session history: every OBS stop creates a new entry; prior parts are kept
+    // until post-event merge soft-deletes them in favour of one replay file.
     recordings: [
       {
         r2Key: { type: String, trim: true, default: '' },
@@ -297,7 +298,17 @@ const eventSchema = new Schema(
         deletedAt: { type: Date },
       },
     ],
+    recordingMergeStatus: {
+      type: String,
+      enum: ['', 'pending', 'merged', 'failed', 'skipped'],
+      default: '',
+    },
+    recordingMergeError: { type: String, trim: true, default: '' },
+    recordingMergedAt: { type: Date },
     isLive: { type: Boolean, default: false, index: true },
+    // Short OBS drops: keep live + show reconnecting until liveReconnectUntil.
+    liveReconnecting: { type: Boolean, default: false },
+    liveReconnectUntil: { type: Date },
     liveStartedAt: { type: Date },
     liveEndedAt: { type: Date },
     peakViewers: { type: Number, default: 0, min: 0 },

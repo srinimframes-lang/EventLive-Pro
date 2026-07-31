@@ -6,19 +6,57 @@ import {
   failoverBackupVideoId,
   shouldPlayYoutubeBackup,
 } from '../../utils/streamFailover.js';
+import {
+  loadPlaybackPosition,
+  loadUserStarted,
+  savePlaybackPosition,
+  saveUserStarted,
+} from '../../utils/playerPrefs.js';
 import '../../styles/watch-theme.css';
 
-const RETRY_MS = 3000;
+const RETRY_MS = 2500;
 const CONTROLS_HIDE_MS = 2600;
 const OFFLINE_MSG = 'Live stream is currently offline.';
 const SERVER_WAITING_MSG = 'Waiting for live…';
 const ENDED_MSG = 'This live stream has ended.';
+const RECONNECTING_MSG = 'Reconnecting…';
 
 const OVERLAY = {
   NONE: 'none',
   BUFFERING: 'buffering',
   RECONNECTING: 'reconnecting',
 };
+
+/** HLS tuned for low-bitrate / mobile stability (not LL-HLS). */
+function buildHlsConfig() {
+  return {
+    enableWorker: true,
+    lowLatencyMode: false,
+    liveDurationInfinity: true,
+    backBufferLength: 90,
+    maxBufferLength: 30,
+    maxMaxBufferLength: 60,
+    maxBufferSize: 60 * 1000 * 1000,
+    maxBufferHole: 0.8,
+    nudgeMaxRetry: 8,
+    liveSyncDurationCount: 3,
+    liveMaxLatencyDurationCount: 10,
+    maxLiveSyncPlaybackRate: 1.1,
+    startFragPrefetch: true,
+    startLevel: -1,
+    abrEwmaDefaultEstimate: 500_000,
+    abrBandWidthFactor: 0.7,
+    abrBandWidthUpFactor: 0.6,
+    fragLoadingTimeOut: 30000,
+    manifestLoadingTimeOut: 20000,
+    levelLoadingTimeOut: 20000,
+    manifestLoadingMaxRetry: 8,
+    levelLoadingMaxRetry: 8,
+    fragLoadingMaxRetry: 10,
+    fragLoadingRetryDelay: 800,
+    manifestLoadingRetryDelay: 800,
+  };
+}
 
 function Frame({ children, shellRef, className = '' }) {
   return (
@@ -38,13 +76,44 @@ function Offline({ message = OFFLINE_MSG }) {
   );
 }
 
-/** Quiet spinner — no large reconnect banners. */
+/** Quiet spinner — used alone or under status text. */
 function QuietSpinner({ show }) {
   if (!show) return null;
   return (
     <div className="player-overlay" role="status" aria-live="polite" aria-label="Loading">
       <div className="player-overlay-spinner" aria-hidden />
     </div>
+  );
+}
+
+function StatusOverlay({ show, message, spinner = true }) {
+  if (!show) return null;
+  return (
+    <div className="player-status-overlay" role="status" aria-live="polite">
+      {spinner ? <div className="player-overlay-spinner" aria-hidden /> : null}
+      {message ? <p className="player-status-overlay__text">{message}</p> : null}
+    </div>
+  );
+}
+
+function ClickToPlay({ poster, onPlay, label = 'Play' }) {
+  return (
+    <button
+      type="button"
+      className="player-click-to-play"
+      onClick={onPlay}
+      aria-label={label}
+    >
+      {poster ? (
+        <img src={poster} alt="" className="player-click-to-play__poster" draggable={false} />
+      ) : (
+        <div className="player-click-to-play__poster player-click-to-play__poster--empty" />
+      )}
+      <span className="player-click-to-play__veil" aria-hidden />
+      <span className="player-click-to-play__btn" aria-hidden>
+        <IconPlay className="h-10 w-10 sm:h-12 sm:w-12" />
+      </span>
+    </button>
   );
 }
 
@@ -404,12 +473,21 @@ function PlayerChrome({
   );
 }
 
-function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
+function HlsPlayer({
+  src,
+  poster,
+  isLive = true,
+  detectPublish = false,
+  eventId = '',
+  reconnecting = false,
+}) {
   const videoRef = useRef(null);
   const shellRef = useRef(null);
   const hlsRef = useRef(null);
   const retryTimer = useRef(null);
   const dvrTimer = useRef(null);
+  const posSaveTimer = useRef(null);
+  const restoredPosRef = useRef(false);
   const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
   const [levels, setLevels] = useState([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
@@ -418,8 +496,14 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
   const [showOffline, setShowOffline] = useState(false);
   const [behindLive, setBehindLive] = useState(false);
   const [lagSec, setLagSec] = useState(0);
+  const [userStarted, setUserStarted] = useState(() => loadUserStarted(eventId));
 
   const chrome = usePlayerChrome(videoRef, shellRef, { isLiveMode: true });
+
+  useEffect(() => {
+    setUserStarted(loadUserStarted(eventId));
+    restoredPosRef.current = false;
+  }, [eventId]);
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current) {
@@ -446,12 +530,18 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
 
   const scheduleRetry = useCallback(() => {
     clearRetry();
-    // Silent background retry — spinner only, no reconnect banner.
-    showOverlayIfNotPlaying(OVERLAY.RECONNECTING);
+    setOverlay(OVERLAY.RECONNECTING);
     retryTimer.current = setTimeout(() => {
       setReloadKey((k) => k + 1);
     }, RETRY_MS);
-  }, [clearRetry, showOverlayIfNotPlaying]);
+  }, [clearRetry]);
+
+  const handleFirstPlay = useCallback(() => {
+    setUserStarted(true);
+    saveUserStarted(eventId);
+    restoredPosRef.current = false;
+    setReloadKey((k) => k + 1);
+  }, [eventId]);
 
   const jumpToLive = useCallback(() => {
     const video = videoRef.current;
@@ -477,38 +567,53 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     chrome.bumpControls();
   }, [chrome]);
 
+  const tryRestoreOrLive = useCallback(
+    (video, hls) => {
+      if (!video || restoredPosRef.current) return;
+      restoredPosRef.current = true;
+      const saved = loadPlaybackPosition(eventId, 'live');
+      const seekable = video.seekable;
+      if (
+        saved != null &&
+        seekable &&
+        seekable.length > 0
+      ) {
+        const start = seekable.start(0);
+        const end = seekable.end(seekable.length - 1);
+        if (saved >= start && saved <= end) {
+          try {
+            video.currentTime = saved;
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+      }
+      const liveEdge =
+        hls && Number.isFinite(hls.liveSyncPosition) ? hls.liveSyncPosition : null;
+      if (liveEdge != null) {
+        try {
+          video.currentTime = liveEdge;
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [eventId]
+  );
+
   useEffect(() => {
+    if (!userStarted) return undefined;
     if (!detectPublish && !isLive) return undefined;
     const video = videoRef.current;
     if (!video || !src) return undefined;
 
     setShowOffline(false);
     hasPlayedRef.current = false;
+    restoredPosRef.current = false;
     setOverlay(OVERLAY.BUFFERING);
     setBehindLive(false);
     setLagSec(0);
-
-    const hlsConfig = {
-      enableWorker: true,
-      lowLatencyMode: false,
-      liveDurationInfinity: true,
-      backBufferLength: 120,
-      maxBufferLength: 12,
-      maxMaxBufferLength: 30,
-      liveSyncDurationCount: 1,
-      liveMaxLatencyDurationCount: 5,
-      maxLiveSyncPlaybackRate: 1.15,
-      startFragPrefetch: true,
-      startLevel: -1,
-      fragLoadingTimeOut: 30000,
-      manifestLoadingTimeOut: 15000,
-      levelLoadingTimeOut: 15000,
-      manifestLoadingMaxRetry: 6,
-      levelLoadingMaxRetry: 6,
-      fragLoadingMaxRetry: 8,
-      fragLoadingRetryDelay: 1000,
-      manifestLoadingRetryDelay: 1000,
-    };
 
     let hls;
     let useNative = false;
@@ -536,23 +641,21 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       useNative = true;
       video.src = src;
       video.load();
+      const onMeta = () => {
+        tryRestoreOrLive(video, null);
+        video.play?.().catch(() => {});
+      };
+      video.addEventListener('loadedmetadata', onMeta, { once: true });
       video.play?.().catch(() => {});
     } else if (Hls.isSupported()) {
-      hls = new Hls(hlsConfig);
+      hls = new Hls(buildHlsConfig());
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
         const lvls = (data.levels || []).map((l, index) => ({ index, height: l.height || 0 }));
         setLevels(lvls);
-        // Snap near live edge for fast start after manifest is ready.
-        if (Number.isFinite(hls.liveSyncPosition)) {
-          try {
-            video.currentTime = hls.liveSyncPosition;
-          } catch {
-            /* ignore */
-          }
-        }
+        tryRestoreOrLive(video, hls);
         video.play?.().catch(() => {});
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
@@ -560,26 +663,43 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) return;
-        if (hasPlayedRef.current && isActivelyPlaying(video)) {
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            try {
-              hls.startLoad();
-            } catch {
-              /* ignore */
-            }
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            try {
-              hls.recoverMediaError();
-            } catch {
-              /* ignore */
-            }
+        // After first successful play: reconnect overlay + remount (no second Play click).
+        if (hasPlayedRef.current) {
+          setShowOffline(false);
+          setOverlay(OVERLAY.RECONNECTING);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              try {
+                hls.startLoad();
+              } catch {
+                /* remount below */
+              }
+              scheduleRetry();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              try {
+                hls.recoverMediaError();
+              } catch {
+                /* remount below */
+              }
+              scheduleRetry();
+              break;
+            default:
+              try {
+                hls.destroy();
+              } catch {
+                /* ignore */
+              }
+              hlsRef.current = null;
+              scheduleRetry();
           }
           return;
         }
+        // Pre-first-play: keep detectPublish waiting behavior.
         showOverlayIfNotPlaying(OVERLAY.RECONNECTING);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
+            if (detectPublish) setShowOffline(true);
             try {
               hls.startLoad();
             } catch {
@@ -595,9 +715,13 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
             }
             break;
           default:
-            hls.destroy();
+            try {
+              hls.destroy();
+            } catch {
+              /* ignore */
+            }
             hlsRef.current = null;
-            if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
+            if (detectPublish) setShowOffline(true);
             scheduleRetry();
         }
       });
@@ -617,11 +741,18 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
     const onTimeUpdate = () => {
       if (video.currentTime > 0) markPlaying();
       refreshDvrState();
+      if (posSaveTimer.current) return;
+      posSaveTimer.current = setTimeout(() => {
+        posSaveTimer.current = null;
+        const t = video.currentTime;
+        if (Number.isFinite(t) && t > 1) savePlaybackPosition(eventId, t, 'live');
+      }, 2000);
     };
     const onSeeked = () => refreshDvrState();
     const onVideoError = () => {
       if (useNative) {
         if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
+        else setOverlay(OVERLAY.RECONNECTING);
         scheduleRetry();
       }
     };
@@ -649,6 +780,10 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
         clearInterval(dvrTimer.current);
         dvrTimer.current = null;
       }
+      if (posSaveTimer.current) {
+        clearTimeout(posSaveTimer.current);
+        posSaveTimer.current = null;
+      }
       if (frameCallbackId != null && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallbackId);
       }
@@ -665,14 +800,17 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
       }
     };
   }, [
+    userStarted,
     src,
     reloadKey,
     isLive,
     detectPublish,
+    eventId,
     scheduleRetry,
     clearRetry,
     markPlaying,
     showOverlayIfNotPlaying,
+    tryRestoreOrLive,
   ]);
 
   const pickLevel = (index) => {
@@ -684,8 +822,18 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
   if (!detectPublish && !isLive) return <Offline message={SERVER_WAITING_MSG} />;
   if (!src) return <Offline message={SERVER_WAITING_MSG} />;
 
-  const showSpinner =
-    (overlay === OVERLAY.BUFFERING || overlay === OVERLAY.RECONNECTING) && !showOffline;
+  if (!userStarted) {
+    return (
+      <Frame shellRef={shellRef}>
+        <ClickToPlay poster={poster} onPlay={handleFirstPlay} />
+      </Frame>
+    );
+  }
+
+  const showReconnecting =
+    (reconnecting || overlay === OVERLAY.RECONNECTING) && !showOffline;
+  const showBuffering =
+    overlay === OVERLAY.BUFFERING && !showOffline && !showReconnecting;
 
   return (
     <Frame shellRef={shellRef}>
@@ -708,7 +856,8 @@ function HlsPlayer({ src, poster, isLive = true, detectPublish = false }) {
         onMouseMove={chrome.bumpControls}
         onTouchStart={chrome.bumpControls}
       />
-      <QuietSpinner show={showSpinner} />
+      <StatusOverlay show={showReconnecting} message={RECONNECTING_MSG} />
+      <StatusOverlay show={showBuffering} />
       {!showOffline && (
         <PlayerChrome
           chrome={chrome}
@@ -834,28 +983,46 @@ function formatPartDuration(sec) {
 function Mp4Player({ src, poster, eventId = '', parts = [] }) {
   const videoRef = useRef(null);
   const shellRef = useRef(null);
+  const posSaveTimer = useRef(null);
+  const restoredPosRef = useRef(false);
   const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
   const [resolvedSrc, setResolvedSrc] = useState('');
+  const [userStarted, setUserStarted] = useState(() => loadUserStarted(eventId));
   const sortedParts = useMemo(() => {
     if (!Array.isArray(parts) || parts.length === 0) return [];
     return parts
       .slice()
       .sort((a, b) => Number(a.part || 0) - Number(b.part || 0));
   }, [parts]);
+  const partsKey = useMemo(
+    () => sortedParts.map((p) => p.id).join(','),
+    [sortedParts]
+  );
   const [partIndex, setPartIndex] = useState(0);
   const chrome = usePlayerChrome(videoRef, shellRef, { isLiveMode: false });
 
   useEffect(() => {
+    setUserStarted(loadUserStarted(eventId));
+  }, [eventId]);
+
+  useEffect(() => {
     setPartIndex(0);
-  }, [eventId, sortedParts.map((p) => p.id).join(',')]);
+  }, [eventId, partsKey]);
 
   const activePart = sortedParts[partIndex] || null;
   const activePartId = activePart?.id || '';
+
+  const handleFirstPlay = useCallback(() => {
+    setUserStarted(true);
+    saveUserStarted(eventId);
+    restoredPosRef.current = false;
+  }, [eventId]);
 
   useEffect(() => {
     let cancelled = false;
     setOverlay(OVERLAY.BUFFERING);
     setResolvedSrc('');
+    restoredPosRef.current = false;
 
     (async () => {
       let playSrc = src;
@@ -877,12 +1044,39 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
   }, [src, eventId, activePartId]);
 
   useEffect(() => {
+    if (!userStarted) return undefined;
     const video = videoRef.current;
     if (!video || !resolvedSrc) return undefined;
     setOverlay(OVERLAY.BUFFERING);
     video.src = resolvedSrc;
     video.load();
-    video.play?.().catch(() => {});
+
+    const restoreAndPlay = () => {
+      if (!restoredPosRef.current) {
+        restoredPosRef.current = true;
+        const saved = loadPlaybackPosition(eventId, 'replay', activePartId);
+        if (saved != null) {
+          const dur = Number.isFinite(video.duration) ? video.duration : 0;
+          const seekable = video.seekable;
+          let inRange = false;
+          if (seekable && seekable.length > 0) {
+            const start = seekable.start(0);
+            const end = seekable.end(seekable.length - 1);
+            inRange = saved >= start && saved <= end;
+          } else if (dur > 0) {
+            inRange = saved > 0 && saved < dur - 0.5;
+          }
+          if (inRange) {
+            try {
+              video.currentTime = saved;
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+      video.play?.().catch(() => {});
+    };
 
     const onPlaying = () => setOverlay(OVERLAY.NONE);
     const onWaiting = () => {
@@ -895,18 +1089,39 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
         setPartIndex((i) => i + 1);
       }
     };
+    const onTimeUpdate = () => {
+      if (posSaveTimer.current) return;
+      posSaveTimer.current = setTimeout(() => {
+        posSaveTimer.current = null;
+        const t = video.currentTime;
+        if (Number.isFinite(t) && t > 1) {
+          savePlaybackPosition(eventId, t, 'replay', activePartId);
+        }
+      }, 2000);
+    };
 
+    video.addEventListener('loadedmetadata', restoreAndPlay, { once: true });
     video.addEventListener('playing', onPlaying);
     video.addEventListener('canplay', onPlaying);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('error', onError);
     video.addEventListener('ended', onEnded);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    // Kick play if metadata already available.
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) restoreAndPlay();
+
     return () => {
+      video.removeEventListener('loadedmetadata', restoreAndPlay);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplay', onPlaying);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('error', onError);
       video.removeEventListener('ended', onEnded);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      if (posSaveTimer.current) {
+        clearTimeout(posSaveTimer.current);
+        posSaveTimer.current = null;
+      }
       try {
         video.removeAttribute('src');
         video.load();
@@ -914,14 +1129,25 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
         /* ignore */
       }
     };
-  }, [resolvedSrc, partIndex, sortedParts.length]);
+  }, [userStarted, resolvedSrc, partIndex, sortedParts.length, eventId, activePartId]);
 
   if (!src && sortedParts.length === 0) return <Offline message="Recording is not available." />;
+
+  if (!userStarted) {
+    return (
+      <Frame shellRef={shellRef}>
+        <ClickToPlay poster={poster} onPlay={handleFirstPlay} />
+      </Frame>
+    );
+  }
 
   const statusLabel =
     sortedParts.length > 1
       ? `Replay · Part ${partIndex + 1}/${sortedParts.length}`
       : 'Replay';
+
+  const showReconnecting = overlay === OVERLAY.RECONNECTING;
+  const showBuffering = overlay === OVERLAY.BUFFERING;
 
   return (
     <Frame shellRef={shellRef}>
@@ -931,12 +1157,14 @@ function Mp4Player({ src, poster, eventId = '', parts = [] }) {
         controls={false}
         controlsList="nodownload"
         playsInline
+        autoPlay
         poster={poster || undefined}
         onClick={chrome.togglePlay}
         onMouseMove={chrome.bumpControls}
         onTouchStart={chrome.bumpControls}
       />
-      <QuietSpinner show={overlay !== OVERLAY.NONE} />
+      <StatusOverlay show={showReconnecting} message={RECONNECTING_MSG} />
+      <StatusOverlay show={showBuffering && !showReconnecting} />
       <PlayerChrome
         chrome={chrome}
         isLiveMode={false}
@@ -1005,10 +1233,21 @@ export default function LivePlayer({ config }) {
   const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
 
+  const reconnecting = Boolean(config.reconnecting);
+
   if (isMediaMtx && live) {
     const playback = resolveServerPlaybackUrl(config);
     if (!playback) return <Offline message={SERVER_WAITING_MSG} />;
-    return <HlsPlayer src={playback} poster={poster} isLive detectPublish />;
+    return (
+      <HlsPlayer
+        src={playback}
+        poster={poster}
+        isLive
+        detectPublish
+        eventId={eventId}
+        reconnecting={reconnecting}
+      />
+    );
   }
 
   if (isMediaMtx && (recordingSrc || recordingParts.length > 0)) {
@@ -1025,7 +1264,16 @@ export default function LivePlayer({ config }) {
   if (isMediaMtx) {
     const playback = resolveServerPlaybackUrl(config);
     if (!playback) return <Offline message={ENDED_MSG} />;
-    return <HlsPlayer src={playback} poster={poster} isLive={false} detectPublish />;
+    return (
+      <HlsPlayer
+        src={playback}
+        poster={poster}
+        isLive={false}
+        detectPublish
+        eventId={eventId}
+        reconnecting={reconnecting}
+      />
+    );
   }
 
   if (!live && (recordingSrc || recordingParts.length > 0)) {
@@ -1044,7 +1292,17 @@ export default function LivePlayer({ config }) {
   }
 
   const playback = resolveServerPlaybackUrl(config) || config.playbackUrl || config.hlsUrl;
-  if (provider === 'hls') return <HlsPlayer src={playback} poster={poster} isLive={live} />;
+  if (provider === 'hls') {
+    return (
+      <HlsPlayer
+        src={playback}
+        poster={poster}
+        isLive={live}
+        eventId={eventId}
+        reconnecting={reconnecting}
+      />
+    );
+  }
   if (provider === 'webrtc') return <WebRtcPlayer url={config.webrtcUrl} isLive={live} />;
 
   return <Offline message="Live stream is not configured yet." />;

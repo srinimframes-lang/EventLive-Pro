@@ -135,3 +135,25 @@ export async function deleteR2Object(key) {
 export async function deleteRecordingFromR2(key) {
   return deleteR2Object(key);
 }
+
+/** Download an R2 object to a local path (used when merging parts already migrated). */
+export async function downloadR2ObjectToFile(key, destPath) {
+  const s3 = getClient();
+  if (!s3 || !key) throw new Error('R2 download unavailable');
+  const abs = path.resolve(destPath);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  const res = await s3.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+  if (!res.Body) throw new Error(`empty R2 body for ${key}`);
+  await new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(abs);
+    out.on('error', reject);
+    out.on('finish', resolve);
+    if (typeof res.Body.pipe === 'function') {
+      res.Body.pipe(out);
+      res.Body.on('error', reject);
+    } else {
+      reject(new Error('unsupported R2 body stream'));
+    }
+  });
+  return abs;
+}

@@ -74,7 +74,8 @@ export function useLiveRoom(eventId, { guestName } = {}) {
     });
     socket.on('stream:status', (status) => {
       setLiveStatus(status);
-      // Remount player when switching into recorded replay after live ends.
+      // Remount only when entering recorded replay — not during reconnect grace.
+      if (status?.reconnecting) return;
       if (status && status.isLive === false && status.recordingUrl) {
         setPlayerNonce((n) => n + 1);
       }

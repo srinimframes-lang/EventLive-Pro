@@ -6,6 +6,7 @@ import {
   markRecordingPartUploaded,
   parseRecordingFilenameTimestamp,
   removeRecordingPart,
+  replacePartsWithMergedRecording,
   syncLegacyRecordingFields,
 } from './recording.js';
 
@@ -112,4 +113,44 @@ test('legacy single recordingR2Key hydrates as one part', () => {
   assert.equal(state.hasRecording, true);
   assert.equal(state.recordingCount, 1);
   assert.equal(state.parts[0].filename, 'solo.mp4');
+});
+
+test('soft-deleted parts are hidden so merge can leave a single replay', () => {
+  const event = {
+    _id: 'cccccccccccccccccccccccc',
+    id: 'cccccccccccccccccccccccc',
+    recordings: [
+      {
+        _id: '111111111111111111111111',
+        filename: 'a.mp4',
+        storage: 'local',
+        durationSec: 10,
+        startedAt: new Date('2026-07-31T10:00:00Z'),
+        createdAt: new Date('2026-07-31T10:00:00Z'),
+        deletedAt: new Date('2026-07-31T11:00:00Z'),
+      },
+      {
+        _id: '222222222222222222222222',
+        filename: 'b.mp4',
+        storage: 'local',
+        durationSec: 20,
+        startedAt: new Date('2026-07-31T10:01:00Z'),
+        createdAt: new Date('2026-07-31T10:01:00Z'),
+        deletedAt: new Date('2026-07-31T11:00:00Z'),
+      },
+      {
+        _id: '333333333333333333333333',
+        filename: 'merged.mp4',
+        storage: 'local',
+        durationSec: 30,
+        startedAt: new Date('2026-07-31T10:00:00Z'),
+        createdAt: new Date('2026-07-31T11:00:00Z'),
+      },
+    ],
+  };
+  const active = listActiveRecordingParts(event);
+  assert.equal(active.length, 1);
+  assert.equal(active[0].filename, 'merged.mp4');
+  assert.equal(typeof replacePartsWithMergedRecording, 'function');
+  assert.ok(parseRecordingFilenameTimestamp('2026-07-31_10-00-00-000000.mp4'));
 });

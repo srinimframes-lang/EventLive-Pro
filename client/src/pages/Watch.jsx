@@ -71,9 +71,10 @@ export default function Watch() {
 
   // Poll MediaMTX-backed stream status while watching a Premium Server event.
   // When Socket.IO is connected, live status is also pushed — poll less often.
+  const streamProvider = config?.provider;
   useEffect(() => {
-    if (!eventId || !config) return undefined;
-    const isServer = config.provider === 'rtmp' || config.provider === 'hls';
+    if (!eventId || !streamProvider) return undefined;
+    const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
     if (!isServer) return undefined;
     const intervalMs = room.connected ? 30000 : 10000;
     const timer = setInterval(async () => {
@@ -83,23 +84,39 @@ export default function Watch() {
       }
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, config?.provider, room.connected]);
+  }, [eventId, streamProvider, room.connected]);
 
   const mergedConfig = useMemo(() => {
     if (!config) return null;
     const next = { ...config };
     if (room.liveStatus) {
       next.isLive = room.liveStatus.isLive;
+      if (room.liveStatus.reconnecting !== undefined) {
+        next.reconnecting = Boolean(room.liveStatus.reconnecting);
+      }
+      if (room.liveStatus.playbackMode) {
+        next.playbackMode = room.liveStatus.playbackMode;
+      }
       if (room.liveStatus.recordingUrl !== undefined) {
         next.recordingUrl = room.liveStatus.recordingUrl || '';
         next.recordingAvailable = Boolean(room.liveStatus.recordingAvailable);
-        next.playbackMode =
-          room.liveStatus.playbackMode ||
-          (room.liveStatus.isLive ? 'live' : room.liveStatus.recordingUrl ? 'recorded' : 'offline');
+        if (!room.liveStatus.playbackMode) {
+          next.playbackMode =
+            room.liveStatus.isLive
+              ? room.liveStatus.reconnecting
+                ? 'reconnecting'
+                : 'live'
+              : room.liveStatus.recordingUrl
+                ? 'recorded'
+                : 'offline';
+        }
       }
       if (room.liveStatus.recordings) {
         next.recordings = room.liveStatus.recordings;
         next.recordingCount = room.liveStatus.recordingCount ?? room.liveStatus.recordings.length;
+      }
+      if (room.liveStatus.recordingMergeStatus !== undefined) {
+        next.recordingMergeStatus = room.liveStatus.recordingMergeStatus;
       }
       // Failover fields from sockets (only present when FAILOVER_ENABLED=true).
       if (room.liveStatus.failoverFeatureEnabled) {
