@@ -361,14 +361,18 @@ export default function EventForm() {
 
     const title = form.title.trim();
     const startIso = form.startTime ? new Date(form.startTime).toISOString() : undefined;
-    const endLocal = form.endTime || endTimeFromStartLocal(form.startTime);
+    // Always derive endTime from start (+8h). End Time is not shown in the UI.
+    const endLocal = endTimeFromStartLocal(form.startTime);
     const endIso = endLocal ? new Date(endLocal).toISOString() : undefined;
 
     const payload = {
       title,
-      description:
-        form.description.trim() ||
-        (title ? `${title} — live celebration` : 'Live celebration'),
+      // Description is not collected on create; keep existing text on edit if present.
+      description: isEdit
+        ? form.description.trim() || (title ? `${title} — live celebration` : 'Live celebration')
+        : title
+          ? `${title} — live celebration`
+          : 'Live celebration',
       category: form.category,
       status: form.status || 'draft',
       isOnline: form.isOnline,
@@ -601,19 +605,6 @@ export default function EventForm() {
                   </option>
                 ))}
               </select>
-            </Field>
-          )}
-
-          {isEdit && (
-            <Field label="Description" htmlFor="description">
-              <textarea
-                id="description"
-                name="description"
-                rows={4}
-                className="input"
-                value={form.description}
-                onChange={handleChange}
-              />
             </Field>
           )}
 
