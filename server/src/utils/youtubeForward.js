@@ -13,7 +13,7 @@ export function normalizeStreamingDestination(raw) {
   if (v === 'server_youtube' || v === 'server+youtube' || v === 'simultaneous') {
     return 'server_youtube';
   }
-  if (v === 'youtube_server' || v === 'youtube+server') {
+  if (v === 'youtube_server' || v === 'youtube+server' || v === 'youtube-server') {
     return 'youtube_server';
   }
   return null;

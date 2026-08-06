@@ -50,6 +50,7 @@ export default function Embed() {
   const room = useLiveRoom(eventId, { guestName: 'Guest' });
 
   const streamProvider = config?.provider;
+  const streamDestination = config?.streamingDestination;
   const pollIsLive = Boolean(config?.isLive);
   const pollRecordingKey = config?.recordingUrl
     ? '1'
@@ -59,7 +60,9 @@ export default function Embed() {
   useEffect(() => {
     if (!eventId || !streamProvider) return undefined;
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
-    if (!isServer) return undefined;
+    const isYoutubePlusServer =
+      String(streamDestination || '').toLowerCase().replace(/-/g, '_') === 'youtube_server';
+    if (!isServer && !isYoutubePlusServer) return undefined;
     const intervalMs = livePollIntervalMs(
       {
         isLive: pollIsLive,
@@ -73,7 +76,7 @@ export default function Embed() {
       if (cfg) setConfig((prev) => (prev ? { ...prev, ...cfg } : cfg));
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, room.connected, pollIsLive, pollRecordingKey]);
+  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey]);
 
   const mergedConfig = useMemo(
     () => mergeLivePriorityConfig(config, room.liveStatus, room.failoverState),

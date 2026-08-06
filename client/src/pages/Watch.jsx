@@ -74,9 +74,10 @@ export default function Watch() {
   const guestName = user?.name || 'Guest';
   const room = useLiveRoom(eventId, { guestName });
 
-  // Poll MediaMTX-backed stream status. While on recording parts, poll every 3s
-  // so LIVE resume is detected without a page refresh (LIVE has highest priority).
+  // Poll MediaMTX / live status. YouTube + Server still uses rtmp ingest under the hood
+  // (provider stays rtmp) so status polling continues; LivePlayer forces YouTube embed.
   const streamProvider = config?.provider;
+  const streamDestination = config?.streamingDestination;
   const pollIsLive = Boolean(config?.isLive);
   const pollRecordingKey = config?.recordingUrl
     ? '1'
@@ -86,7 +87,9 @@ export default function Watch() {
   useEffect(() => {
     if (!eventId || !streamProvider) return undefined;
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
-    if (!isServer) return undefined;
+    const isYoutubePlusServer =
+      String(streamDestination || '').toLowerCase().replace(/-/g, '_') === 'youtube_server';
+    if (!isServer && !isYoutubePlusServer) return undefined;
     const intervalMs = livePollIntervalMs(
       {
         isLive: pollIsLive,
@@ -102,7 +105,7 @@ export default function Watch() {
       }
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, room.connected, pollIsLive, pollRecordingKey]);
+  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey]);
 
   const [playerLiveConfirmed, setPlayerLiveConfirmed] = useState(false);
 

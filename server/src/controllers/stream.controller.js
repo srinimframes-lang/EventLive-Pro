@@ -132,36 +132,23 @@ async function findEventOr404(id, res, { withKey = false } = {}) {
 function publicStreamConfig(event, { isPublishing = null } = {}) {
   const youtubeVideoId =
     extractYouTubeId(event.youtubeVideoId) || extractYouTubeId(event.streamUrl) || '';
-  const destination = event.streamingDestination || '';
-  // YouTube + Server: ingest/record/forward on MediaMTX, but live website = YouTube embed.
-  const youtubeServerLiveEmbed = destination === 'youtube_server';
+  const destination = String(event.streamingDestination || '')
+    .toLowerCase()
+    .replace(/-/g, '_');
+  // YouTube + Server: ingest/record/forward on MediaMTX; public live UI = YouTube embed only.
+  const youtubePlusServer = destination === 'youtube_server';
 
   const isServerProvider =
     event.streamProvider === 'rtmp' ||
     event.streamProvider === 'hls' ||
     event.streamProvider === 'webrtc';
-  let provider = isServerProvider
+  // Keep real provider (usually rtmp) so status polls / recordings keep working.
+  // LivePlayer decides embed vs HLS from streamingDestination, not provider alone.
+  const provider = isServerProvider
     ? event.streamProvider
     : event.streamProvider === 'youtube' || youtubeVideoId
       ? 'youtube'
       : event.streamProvider;
-
-  const liveFromProbeEarly = isPublishing === true;
-  const offlineFromProbeEarly = isPublishing === false;
-  const reconnectingEarly = isWithinReconnectGrace(event);
-  const isLiveEarly = liveFromProbeEarly
-    ? true
-    : reconnectingEarly
-      ? true
-      : offlineFromProbeEarly
-        ? false
-        : Boolean(event.isLive);
-
-  // While live (or reconnecting), force YouTube embed for youtube_server.
-  // When offline, keep rtmp so server recordings / replay still play.
-  if (youtubeServerLiveEmbed && isLiveEarly && youtubeVideoId) {
-    provider = 'youtube';
-  }
 
   const isServer = provider === 'rtmp' || provider === 'hls';
   const playbackUrl = isServer
@@ -192,24 +179,23 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const base = {
     eventId: event.id,
     provider,
-    streamingDestination: destination || undefined,
-    // Hint for clients: live site player preference.
-    viewerPlayback:
-      youtubeServerLiveEmbed && isLive && youtubeVideoId
-        ? 'youtube'
-        : isServer
-          ? 'hls'
-          : provider === 'youtube'
-            ? 'youtube'
-            : undefined,
+    streamingDestination: event.streamingDestination || undefined,
+    // Public watch page must use YouTube embed for this destination (never HLS).
+    viewerPlayback: youtubePlusServer
+      ? 'youtube'
+      : isServer
+        ? 'hls'
+        : provider === 'youtube'
+          ? 'youtube'
+          : undefined,
     youtubeVideoId,
     streamUrl: event.streamUrl || '',
-    // Hide HLS URLs from the live public payload for youtube_server (embed only).
-    hlsUrl: youtubeServerLiveEmbed && isLive ? '' : isServer ? playbackUrl : event.hlsUrl,
-    playbackUrl: youtubeServerLiveEmbed && isLive ? '' : playbackUrl,
+    // Never expose live HLS to the public player for YouTube + Server.
+    hlsUrl: youtubePlusServer ? '' : isServer ? playbackUrl : event.hlsUrl,
+    playbackUrl: youtubePlusServer ? '' : playbackUrl,
     hlsCdnEnabled: isHlsCdnEnabled(),
     hlsPlaybackBase: getViewerHlsPlaybackBase(),
-    webrtcUrl: youtubeServerLiveEmbed && isLive ? '' : webrtcUrl,
+    webrtcUrl: youtubePlusServer ? '' : webrtcUrl,
     poster: event.coverImage || '',
     isLive,
     reconnecting,

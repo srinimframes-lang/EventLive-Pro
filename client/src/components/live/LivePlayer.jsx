@@ -237,6 +237,24 @@ function resolveYoutubeVideoId(config) {
   );
 }
 
+/** True for "YouTube + Server" — public live UI must be YouTube embed, never HLS. */
+function isYoutubePlusServerDestination(config) {
+  const raw = String(config?.streamingDestination || config?.streamType || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s+]+/g, '_')
+    .replace(/-/g, '_');
+  if (raw === 'youtube_server') return true;
+  // API also sets viewerPlayback: 'youtube' for this destination (defense in depth).
+  return (
+    config?.viewerPlayback === 'youtube' &&
+    (raw === 'youtube_server' ||
+      String(config?.streamingDestination || '')
+        .toLowerCase()
+        .replace(/-/g, '_') === 'youtube_server')
+  );
+}
+
 function isActivelyPlaying(video) {
   return Boolean(
     video &&
@@ -1473,14 +1491,24 @@ export default function LivePlayer({ config, onLiveUiChange }) {
       setHlsLiveResume(false);
       return;
     }
+    // YouTube + Server never uses HLS live resume.
+    if (isYoutubePlusServerDestination(config)) {
+      setHlsLiveResume(false);
+      return;
+    }
     // Parent/API confirmed LIVE — drop local override (player already on HLS).
     if (config.isLive) setHlsLiveResume(false);
   }, [config]);
 
   // While recording parts play (or local LIVE resume), re-check HLS every 3s.
   // Never cache "parts forever" — if LIVE playlist returns, switch immediately.
+  // Skipped entirely for YouTube + Server (embed-only live playback).
   useEffect(() => {
     if (!config) return undefined;
+    if (isYoutubePlusServerDestination(config)) {
+      setHlsLiveResume(false);
+      return undefined;
+    }
     if (config.isLive) return undefined;
     const isMediaMtx = config.provider === 'rtmp' || config.provider === 'hls';
     if (!isMediaMtx) return undefined;
@@ -1514,10 +1542,14 @@ export default function LivePlayer({ config, onLiveUiChange }) {
     };
   }, [config, hlsLiveResume]);
 
-  const live = Boolean(config?.isLive) || hlsLiveResume;
+  const youtubePlusServer = isYoutubePlusServerDestination(config);
+  // Never treat HLS resume as "live" for YouTube + Server — that would flip into HlsPlayer.
+  const live = youtubePlusServer
+    ? Boolean(config?.isLive)
+    : Boolean(config?.isLive) || hlsLiveResume;
   // HLS probe confirmation clears reconnect UI immediately. Server grace flag may
   // still be true — HlsPlayer hides overlay once media is actually playing.
-  const reconnecting = hlsLiveResume ? false : Boolean(config?.reconnecting);
+  const reconnecting = hlsLiveResume && !youtubePlusServer ? false : Boolean(config?.reconnecting);
 
   useEffect(() => {
     if (!onLiveUiChange) return undefined;
@@ -1544,42 +1576,47 @@ export default function LivePlayer({ config, onLiveUiChange }) {
     if (backupId) return <YouTubePlayer videoId={backupId} />;
   }
 
-  const recordingSrcEarly = resolveMediaUrl(config.recordingUrl || '');
-  const recordingPartsEarly = Array.isArray(config.recordings) ? config.recordings : [];
-  const youtubeServerReplay =
-    config.streamingDestination === 'youtube_server' &&
-    !live &&
-    Boolean(recordingSrcEarly || recordingPartsEarly.length > 0);
-
-  // YouTube + Server live → embed only. Offline → server recordings (below).
-  if (
-    !youtubeServerReplay &&
-    (config.viewerPlayback === 'youtube' || config.streamingDestination === 'youtube_server') &&
-    live &&
-    videoId
-  ) {
-    return <YouTubePlayer videoId={videoId} />;
-  }
-
-  const isYoutube =
-    !youtubeServerReplay &&
-    !isServerProvider &&
-    (config.provider === 'youtube' || Boolean(videoId));
-
-  if (isYoutube) {
-    return <YouTubePlayer videoId={videoId} />;
-  }
-
   const { provider } = config;
   const poster = config.poster || '';
   const isMediaMtx = provider === 'rtmp' || provider === 'hls';
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
   const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
-  const awaitingLiveResume = isTemporaryRecordingFallback({
-    ...config,
-    isLive: live,
-  }) && !live;
+  const hasServerReplay = Boolean(recordingSrc || recordingParts.length > 0);
+  const awaitingLiveResume =
+    isTemporaryRecordingFallback({
+      ...config,
+      isLive: live,
+    }) && !live;
+
+  // ── YouTube + Server ──────────────────────────────────────────────
+  // Live / waiting: YouTube embed ONLY (never Server HLS).
+  // Offline with recordings: server Mp4 replay (unchanged recording pipeline).
+  if (youtubePlusServer) {
+    if (!live && hasServerReplay) {
+      return (
+        <Mp4Player
+          src={recordingSrc}
+          poster={poster}
+          eventId={eventId}
+          parts={recordingParts}
+          awaitingLiveResume={awaitingLiveResume}
+        />
+      );
+    }
+    if (videoId) {
+      return <YouTubePlayer videoId={videoId} />;
+    }
+    return (
+      <Offline message="YouTube embed URL is missing for this YouTube + Server event." />
+    );
+  }
+
+  const isYoutube = !isServerProvider && (config.provider === 'youtube' || Boolean(videoId));
+
+  if (isYoutube) {
+    return <YouTubePlayer videoId={videoId} />;
+  }
 
   if (isMediaMtx && live) {
     const playback = resolveServerPlaybackUrl(config);
@@ -1597,7 +1634,7 @@ export default function LivePlayer({ config, onLiveUiChange }) {
     );
   }
 
-  if (isMediaMtx && (recordingSrc || recordingParts.length > 0)) {
+  if (isMediaMtx && hasServerReplay) {
     return (
       <Mp4Player
         src={recordingSrc}
@@ -1624,7 +1661,7 @@ export default function LivePlayer({ config, onLiveUiChange }) {
     );
   }
 
-  if (!live && (recordingSrc || recordingParts.length > 0)) {
+  if (!live && hasServerReplay) {
     return (
       <Mp4Player
         src={recordingSrc}
