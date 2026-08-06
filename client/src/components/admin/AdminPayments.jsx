@@ -6,6 +6,7 @@ const FILTERS = [
   { id: 'pending', label: 'Pending' },
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
+  { id: 'cancelled', label: 'Cancelled' },
   { id: '', label: 'All' },
 ];
 
@@ -117,6 +118,7 @@ export default function AdminPayments() {
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
                     Submitted {formatDateTime(p.createdAt)}
+                    {p.method ? ` · ${p.method === 'razorpay' ? 'Razorpay' : 'UPI'}` : ''}
                     {p.reference ? ` · Ref: ${p.reference}` : ''} · Balance now:{' '}
                     {p.user?.creditBalance ?? 0}
                   </p>

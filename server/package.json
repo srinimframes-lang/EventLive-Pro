@@ -2,7 +2,7 @@
   "name": "@eventlive/server",
   "version": "1.0.0",
   "private": true,
-  "description": "EventLive Pro backend API \u2014 Express, MongoDB/Mongoose, JWT auth.",
+  "description": "EventLive Pro backend API — Express, MongoDB/Mongoose, JWT auth.",
   "type": "module",
   "main": "src/index.js",
   "engines": {
@@ -12,7 +12,7 @@
     "dev": "nodemon src/index.js",
     "dev:memdb": "node scripts/dev-memory-db.js",
     "start": "node src/index.js",
-    "test": "MONGOMS_DOWNLOAD_DIR=/tmp/eventlive-mongodb-binaries node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js src/utils/recordingMerge.test.js"
+    "test": "MONGOMS_DOWNLOAD_DIR=/tmp/eventlive-mongodb-binaries node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js src/utils/recordingMerge.test.js src/utils/razorpayPayment.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1089.0",
@@ -31,6 +31,7 @@
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
     "qrcode": "^1.5.4",
+    "razorpay": "^2.9.8",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

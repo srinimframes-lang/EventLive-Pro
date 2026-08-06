@@ -12,6 +12,7 @@ import { notFound, errorHandler } from './middleware/error.middleware.js';
 import { UPLOADS_DIR } from './middleware/upload.middleware.js';
 import { startDomainCache, isActiveDomainOrigin } from './utils/domainCache.js';
 import { getSitemap, getRobots } from './controllers/seo.controller.js';
+import { razorpayWebhook } from './controllers/payment.controller.js';
 
 const app = express();
 
@@ -58,6 +59,13 @@ app.use(
     credentials: true,
   })
 );
+// Razorpay webhooks require the raw body for HMAC verification. Mount before JSON parser.
+app.post(
+  '/api/payments/razorpay/webhook',
+  express.raw({ type: 'application/json', limit: '1mb' }),
+  razorpayWebhook
+);
+
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
