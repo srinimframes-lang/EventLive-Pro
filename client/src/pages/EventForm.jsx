@@ -15,8 +15,23 @@ import EventTypeSelect from '../components/EventTypeSelect.jsx';
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
 import { streamService } from '../services/stream.service.js';
+import {
+  WEDDING_TEMPLATES,
+  resolveWeddingTemplateId,
+  weddingTemplateToPayload,
+  stripWeddingTemplateTags,
+} from '../components/wedding-templates/registry.js';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
+
+/** Derive end datetime-local from start (+8 hours) — end field is not shown in the UI. */
+function endTimeFromStartLocal(startLocal) {
+  if (!startLocal) return '';
+  const d = new Date(startLocal);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setHours(d.getHours() + 8);
+  return toDateTimeLocal(d);
+}
 
 const EMPTY = {
   title: '',
@@ -48,6 +63,7 @@ const EMPTY = {
   studioMapsUrl: '',
   coverImage: '',
   pageTemplate: 'default',
+  weddingTemplateId: 'default',
   heroBackgroundImage: '',
   bridePhoto: '',
   groomPhoto: '',
@@ -78,9 +94,10 @@ export default function EventForm() {
   const saveInFlightRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
-  // Stream type: YouTube Live (1 credit) or Premium Server Live (5 credits).
+  // Create form defaults to Premium Server Live (no YouTube URL required).
+  // Edit keeps the event's existing stream type. URL ?type=youtube still works.
   const [streamType, setStreamType] = useState(
-    searchParams.get('type') === 'server' ? 'server' : 'youtube'
+    searchParams.get('type') === 'youtube' ? 'youtube' : 'server'
   );
   const balance = user?.creditBalance ?? 0;
   const cost = LINK_COSTS[streamType] || 1;
@@ -124,7 +141,7 @@ export default function EventForm() {
           rtmpPublishUrl: event.rtmpPublishUrl || '',
           chatEnabled: event.chatEnabled ?? true,
           capacity: event.capacity || 0,
-          tags: (event.tags || []).join(', '),
+          tags: stripWeddingTemplateTags(event.tags || []).join(', '),
           brideName: event.brideName || '',
           groomName: event.groomName || '',
           studioName: event.studioName || '',
@@ -140,6 +157,10 @@ export default function EventForm() {
           studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
           pageTemplate: event.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
+          weddingTemplateId:
+            event.pageTemplate === 'classic-wedding'
+              ? resolveWeddingTemplateId(event) || 'classic-wedding'
+              : 'default',
           heroBackgroundImage: event.heroBackgroundImage || '',
           bridePhoto: event.bridePhoto || '',
           groomPhoto: event.groomPhoto || '',
@@ -212,6 +233,14 @@ export default function EventForm() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    if (name === 'startTime') {
+      setForm((f) => ({
+        ...f,
+        startTime: value,
+        endTime: endTimeFromStartLocal(value) || f.endTime,
+      }));
+      return;
+    }
     setForm((f) => ({ ...f, [name]: type === 'checkbox' ? checked : value }));
   };
 
@@ -317,37 +346,50 @@ export default function EventForm() {
       return;
     }
 
-    const youtubeVideoId =
-      form.isOnline && streamType === 'youtube' ? extractYouTubeId(form.youtubeUrl) : '';
+    // Create form hides stream UI — always use Premium Server Live unless URL forced YouTube.
+    const effectiveStreamType = !isEdit ? streamType || 'server' : streamType;
 
-    if (form.isOnline && streamType === 'youtube' && !youtubeVideoId) {
+    const youtubeVideoId =
+      form.isOnline && effectiveStreamType === 'youtube' ? extractYouTubeId(form.youtubeUrl) : '';
+
+    if (form.isOnline && effectiveStreamType === 'youtube' && !youtubeVideoId) {
       setError('A valid YouTube Live URL is required for YouTube Live events.');
       saveInFlightRef.current = false;
       setSubmitting(false);
       return;
     }
 
+    const title = form.title.trim();
+    const startIso = form.startTime ? new Date(form.startTime).toISOString() : undefined;
+    const endLocal = form.endTime || endTimeFromStartLocal(form.startTime);
+    const endIso = endLocal ? new Date(endLocal).toISOString() : undefined;
+
     const payload = {
-      title: form.title.trim(),
-      description: form.description.trim(),
+      title,
+      description:
+        form.description.trim() ||
+        (title ? `${title} — live celebration` : 'Live celebration'),
       category: form.category,
-      status: form.status,
+      status: form.status || 'draft',
       isOnline: form.isOnline,
       location: form.isOnline ? 'Online' : form.location,
       venue: form.venue?.trim() || '',
       capacity: Number(form.capacity) || 0,
-      startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
-      endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
+      startTime: startIso,
+      endTime: endIso,
       brideName: form.brideName?.trim() || '',
       groomName: form.groomName?.trim() || '',
-      pageTemplate: form.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
       chatEnabled: form.chatEnabled,
     };
 
+    const wt = weddingTemplateToPayload(form.weddingTemplateId || 'default', form.tags);
+    payload.pageTemplate = wt.pageTemplate;
+    payload.tags = wt.tags;
+
     if (form.isOnline) {
-      payload.streamType = streamType;
-      payload.linkType = streamType;
-      if (streamType === 'youtube') {
+      payload.streamType = effectiveStreamType;
+      payload.linkType = effectiveStreamType;
+      if (effectiveStreamType === 'youtube') {
         payload.streamUrl = form.youtubeUrl?.trim() || '';
         payload.youtubeVideoId = youtubeVideoId;
         payload.streamProvider = 'youtube';
@@ -357,10 +399,6 @@ export default function EventForm() {
         payload.streamUrl = '';
         if (form.hlsUrl?.trim()) payload.hlsUrl = form.hlsUrl.trim();
       }
-    }
-
-    if (form.tags?.trim()) {
-      payload.tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
     }
 
     const studioKeys = [
@@ -470,8 +508,9 @@ export default function EventForm() {
         {isEdit ? 'Edit event' : 'Create event'}
       </h1>
       <p className="mt-1 text-sm text-slate-500">
-        Fill in the details below. Fields marked with sections help you set up a
-        beautiful live wedding broadcast.
+        {isEdit
+          ? 'Update event details, streaming, and watch-page design.'
+          : 'Enter the essentials for your live celebration. Streaming credentials are created automatically.'}
       </p>
 
       {isEdit && id && (
@@ -509,75 +548,189 @@ export default function EventForm() {
           </div>
         )}
 
-        {/* ── Basics ─────────────────────────────────────────── */}
-        <Section title="Event details">
-          <Field label="Title" htmlFor="title">
-            <input id="title" name="title" required minLength={3} maxLength={120}
-              className="input" value={form.title} onChange={handleChange}
-              placeholder="e.g. Aarav & Priya — Wedding Live" />
+        {/* ── Create / shared essentials ─────────────────────── */}
+        <Section title={isEdit ? 'Event details' : 'Create event'}>
+          <Field label="Event Name" htmlFor="title">
+            <input
+              id="title"
+              name="title"
+              required
+              minLength={3}
+              maxLength={120}
+              className="input"
+              value={form.title}
+              onChange={handleChange}
+              placeholder="e.g. Aarav & Priya — Wedding Live"
+            />
           </Field>
 
-          <Field label="Description" htmlFor="description">
-            <textarea id="description" name="description" required rows={5}
-              className="input" value={form.description} onChange={handleChange} />
+          <Field label="Event Type" htmlFor="category">
+            <EventTypeSelect
+              id="category"
+              name="category"
+              value={form.category}
+              onChange={handleChange}
+              required
+            />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Event type" htmlFor="category">
-              <EventTypeSelect
-                id="category"
-                name="category"
-                value={form.category}
-                onChange={handleChange}
-                required
-              />
-            </Field>
+          <Field label="Start Date & Time" htmlFor="startTime">
+            <input
+              id="startTime"
+              name="startTime"
+              type="datetime-local"
+              required
+              className="input"
+              value={form.startTime}
+              onChange={handleChange}
+            />
+          </Field>
+
+          {isEdit && (
             <Field label="Status" htmlFor="status">
-              <select id="status" name="status" className="input capitalize"
-                value={form.status} onChange={handleChange}>
+              <select
+                id="status"
+                name="status"
+                className="input capitalize"
+                value={form.status}
+                onChange={handleChange}
+              >
                 {EVENT_STATUSES.map((s) => (
-                  <option key={s} value={s} className="capitalize">{s}</option>
+                  <option key={s} value={s} className="capitalize">
+                    {s}
+                  </option>
                 ))}
               </select>
             </Field>
-          </div>
+          )}
+
+          {isEdit && (
+            <Field label="Description" htmlFor="description">
+              <textarea
+                id="description"
+                name="description"
+                rows={4}
+                className="input"
+                value={form.description}
+                onChange={handleChange}
+              />
+            </Field>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Start time" htmlFor="startTime">
-              <input id="startTime" name="startTime" type="datetime-local" required
-                className="input" value={form.startTime} onChange={handleChange} />
+            <Field label="Bride Name" htmlFor="brideName">
+              <input
+                id="brideName"
+                name="brideName"
+                className="input"
+                maxLength={80}
+                placeholder="e.g. Priya"
+                value={form.brideName}
+                onChange={handleChange}
+              />
             </Field>
-            <Field label="End time" htmlFor="endTime">
-              <input id="endTime" name="endTime" type="datetime-local" required
-                className="input" value={form.endTime} onChange={handleChange} />
+            <Field label="Groom Name" htmlFor="groomName">
+              <input
+                id="groomName"
+                name="groomName"
+                className="input"
+                maxLength={80}
+                placeholder="e.g. Aarav"
+                value={form.groomName}
+                onChange={handleChange}
+              />
             </Field>
           </div>
-        </Section>
 
-        {/* ── Page template ──────────────────────────────────── */}
-        <Section
-          title="Page template"
-          subtitle="Optional premium public page. Leave as Default to keep the current EventLive-Pro watch page."
-        >
-          <Field label="Public page design" htmlFor="pageTemplate">
-            <select
-              id="pageTemplate"
-              name="pageTemplate"
+          <Field label="Venue" htmlFor="venue" hint="Shown on the watch page.">
+            <input
+              id="venue"
+              name="venue"
               className="input"
-              value={form.pageTemplate || 'default'}
+              maxLength={200}
+              placeholder="e.g. The Leela Palace, Udaipur"
+              value={form.venue}
               onChange={handleChange}
+            />
+          </Field>
+
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Cover Photo</span>
+            <div className="flex flex-wrap items-center gap-4">
+              {form.coverImage ? (
+                <img
+                  src={resolveMediaUrl(form.coverImage)}
+                  alt="Cover"
+                  className="h-20 w-28 rounded-lg border border-slate-200 object-cover"
+                />
+              ) : (
+                <div className="grid h-20 w-28 place-items-center rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400">
+                  No photo
+                </div>
+              )}
+              <div>
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverUpload}
+                  className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                  disabled={uploadingCover}
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  {uploadingCover
+                    ? 'Uploading…'
+                    : isEdit
+                      ? 'JPG/PNG, up to 8 MB.'
+                      : 'Select a photo — it uploads when you create the event.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <Field label="Wedding Template" htmlFor="weddingTemplateId">
+            <select
+              id="weddingTemplateId"
+              name="weddingTemplateId"
+              className="input"
+              value={form.weddingTemplateId || 'default'}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setForm((f) => ({
+                  ...f,
+                  weddingTemplateId: nextId,
+                  pageTemplate: nextId === 'default' ? 'default' : 'classic-wedding',
+                }));
+              }}
             >
               <option value="default">Default (current EventLive-Pro page)</option>
-              <option value="classic-wedding">Classic Wedding</option>
+              {WEDDING_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
             </select>
           </Field>
 
-          {form.pageTemplate === 'classic-wedding' && (
-            <div className="mt-4 space-y-4 rounded-xl border border-teal-100 bg-teal-50/50 p-4">
-              <p className="text-sm text-teal-900">
-                Classic Wedding uses a full-screen invitation-style hero. Upload a hero background
-                (recommended). Couple / bride / groom photos are optional.
-              </p>
+          {form.weddingTemplateId && form.weddingTemplateId !== 'default' && (
+            <div className="space-y-4 rounded-xl border border-teal-100 bg-teal-50/50 p-4">
+              {(() => {
+                const meta = WEDDING_TEMPLATES.find((t) => t.id === form.weddingTemplateId);
+                return meta ? (
+                  <div className="flex flex-wrap items-start gap-4">
+                    {meta.previewImage ? (
+                      <img
+                        src={meta.previewImage}
+                        alt=""
+                        className="h-20 w-36 rounded-lg border border-teal-100 object-cover"
+                      />
+                    ) : null}
+                    <p className="min-w-0 flex-1 text-sm text-teal-900">
+                      <span className="font-semibold">{meta.label}.</span> {meta.description}
+                    </p>
+                  </div>
+                ) : null;
+              })()}
               <ImageUploadField
                 label="Hero background image"
                 preview={form.heroBackgroundImage}
@@ -603,10 +756,11 @@ export default function EventForm() {
           )}
         </Section>
 
-        {/* ── Professional theme ─────────────────────────────── */}
+        {/* ── Edit-only: themes ──────────────────────────────── */}
+        {isEdit && (
         <Section
           title="Choose a theme"
-          subtitle="10 premium layout themes — optional; pick one for a custom live page design. Ignored when Classic Wedding page template is selected."
+          subtitle="Optional layout theme for the live page. Ignored when a Wedding Template is selected."
         >
           <ThemeGallery
             themes={allThemes}
@@ -618,60 +772,11 @@ export default function EventForm() {
             <p className="mt-3 text-xs text-emerald-700">Theme selected — it will appear on your live watch page.</p>
           )}
         </Section>
+        )}
 
-        {/* ── Couple ─────────────────────────────────────────── */}
-        <Section title="The couple" subtitle="Shown on the live watch page.">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Bride's name" htmlFor="brideName">
-              <input id="brideName" name="brideName" className="input" maxLength={80}
-                placeholder="e.g. Priya" value={form.brideName} onChange={handleChange} />
-            </Field>
-            <Field label="Groom's name" htmlFor="groomName">
-              <input id="groomName" name="groomName" className="input" maxLength={80}
-                placeholder="e.g. Aarav" value={form.groomName} onChange={handleChange} />
-            </Field>
-          </div>
-
-          <Field label="Venue" htmlFor="venue" hint="The ceremony venue, shown on the watch page.">
-            <input id="venue" name="venue" className="input" maxLength={200}
-              placeholder="e.g. The Leela Palace, Udaipur" value={form.venue} onChange={handleChange} />
-          </Field>
-
-          <div>
-            <span className="mb-1 block text-sm font-medium text-slate-700">Couple photo</span>
-            <div className="flex flex-wrap items-center gap-4">
-              {form.coverImage ? (
-                <img
-                  src={resolveMediaUrl(form.coverImage)}
-                  alt="Couple"
-                  className="h-20 w-28 rounded-lg border border-slate-200 object-cover"
-                />
-              ) : (
-                <div className="grid h-20 w-28 place-items-center rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400">
-                  No photo
-                </div>
-              )}
-              <div>
-                <input
-                  ref={coverInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleCoverUpload}
-                  className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
-                  disabled={uploadingCover}
-                />
-                <p className="mt-1 text-xs text-slate-400">
-                  {uploadingCover
-                    ? 'Uploading…'
-                    : isEdit
-                      ? 'A hero photo of the couple. JPG/PNG, up to 8 MB.'
-                      : 'Select a photo — it will upload when you create the event.'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </Section>
-
+        {/* ── Edit-only: streaming, studio, extras ───────────── */}
+        {isEdit && (
+        <>
         {/* ── Streaming ──────────────────────────────────────── */}
         <Section title="Live stream">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -1065,6 +1170,8 @@ export default function EventForm() {
             </Field>
           </div>
         </Section>
+        </>
+        )}
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row">
           <button

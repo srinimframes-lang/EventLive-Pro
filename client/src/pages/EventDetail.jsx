@@ -11,6 +11,7 @@ import { coverImageAlt } from '../utils/seo.js';
 import EventQrCard from '../components/EventQrCard.jsx';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 import { eventTypeLabel } from '../config/eventTypes.js';
+import { stripWeddingTemplateTags } from '../components/wedding-templates/registry.js';
 
 export default function EventDetail() {
   const { idOrSlug } = useParams();
@@ -160,9 +161,9 @@ export default function EventDetail() {
       <div className="card mt-6">
         <h2 className="text-lg font-bold text-slate-900">About this event</h2>
         <p className="mt-2 whitespace-pre-wrap text-slate-700">{event.description}</p>
-        {event.tags?.length > 0 && (
+        {stripWeddingTemplateTags(event.tags || []).length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {event.tags.map((tag) => (
+            {stripWeddingTemplateTags(event.tags).map((tag) => (
               <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">
                 #{tag}
               </span>

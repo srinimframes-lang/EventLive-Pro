@@ -1,0 +1,423 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=DM+Serif+Display:ital@0;1&family=Josefin+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+
+/* Shared invitation template chrome */
+.wt-page {
+  --wt-ink: #1c1917;
+  --wt-muted: #57534e;
+  --wt-surface: #fafaf9;
+  --wt-accent: #a16207;
+  --wt-accent-soft: #fef3c7;
+  --wt-hero-from: #14532d;
+  --wt-hero-to: #365314;
+  --wt-font-display: 'DM Serif Display', Georgia, serif;
+  --wt-font-body: 'Libre Baskerville', Georgia, serif;
+  --wt-font-ui: 'Josefin Sans', system-ui, sans-serif;
+  min-height: 100vh;
+  background: var(--wt-surface);
+  color: var(--wt-ink);
+  font-family: var(--wt-font-body);
+}
+
+.wt-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(92vh, 820px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  text-align: center;
+  color: #fff;
+}
+
+.wt-hero-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wt-hero-fallback {
+  background: linear-gradient(145deg, var(--wt-hero-from), var(--wt-hero-to));
+}
+
+.wt-hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.35) 0%,
+    rgba(0, 0, 0, 0.55) 55%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+}
+
+.wt-hero-ornament {
+  position: absolute;
+  top: 1.25rem;
+  left: 50%;
+  z-index: 2;
+  width: min(180px, 42vw);
+  transform: translateX(-50%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.wt-hero-inner {
+  position: relative;
+  z-index: 3;
+  padding: 5rem 1.25rem 3rem;
+  max-width: 42rem;
+}
+
+.wt-eyebrow {
+  font-family: var(--wt-font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.wt-names {
+  margin-top: 1rem;
+  font-family: var(--wt-font-display);
+  font-size: clamp(2.4rem, 8vw, 4.5rem);
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+.wt-amp,
+.wt-amp-inline {
+  display: block;
+  margin: 0.35rem auto;
+  font-family: var(--wt-font-display);
+  font-style: italic;
+  font-size: 0.45em;
+  opacity: 0.85;
+}
+
+.wt-amp-inline {
+  display: inline;
+  margin: 0 0.4rem;
+  font-size: 0.7em;
+}
+
+.wt-meta {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: center;
+  font-family: var(--wt-font-ui);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  opacity: 0.92;
+}
+
+.wt-watch-btn {
+  margin-top: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 999px;
+  padding: 0.85rem 1.5rem;
+  background: var(--wt-accent);
+  color: #fff;
+  font-family: var(--wt-font-ui);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.wt-watch-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.wt-watch-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  animation: wt-pulse 1.6s ease-out infinite;
+}
+
+@keyframes wt-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+.wt-section {
+  margin: 0 auto;
+  max-width: 64rem;
+  padding: 2.5rem 1.25rem;
+}
+
+.wt-section-ornament {
+  display: block;
+  width: min(120px, 36vw);
+  margin: 0 auto 1rem;
+  opacity: 0.85;
+}
+
+.wt-section-title {
+  font-family: var(--wt-font-display);
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  text-align: center;
+  font-weight: 400;
+}
+
+.wt-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.wt-section-head .wt-section-title {
+  text-align: left;
+}
+
+.wt-count {
+  font-family: var(--wt-font-ui);
+  font-size: 0.8rem;
+  color: var(--wt-muted);
+}
+
+.wt-couple-photos {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.wt-couple-photos-single {
+  grid-template-columns: minmax(0, 280px);
+}
+
+.wt-couple-photos-trio {
+  grid-template-columns: repeat(3, minmax(0, 180px));
+}
+
+@media (max-width: 720px) {
+  .wt-couple-photos-trio {
+    grid-template-columns: minmax(0, 200px);
+  }
+}
+
+.wt-portrait {
+  margin: 0;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(28, 25, 23, 0.08);
+}
+
+.wt-portrait img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+}
+
+.wt-portrait-main img {
+  aspect-ratio: 1;
+}
+
+.wt-portrait figcaption {
+  padding: 0.55rem 0.75rem 0.75rem;
+  text-align: center;
+  font-family: var(--wt-font-ui);
+  font-size: 0.85rem;
+}
+
+.wt-welcome {
+  margin: 1.5rem auto 0;
+  max-width: 40rem;
+  text-align: center;
+  line-height: 1.7;
+  color: var(--wt-muted);
+}
+
+.wt-player-frame {
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--wt-accent) 25%, transparent);
+  background: #000;
+}
+
+.wt-share-row {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wt-studio-link {
+  font-family: var(--wt-font-ui);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--wt-accent);
+  text-decoration: underline;
+}
+
+.wt-empty {
+  text-align: center;
+  color: var(--wt-muted);
+  font-size: 0.95rem;
+}
+
+.wt-chat-card {
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--wt-accent) 20%, #e7e5e4);
+  background: #fff;
+}
+
+.wt-chat-tabs {
+  display: flex;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.wt-chat-tab {
+  flex: 1;
+  padding: 0.85rem 1rem;
+  font-family: var(--wt-font-ui);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--wt-muted);
+  background: transparent;
+}
+
+.wt-chat-tab.is-active {
+  color: var(--wt-ink);
+  box-shadow: inset 0 -2px 0 var(--wt-accent);
+}
+
+.wt-chat-body {
+  min-height: 360px;
+  height: 50vh;
+}
+
+.wt-footer {
+  margin-top: 1rem;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  background: color-mix(in srgb, var(--wt-hero-from) 92%, #000);
+  color: #fafaf9;
+}
+
+.wt-footer-names {
+  font-family: var(--wt-font-display);
+  font-size: 1.5rem;
+}
+
+.wt-footer-meta {
+  margin-top: 0.35rem;
+  font-family: var(--wt-font-ui);
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.wt-wa-float {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(22, 163, 74, 0.35);
+}
+
+/* ── Variants ─────────────────────────────────────────── */
+
+.wt-mandap-garden {
+  --wt-ink: #14261a;
+  --wt-muted: #3f5d4a;
+  --wt-surface: #f3f7f1;
+  --wt-accent: #b45309;
+  --wt-hero-from: #14532d;
+  --wt-hero-to: #3f6212;
+  --wt-font-display: 'Cinzel', Georgia, serif;
+}
+
+.wt-royal-ivory {
+  --wt-ink: #1f1714;
+  --wt-muted: #6b5348;
+  --wt-surface: #f7f4ef;
+  --wt-accent: #7f1d1d;
+  --wt-hero-from: #292524;
+  --wt-hero-to: #44403c;
+  --wt-font-display: 'Libre Baskerville', Georgia, serif;
+}
+
+.wt-marigold-festive {
+  --wt-ink: #1e293b;
+  --wt-muted: #475569;
+  --wt-surface: #fff7ed;
+  --wt-accent: #ea580c;
+  --wt-hero-from: #0f766e;
+  --wt-hero-to: #c2410c;
+  --wt-font-display: 'DM Serif Display', Georgia, serif;
+}
+
+.wt-moonlight-palace {
+  --wt-ink: #e2e8f0;
+  --wt-muted: #94a3b8;
+  --wt-surface: #0b1220;
+  --wt-accent: #c4a574;
+  --wt-hero-from: #020617;
+  --wt-hero-to: #1e293b;
+  --wt-font-display: 'Cinzel', Georgia, serif;
+}
+
+.wt-moonlight-palace .wt-chat-card,
+.wt-moonlight-palace .wt-portrait {
+  background: #111827;
+  border-color: rgba(196, 165, 116, 0.25);
+  color: #e2e8f0;
+}
+
+.wt-moonlight-palace .wt-chat-tab.is-active {
+  color: #f8fafc;
+}
+
+.wt-temple-bells {
+  --wt-ink: #3b0a0a;
+  --wt-muted: #7c2d12;
+  --wt-surface: #fff1f2;
+  --wt-accent: #b45309;
+  --wt-hero-from: #7f1d1d;
+  --wt-hero-to: #9a3412;
+  --wt-font-display: 'Cinzel', Georgia, serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-watch-dot {
+    animation: none;
+  }
+  .wt-watch-btn {
+    transition: none;
+  }
+}

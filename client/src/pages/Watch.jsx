@@ -20,7 +20,10 @@ const LiveChat = lazy(() => import('../components/live/LiveChat.jsx'));
 const QAPanel = lazy(() => import('../components/live/QAPanel.jsx'));
 const PhotoGallery = lazy(() => import('../components/PhotoGallery.jsx'));
 const ThemedWatchLayout = lazy(() => import('../components/ThemedWatchLayout.jsx'));
-const ClassicWeddingPage = lazy(() => import('../components/classic-wedding/ClassicWeddingPage.jsx'));
+import {
+  resolveWeddingTemplateComponent,
+  resolveWeddingTemplateId,
+} from '../components/wedding-templates/index.js';
 
 function PanelFallback() {
   return <p className="p-4 text-center text-sm text-slate-500">Loading…</p>;
@@ -115,16 +118,24 @@ export default function Watch() {
 
   const themed = hasEventTheme(event);
   const isClassicWedding = event?.pageTemplate === 'classic-wedding';
+  const weddingTemplateId = isClassicWedding ? resolveWeddingTemplateId(event) : null;
+  const WeddingPage = isClassicWedding ? resolveWeddingTemplateComponent(event) : null;
 
   useEffect(() => {
     if (!themed && !isClassicWedding) return undefined;
     document.body.classList.add('watch-themed');
-    if (isClassicWedding) document.body.classList.add('watch-classic-wedding');
+    if (isClassicWedding) {
+      document.body.classList.add('watch-classic-wedding');
+      if (weddingTemplateId && weddingTemplateId !== 'classic-wedding') {
+        document.body.classList.add('watch-wedding-template');
+      }
+    }
     return () => {
       document.body.classList.remove('watch-themed');
       document.body.classList.remove('watch-classic-wedding');
+      document.body.classList.remove('watch-wedding-template');
     };
-  }, [themed, isClassicWedding]);
+  }, [themed, isClassicWedding, weddingTemplateId]);
 
   if (error)
     return (
@@ -140,11 +151,11 @@ export default function Watch() {
   const chatOn = event.chatEnabled !== false;
   const activeTab = chatOn ? tab : 'qa';
 
-  // Opt-in Classic Wedding template — does not affect default or other themes.
-  if (isClassicWedding) {
+  // Opt-in wedding invitation templates (classic-wedding + variants). Themes ignored.
+  if (isClassicWedding && WeddingPage) {
     return (
       <Suspense fallback={<ThemeLoadingScreen label="Loading wedding page…" />}>
-        <ClassicWeddingPage
+        <WeddingPage
           event={event}
           coupleTitle={coupleTitle}
           watchUrl={watchUrl}
