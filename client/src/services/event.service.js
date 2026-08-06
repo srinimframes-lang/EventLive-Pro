@@ -1,4 +1,7 @@
 import api from './api.js';
+import { EVENT_CATEGORIES, DEFAULT_EVENT_TYPE } from '../config/eventTypes.js';
+
+export { EVENT_CATEGORIES, DEFAULT_EVENT_TYPE };
 
 export const eventService = {
   /**
@@ -87,15 +90,5 @@ export const eventService = {
     return data.data;
   },
 };
-
-export const EVENT_CATEGORIES = [
-  'conference',
-  'workshop',
-  'webinar',
-  'concert',
-  'meetup',
-  'sports',
-  'other',
-];
 
 export const EVENT_STATUSES = ['draft', 'published', 'live', 'ended', 'cancelled'];

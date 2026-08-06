@@ -1,20 +1,12 @@
 import mongoose from 'mongoose';
 import { extractYouTubeId } from '../utils/youtube.js';
 import { streamKeyFromEventId, syncServerStreamFields } from '../utils/mediaStream.js';
+import { EVENT_CATEGORIES } from '../config/eventCategories.js';
 
 const { Schema, model } = mongoose;
 
 export const EVENT_STATUSES = ['draft', 'published', 'live', 'ended', 'cancelled'];
-export const EVENT_CATEGORIES = [
-  'conference',
-  'workshop',
-  'webinar',
-  'concert',
-  'meetup',
-  'sports',
-  'other',
-];
-
+export { EVENT_CATEGORIES };
 /**
  * Generates a URL-friendly slug from a title.
  */

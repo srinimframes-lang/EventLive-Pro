@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { eventService, EVENT_CATEGORIES } from '../services/event.service.js';
+import { eventService } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import SiteSeo from '../components/seo/SiteSeo.jsx';
+import EventTypeSelect from '../components/EventTypeSelect.jsx';
 import { truncate } from '../utils/seo.js';
 
 export default function Events() {
@@ -70,18 +71,15 @@ export default function Events() {
           value={filters.search}
           onChange={(e) => update({ search: e.target.value })}
         />
-        <select
-          className="input max-w-[12rem]"
+        <EventTypeSelect
+          id="events-category-filter"
+          name="category"
+          className="max-w-full sm:max-w-xs"
           value={filters.category}
           onChange={(e) => update({ category: e.target.value })}
-        >
-          <option value="">All categories</option>
-          {EVENT_CATEGORIES.map((c) => (
-            <option key={c} value={c} className="capitalize">
-              {c}
-            </option>
-          ))}
-        </select>
+          includeEmpty
+          emptyLabel="All event types"
+        />
       </div>
 
       {error && (

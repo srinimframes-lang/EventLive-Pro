@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import StatusBadge from './StatusBadge.jsx';
 import { formatDateTime } from '../utils/format.js';
+import { eventTypeLabel } from '../config/eventTypes.js';
 
 export default function EventCard({ event }) {
   return (
@@ -9,8 +10,8 @@ export default function EventCard({ event }) {
       className="card group flex flex-col transition hover:-translate-y-0.5 hover:shadow-md"
     >
       <div className="mb-3 flex items-start justify-between gap-2">
-        <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold capitalize text-brand-700">
-          {event.category}
+        <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">
+          {eventTypeLabel(event.category)}
         </span>
         <StatusBadge status={event.status} />
       </div>

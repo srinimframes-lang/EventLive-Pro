@@ -10,6 +10,7 @@ import EventSeo from '../components/seo/EventSeo.jsx';
 import { coverImageAlt } from '../utils/seo.js';
 import EventQrCard from '../components/EventQrCard.jsx';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
+import { eventTypeLabel } from '../config/eventTypes.js';
 
 export default function EventDetail() {
   const { idOrSlug } = useParams();
@@ -83,8 +84,8 @@ export default function EventDetail() {
       <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold capitalize text-brand-700">
-              {event.category}
+            <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">
+              {eventTypeLabel(event.category)}
             </span>
             <StatusBadge status={event.status} />
           </div>

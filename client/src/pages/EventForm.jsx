@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   eventService,
-  EVENT_CATEGORIES,
   EVENT_STATUSES,
+  DEFAULT_EVENT_TYPE,
 } from '../services/event.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
@@ -11,6 +11,7 @@ import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 import EventQrCard from '../components/EventQrCard.jsx';
+import EventTypeSelect from '../components/EventTypeSelect.jsx';
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
 import { streamService } from '../services/stream.service.js';
@@ -20,7 +21,7 @@ const LINK_COSTS = { youtube: 1, server: 5 };
 const EMPTY = {
   title: '',
   description: '',
-  category: 'webinar',
+  category: DEFAULT_EVENT_TYPE,
   status: 'draft',
   startTime: '',
   endTime: '',
@@ -109,7 +110,7 @@ export default function EventForm() {
         setForm({
           title: event.title || '',
           description: event.description || '',
-          category: event.category || 'webinar',
+          category: event.category || DEFAULT_EVENT_TYPE,
           status: event.status || 'draft',
           startTime: toDateTimeLocal(event.startTime),
           endTime: toDateTimeLocal(event.endTime),
@@ -522,13 +523,14 @@ export default function EventForm() {
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Category" htmlFor="category">
-              <select id="category" name="category" className="input capitalize"
-                value={form.category} onChange={handleChange}>
-                {EVENT_CATEGORIES.map((c) => (
-                  <option key={c} value={c} className="capitalize">{c}</option>
-                ))}
-              </select>
+            <Field label="Event type" htmlFor="category">
+              <EventTypeSelect
+                id="category"
+                name="category"
+                value={form.category}
+                onChange={handleChange}
+                required
+              />
             </Field>
             <Field label="Status" htmlFor="status">
               <select id="status" name="status" className="input capitalize"
