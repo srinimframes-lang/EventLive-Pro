@@ -35,11 +35,11 @@ export function getViewerHlsPlaybackBase() {
   return isHlsCdnEnabled() ? getCdnHlsPlaybackBase() : getOriginHlsPlaybackBase();
 }
 
-/** Rewrite /live/.../index.m3u8 onto the current viewer base (stream or CDN). */
+/** Rewrite /live/.../(index|master).m3u8 onto the current viewer base (stream or CDN). */
 export function rewriteViewerHlsUrl(url) {
   const trimmed = String(url || '').trim();
   if (!trimmed) return '';
-  const pathMatch = trimmed.match(/(\/live\/[^/]+\/index\.m3u8)$/i);
+  const pathMatch = trimmed.match(/(\/live\/[^/]+\/(?:index|master)\.m3u8)$/i);
   if (!pathMatch) return trimmed;
   return `${getViewerHlsPlaybackBase()}${pathMatch[1]}`;
 }

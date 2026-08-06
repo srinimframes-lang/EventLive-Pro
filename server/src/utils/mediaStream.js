@@ -21,6 +21,20 @@ export function streamKeyFromEventId(eventId) {
   return String(eventId).trim();
 }
 
+/**
+ * Adaptive HLS (ABR) is ON unless explicitly disabled.
+ * Live only — recordings stay original single-file quality.
+ */
+export function isAdaptiveStreamingEnabled(event = {}) {
+  if (event && event.adaptiveStreaming === false) return false;
+  return true;
+}
+
+/** Viewer playlist filename: master.m3u8 (ABR) or index.m3u8 (single quality). */
+export function hlsPlaylistName(event = {}) {
+  return isAdaptiveStreamingEnabled(event) ? 'master.m3u8' : 'index.m3u8';
+}
+
 /** Parse MediaMTX path values such as `live/<streamKey>`. */
 export function parseMediaMtxPath(path) {
   const p = String(path || '').trim().replace(/^\/+/, '');
@@ -38,23 +52,25 @@ export function resolveStreamKey(event) {
 }
 
 /** Origin HLS URL (stream.eventlivepro.com) — for DB storage / health probes. */
-export function buildOriginHlsPlaybackUrl(streamKey) {
+export function buildOriginHlsPlaybackUrl(streamKey, eventOrOpts = {}) {
   const key = String(streamKey || '').trim();
   const base = getOriginHlsPlaybackBase();
   if (!base || !key) return '';
-  return `${base}/live/${key}/index.m3u8`;
+  const playlist = hlsPlaylistName(eventOrOpts);
+  return `${base}/live/${key}/${playlist}`;
 }
 
 /**
  * Viewer HLS URL — respects CDN toggle.
- * OFF → https://stream.eventlivepro.com/live/{key}/index.m3u8
- * ON  → https://cdn.eventlivepro.com/live/{key}/index.m3u8
+ * Adaptive ON  → .../live/{key}/master.m3u8
+ * Adaptive OFF → .../live/{key}/index.m3u8
  */
-export function buildHlsPlaybackUrl(streamKey) {
+export function buildHlsPlaybackUrl(streamKey, eventOrOpts = {}) {
   const key = String(streamKey || '').trim();
   const base = getViewerHlsPlaybackBase();
   if (!base || !key) return '';
-  return `${base}/live/${key}/index.m3u8`;
+  const playlist = hlsPlaylistName(eventOrOpts);
+  return `${base}/live/${key}/${playlist}`;
 }
 
 /**
@@ -67,7 +83,7 @@ export function normalizePlaybackUrl(url) {
 
   let next = trimmed;
   if (env.requireSecurePlayback && next.startsWith('http://')) {
-    const pathMatch = next.match(/(\/live\/[^/]+\/index\.m3u8)$/i);
+    const pathMatch = next.match(/(\/live\/[^/]+\/(?:index|master)\.m3u8)$/i);
     const origin = getOriginHlsPlaybackBase();
     if (pathMatch && origin) {
       next = `${origin}${pathMatch[1]}`;
@@ -81,23 +97,31 @@ export function normalizePlaybackUrl(url) {
 }
 
 /**
- * Viewer-facing MediaMTX HLS URL (CDN-aware).
- * Prefer rebuilding from stream key so the CDN toggle applies immediately.
+ * Viewer-facing MediaMTX / ABR HLS URL (CDN-aware).
+ * Prefer rebuilding from stream key so the CDN + adaptive toggles apply.
  */
 export function deriveHlsPlaybackUrl(event) {
   const key = resolveStreamKey(event);
-  if (key) return buildHlsPlaybackUrl(key);
+  if (key) return buildHlsPlaybackUrl(key, event);
   if (event.hlsUrl) return normalizePlaybackUrl(event.hlsUrl);
   return '';
 }
 
-/** Origin playlist for health probes — never the CDN host. */
+/**
+ * Origin playlist for health / publish probes — prefer MediaMTX single-quality
+ * index so failover works even before ABR master is ready.
+ */
 export function deriveOriginHlsPlaybackUrl(event) {
   const key = resolveStreamKey(event);
-  if (key) return buildOriginHlsPlaybackUrl(key);
+  if (key) {
+    const base = getOriginHlsPlaybackBase();
+    return base ? `${base}/live/${key}/index.m3u8` : '';
+  }
   if (event.hlsUrl) {
-    const pathMatch = String(event.hlsUrl).match(/(\/live\/[^/]+\/index\.m3u8)$/i);
-    if (pathMatch) return `${getOriginHlsPlaybackBase()}${pathMatch[1]}`;
+    const pathMatch = String(event.hlsUrl).match(/(\/live\/[^/]+\/(?:index|master)\.m3u8)$/i);
+    if (pathMatch) {
+      return `${getOriginHlsPlaybackBase()}${pathMatch[1].replace(/master\.m3u8$/i, 'index.m3u8')}`;
+    }
   }
   return '';
 }
@@ -119,16 +143,18 @@ export function deriveWebRtcPlaybackUrl(event) {
 export function buildRtmpCredentials(event) {
   const streamKey = resolveStreamKey(event);
   const ingestUrl = normalizeRtmpIngestUrl(env.rtmpIngestUrl);
+  const eventLike = { ...(event.toObject?.() || event), rtmpStreamKey: streamKey };
   return {
     ingestUrl,
     streamKey,
     fullUrl: `${ingestUrl}/${streamKey}`,
-    // Viewer playback may use CDN; OBS ingest URLs are unchanged above.
-    playbackUrl: buildHlsPlaybackUrl(streamKey),
-    webrtcUrl: deriveWebRtcPlaybackUrl({ ...(event.toObject?.() || event), rtmpStreamKey: streamKey }),
+    // Viewer playback may use CDN + ABR master; OBS ingest URLs are unchanged above.
+    playbackUrl: buildHlsPlaybackUrl(streamKey, eventLike),
+    webrtcUrl: deriveWebRtcPlaybackUrl(eventLike),
     mediamtxPath: mediamtxPathName(streamKey),
     hlsCdnEnabled: isHlsCdnEnabled(),
     hlsPlaybackBase: getViewerHlsPlaybackBase(),
+    adaptiveStreaming: isAdaptiveStreamingEnabled(eventLike),
   };
 }
 
@@ -146,10 +172,11 @@ export function syncServerStreamFields(event) {
   if (event.streamProvider !== 'rtmp') return null;
   const key = streamKeyFromEventId(event._id || event.id);
   if (!key) return null;
-  const creds = buildRtmpCredentials({ ...(event.toObject?.() || event), rtmpStreamKey: key });
+  const eventLike = { ...(event.toObject?.() || event), rtmpStreamKey: key };
+  const creds = buildRtmpCredentials(eventLike);
   event.rtmpStreamKey = creds.streamKey;
   event.rtmpPublishUrl = creds.fullUrl;
-  event.hlsUrl = buildOriginHlsPlaybackUrl(key);
+  event.hlsUrl = buildOriginHlsPlaybackUrl(key, eventLike);
   return creds;
 }
 

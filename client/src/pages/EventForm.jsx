@@ -54,6 +54,7 @@ const EMPTY = {
   facebookStreamKey: '',
   facebookStreamKeySet: false,
   facebookForwardEnabled: false,
+  adaptiveStreaming: true,
   chatEnabled: true,
   capacity: 0,
   tags: '',
@@ -229,6 +230,7 @@ export default function EventForm() {
           facebookStreamKey: '',
           facebookStreamKeySet: Boolean(event.facebookStreamKeySet),
           facebookForwardEnabled: Boolean(event.facebookForwardEnabled),
+          adaptiveStreaming: event.adaptiveStreaming !== false,
         });
         setEventOwnerIds({
           organizer: event.organizer?.id || event.organizer?._id || event.organizer || '',
@@ -567,6 +569,10 @@ export default function EventForm() {
         }
       } else {
         payload.facebookForwardEnabled = false;
+      }
+      // Live ABR only — never affects recording / replay quality.
+      if (streamType !== 'youtube') {
+        payload.adaptiveStreaming = form.adaptiveStreaming !== false;
       }
     }
 
@@ -1115,6 +1121,23 @@ export default function EventForm() {
 
               {usesServerIngest && (
                 <div className="space-y-4 rounded-xl border border-gold-200 bg-gold-50/50 p-4">
+                  <label className="flex items-start gap-3 text-sm text-slate-800">
+                    <input
+                      type="checkbox"
+                      name="adaptiveStreaming"
+                      className="mt-1"
+                      checked={form.adaptiveStreaming !== false}
+                      onChange={handleChange}
+                    />
+                    <span>
+                      <span className="font-medium">Adaptive Streaming</span>
+                      <span className="mt-0.5 block text-xs text-slate-600">
+                        ON (default): live viewers get Auto / 1080p / 480p HLS. Slow connections
+                        drop to 480p automatically. OFF: single-quality MediaMTX HLS. Recordings
+                        always stay original quality.
+                      </span>
+                    </span>
+                  </label>
                   <p className="text-sm text-slate-600">
                     {streamType === 'server_youtube' || streamType === 'youtube_server'
                       ? 'Point OBS at our MediaMTX server only. YouTube receives a forwarded copy automatically when forwarding is enabled.'

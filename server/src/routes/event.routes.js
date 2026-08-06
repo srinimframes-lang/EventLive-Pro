@@ -22,6 +22,7 @@ import {
   youtubeForwardConfig,
   facebookForwardConfig,
   streamForwardsConfig,
+  abrStreamConfig,
   streamStarted,
   streamStopped,
   recordingReady,
@@ -67,6 +68,8 @@ router.get('/stream/facebook-forward', facebookForwardConfig);
 router.post('/stream/facebook-forward', facebookForwardConfig);
 router.get('/stream/forwards', streamForwardsConfig);
 router.post('/stream/forwards', streamForwardsConfig);
+router.get('/stream/abr-config', abrStreamConfig);
+router.post('/stream/abr-config', abrStreamConfig);
 router.post('/stream/started', streamStarted);
 router.post('/stream/stopped', streamStopped);
 router.post('/stream/recording-ready', recordingReady);

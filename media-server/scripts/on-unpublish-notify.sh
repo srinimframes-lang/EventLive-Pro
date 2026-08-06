@@ -44,4 +44,10 @@ else
   fi
 fi
 
+ABR_STOP="${SCRIPT_DIR}/abr-transcode-stop.sh"
+if [[ -f "$ABR_STOP" ]]; then
+  bash "$ABR_STOP" "$PATH_NAME" \
+    || echo "on-unpublish-notify: warning — ABR stop failed for ${PATH_NAME}" >&2
+fi
+
 exit 0

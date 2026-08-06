@@ -67,6 +67,7 @@ const EDITABLE_FIELDS = [
   'youtubeForwardEnabled',
   'facebookRtmpUrl',
   'facebookForwardEnabled',
+  'adaptiveStreaming',
 ];
 
 async function decorateEventResponse(eventDoc) {

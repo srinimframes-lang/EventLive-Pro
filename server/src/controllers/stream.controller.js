@@ -13,6 +13,7 @@ import {
   deriveWebRtcPlaybackUrl,
   ensureEventStreamKey,
   findEventByStreamKey,
+  isAdaptiveStreamingEnabled,
   normalizePlaybackUrl,
   parseMediaMtxPath,
   probeMediaMtxPublishing,
@@ -200,6 +201,7 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     playbackUrl: youtubePlusServer ? '' : playbackUrl,
     hlsCdnEnabled: isHlsCdnEnabled(),
     hlsPlaybackBase: getViewerHlsPlaybackBase(),
+    adaptiveStreaming: isServer ? isAdaptiveStreamingEnabled(event) : false,
     webrtcUrl: youtubePlusServer ? '' : webrtcUrl,
     poster: event.coverImage || '',
     isLive,
@@ -837,6 +839,55 @@ export const streamForwardsConfig = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @route GET|POST /api/events/stream/abr-config
+ * @desc  MediaMTX VPS hook asks whether to start 2-quality ABR ffmpeg for this path.
+ * @access Media server (x-media-secret)
+ */
+export const abrStreamConfig = asyncHandler(async (req, res) => {
+  if (!mediaSecretOk(req)) {
+    res.status(401);
+    throw new Error('Unauthorized');
+  }
+
+  const streamKey = parseMediaMtxPath(
+    req.query.path || req.query.streamKey || req.body?.path || req.body?.streamKey || ''
+  );
+  if (!streamKey) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'missing_path' });
+  }
+
+  const event = await findEventByStreamKey(streamKey);
+  if (!event) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
+  }
+
+  const dest = String(event.streamingDestination || '').toLowerCase();
+  if (dest === 'youtube') {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'youtube_only' });
+  }
+  // Website plays YouTube embed — no need for ABR ladder CPU on this path.
+  if (dest === 'youtube_server') {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'youtube_embed_playback' });
+  }
+
+  if (!isAdaptiveStreamingEnabled(event)) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'adaptive_off' });
+  }
+
+  // Server ingest required (rtmp/hls). YouTube-only has no MediaMTX publish.
+  if (event.streamProvider !== 'rtmp' && event.streamProvider !== 'hls') {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'no_server_ingest' });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    enabled: true,
+    eventId: String(event._id),
+    streamKey: resolveStreamKey(event),
+  });
+});
+
+/**
  * @route POST /api/events/stream/started
  * @desc  Media server reports a publish started; flip the event live + store URL.
  * @access Media server (x-media-secret)
@@ -859,7 +910,7 @@ export const streamStarted = asyncHandler(async (req, res) => {
   event.liveStartedAt = event.liveStartedAt || new Date();
   event.liveEndedAt = undefined;
   if (event.streamProvider === 'none') event.streamProvider = 'rtmp';
-  const playbackUrl = buildOriginHlsPlaybackUrl(resolveStreamKey(event));
+  const playbackUrl = buildOriginHlsPlaybackUrl(resolveStreamKey(event), event);
   if (playbackUrl) event.hlsUrl = playbackUrl;
   if (['draft', 'published', 'ended'].includes(event.status)) event.status = 'live';
   await event.save();

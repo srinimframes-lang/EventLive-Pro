@@ -237,6 +237,9 @@ const eventSchema = new Schema(
     facebookRtmpUrl: { type: String, trim: true, default: '' },
     facebookStreamKey: { type: String, default: '', select: false },
     facebookForwardEnabled: { type: Boolean, default: false },
+    // Live Adaptive HLS (1080p + 480p master). OFF → single-quality MediaMTX index.
+    // Recordings / replay stay original quality either way.
+    adaptiveStreaming: { type: Boolean, default: true },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
     // Full OBS publish URL for Premium Server Live (rtmp://host:1935/live/<eventId>).

@@ -49,4 +49,12 @@ else
   fi
 fi
 
+# 2-quality Adaptive HLS (live only). No-op when adaptiveStreaming is OFF.
+ABR_START="${SCRIPT_DIR}/abr-transcode-start.sh"
+if [[ -f "$ABR_START" ]]; then
+  echo "on-publish-notify: starting ABR transcoder for ${PATH_NAME}" >&2
+  bash "$ABR_START" "$PATH_NAME" \
+    || echo "on-publish-notify: warning — ABR start failed for ${PATH_NAME}" >&2
+fi
+
 exit 0

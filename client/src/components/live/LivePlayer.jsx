@@ -58,7 +58,7 @@ function buildHlsConfig() {
     liveMaxLatencyDurationCount: 10,
     maxLiveSyncPlaybackRate: 1.1,
     startFragPrefetch: true,
-    startLevel: -1,
+    startLevel: -1, // Auto ABR
     abrEwmaDefaultEstimate: 500_000,
     abrBandWidthFactor: 0.7,
     abrBandWidthUpFactor: 0.6,
@@ -71,6 +71,15 @@ function buildHlsConfig() {
     fragLoadingRetryDelay: 800,
     manifestLoadingRetryDelay: 800,
   };
+}
+
+/** Quality menu labels for 2-rung ABR (and any extra levels). */
+function formatQualityLabel(height, index) {
+  const h = Number(height) || 0;
+  if (h >= 900) return '1080p';
+  if (h >= 400 && h < 900) return '480p';
+  if (h > 0) return `${h}p`;
+  return `Q${index + 1}`;
 }
 
 function Frame({ children, shellRef, className = '' }) {
@@ -621,7 +630,7 @@ function PlayerChrome({
                   .sort((a, b) => b.height - a.height)
                   .map((l) => (
                     <option key={l.index} value={l.index}>
-                      {l.height ? `${l.height}p` : `Q${l.index + 1}`}
+                      {formatQualityLabel(l.height, l.index)}
                     </option>
                   ))}
               </select>
