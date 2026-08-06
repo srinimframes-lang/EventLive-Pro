@@ -107,6 +107,36 @@ const bothJson = bothEvent.toJSON();
 if (bothJson.youtubeStreamKey) throw new Error('YouTube stream key leaked in toJSON');
 console.log('OK Server+YouTube event', bothEvent.shortCode);
 
+// YouTube + Server: MediaMTX ingest + forward, website uses YouTube embed id
+const ytSrvPayload = {
+  ...base,
+  title: 'YouTube+Server Stream Test',
+  youtubeVideoId: 'dQw4w9WgXcQ',
+  streamUrl: 'https://youtu.be/dQw4w9WgXcQ',
+};
+applyStreamTypeSelection(ytSrvPayload, normalizeStreamType({ streamType: 'youtube_server' }), {
+  isCreate: true,
+});
+const ytSrvFwdErr = applyYoutubeForwardFields(
+  ytSrvPayload,
+  {
+    streamingDestination: 'youtube_server',
+    youtubeRtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+    youtubeStreamKey: 'yyyy-zzzz-aaaa-bbbb',
+    youtubeForwardEnabled: true,
+  },
+  { isCreate: true }
+);
+if (ytSrvFwdErr) throw new Error(ytSrvFwdErr);
+const ytSrvEvent = await Event.create(ytSrvPayload);
+if (ytSrvEvent.streamProvider !== 'rtmp') throw new Error('YouTube+Server must use rtmp provider');
+if (ytSrvEvent.streamingDestination !== 'youtube_server') {
+  throw new Error('YouTube+Server destination mismatch');
+}
+if (!ytSrvEvent.youtubeVideoId) throw new Error('YouTube+Server missing embed video id');
+if (!ytSrvEvent.youtubeForwardEnabled) throw new Error('YouTube+Server forward should be on');
+console.log('OK YouTube+Server event', ytSrvEvent.shortCode, ytSrvEvent.youtubeVideoId);
+
 const { deriveHlsPlaybackUrl } = await import('../src/utils/mediaStream.js');
 const playback = deriveHlsPlaybackUrl(withKey);
 const expectedPlayback = `https://stream.eventlivepro.com/live/${srvEvent._id}/index.m3u8`;

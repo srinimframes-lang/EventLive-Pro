@@ -427,11 +427,14 @@ export const createEvent = asyncHandler(async (req, res) => {
 
     // ── Everyone else: pay with credits (YouTube = 1, Server / Simultaneous = 5) ────────
     const linkType = streamType || (req.body.linkType === 'server' ? 'server' : 'youtube');
-    const cost = linkCost(linkType === 'server_youtube' ? 'server_youtube' : linkType);
+    const cost = linkCost(
+      linkType === 'server_youtube' || linkType === 'youtube_server' ? linkType : linkType
+    );
     payload.organizer = req.user._id;
     // Tenant owner is the admin who created this customer/subadmin (if any).
     payload.createdBy = req.user.createdBy || null;
-    payload.creditType = linkType === 'server_youtube' ? 'server' : linkType;
+    payload.creditType =
+      linkType === 'server_youtube' || linkType === 'youtube_server' ? 'server' : linkType;
 
     const updated = await changeBalance({
       userId: req.user._id,

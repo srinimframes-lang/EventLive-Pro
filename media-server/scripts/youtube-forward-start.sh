@@ -5,7 +5,10 @@
 set -euo pipefail
 
 PATH_NAME="${MTX_PATH:-${1:-}}"
-[[ -z "$PATH_NAME" ]] && exit 0
+if [[ -z "$PATH_NAME" ]]; then
+  echo "youtube-forward-start: empty path — exit" >&2
+  exit 0
+fi
 
 # MediaMTX paths look like "live/<eventId>" — flatten for pid files.
 SAFE_NAME="$(echo "$PATH_NAME" | tr '/ ' '__')"
@@ -31,12 +34,22 @@ MEDIA_SECRET=""
 if [[ -f "$SECRET_FILE" ]]; then
   MEDIA_SECRET="$(grep -E '^MEDIA_SERVER_SECRET=' "$SECRET_FILE" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
 fi
-[[ -z "$MEDIA_SECRET" ]] && exit 0
+if [[ -z "$MEDIA_SECRET" ]]; then
+  echo "youtube-forward-start: MEDIA_SERVER_SECRET missing — exit" >&2
+  exit 0
+fi
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "youtube-forward-start: ffmpeg not installed — exit" >&2
+  exit 0
+fi
 
 RESP="$(curl -sS -m 8 -G "${API_BASE}/api/events/stream/youtube-forward" \
   --data-urlencode "path=${PATH_NAME}" \
   -H "x-media-secret: ${MEDIA_SECRET}" \
   || true)"
+
+echo "youtube-forward-start: api response for ${PATH_NAME}: ${RESP}" >&2
 
 ENABLED="$(RESP="$RESP" python3 - <<'PY'
 import json, os
@@ -46,13 +59,18 @@ except Exception:
   data = {}
 print("1" if data.get("enabled") and data.get("target") else "0")
 print(data.get("target") or "")
+print(data.get("reason") or "")
 PY
 )"
 
 ENABLED_FLAG="$(echo "$ENABLED" | sed -n '1p')"
 TARGET="$(echo "$ENABLED" | sed -n '2p')"
+REASON="$(echo "$ENABLED" | sed -n '3p')"
 
-[[ "$ENABLED_FLAG" == "1" && -n "$TARGET" ]] || exit 0
+if [[ "$ENABLED_FLAG" != "1" || -z "$TARGET" ]]; then
+  echo "youtube-forward-start: forward disabled for ${PATH_NAME} reason=${REASON:-unknown}" >&2
+  exit 0
+fi
 
 # Local MediaMTX RTMP read (auth excludes "read").
 SOURCE="rtmp://127.0.0.1:1935/${PATH_NAME}"
@@ -60,6 +78,7 @@ SOURCE="rtmp://127.0.0.1:1935/${PATH_NAME}"
 # Brief wait so the publisher is fully ready.
 sleep 2
 
+echo "youtube-forward-start: ffmpeg ${SOURCE} -> YouTube (key redacted) log=${LOG_FILE}" >&2
 nohup ffmpeg -hide_banner -loglevel error \
   -rw_timeout 15000000 \
   -i "$SOURCE" \
@@ -67,5 +86,6 @@ nohup ffmpeg -hide_banner -loglevel error \
   "$TARGET" \
   >>"$LOG_FILE" 2>&1 &
 echo $! >"$PID_FILE"
+echo "youtube-forward-start: started pid=$(cat "$PID_FILE") for ${PATH_NAME}" >&2
 
 exit 0

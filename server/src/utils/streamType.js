@@ -10,6 +10,7 @@ export function normalizeStreamType(body = {}) {
   if (raw === 'server') return 'server';
   if (raw === 'youtube') return 'youtube';
   if (raw === 'server_youtube') return 'server_youtube';
+  if (raw === 'youtube_server') return 'youtube_server';
   return normalizeStreamingDestination(raw);
 }
 
@@ -36,10 +37,19 @@ export function streamTypeFromEvent(event = {}) {
   return 'youtube';
 }
 
+/** True when MediaMTX ingest is used (server path). */
+export function usesServerIngest(streamType) {
+  return streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
+}
+
+/** True when MediaMTX should ffmpeg-forward to YouTube. */
+export function usesYoutubeForward(streamType) {
+  return streamType === 'server_youtube' || streamType === 'youtube_server';
+}
+
 /**
  * Apply stream-type selection to a create/update payload.
- * YouTube → streamProvider youtube; Premium Server / Simultaneous → streamProvider rtmp.
- * Existing Server Only and YouTube Only behaviour is unchanged.
+ * Existing Server / YouTube / Server+YouTube behaviour is unchanged.
  */
 export function applyStreamTypeSelection(payload, streamType, { isCreate = false } = {}) {
   if (!streamType) return;
@@ -51,7 +61,6 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
     payload.youtubeVideoId = '';
     payload.streamUrl = '';
     payload.youtubeForwardEnabled = false;
-    // rtmpStreamKey is assigned from the event id in the Event pre-save hook.
     return;
   }
 
@@ -60,10 +69,23 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
     payload.streamingDestination = 'server_youtube';
     if (payload.creditType !== 'none') payload.creditType = 'server';
     // Website plays server HLS; YouTube gets a MediaMTX RTMP forward.
-    // Do not clear youtubeVideoId — optional share link may still be stored.
     if (payload.youtubeForwardEnabled === undefined) {
       payload.youtubeForwardEnabled = true;
     }
+    return;
+  }
+
+  if (streamType === 'youtube_server') {
+    // OBS → MediaMTX (+ record + forward). Website live player = YouTube embed.
+    payload.streamProvider = 'rtmp';
+    payload.streamingDestination = 'youtube_server';
+    if (payload.creditType !== 'none') payload.creditType = 'server';
+    if (payload.youtubeForwardEnabled === undefined) {
+      payload.youtubeForwardEnabled = true;
+    }
+    const yid =
+      extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
+    if (yid) payload.youtubeVideoId = yid;
     return;
   }
 
@@ -86,12 +108,15 @@ export function validateOnlineStreamPayload(payload, streamType) {
   if (payload.isOnline === false) return null;
   const resolved = streamType || inferStreamTypeFromPayload(payload);
   if (!resolved) return 'Stream type is required for online events.';
-  if (resolved === 'youtube') {
+  if (resolved === 'youtube' || resolved === 'youtube_server') {
     const yid =
       extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
-    if (!yid) return 'A valid YouTube Live URL is required for YouTube Live events.';
+    if (!yid) {
+      return resolved === 'youtube_server'
+        ? 'A valid YouTube Live / embed URL is required for YouTube + Server events.'
+        : 'A valid YouTube Live URL is required for YouTube Live events.';
+    }
   }
-  // server / server_youtube validated via youtubeForward fields separately.
   return null;
 }
 

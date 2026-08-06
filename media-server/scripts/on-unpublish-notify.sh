@@ -27,8 +27,9 @@ if [[ -n "$MEDIA_SECRET" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -x "${SCRIPT_DIR}/youtube-forward-stop.sh" ]]; then
-  "${SCRIPT_DIR}/youtube-forward-stop.sh" "$PATH_NAME" \
+FORWARD_STOP="${SCRIPT_DIR}/youtube-forward-stop.sh"
+if [[ -f "$FORWARD_STOP" ]]; then
+  bash "$FORWARD_STOP" "$PATH_NAME" \
     || echo "on-unpublish-notify: warning — youtube forward stop failed for ${PATH_NAME}" >&2
 fi
 

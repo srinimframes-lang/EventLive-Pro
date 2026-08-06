@@ -1544,7 +1544,27 @@ export default function LivePlayer({ config, onLiveUiChange }) {
     if (backupId) return <YouTubePlayer videoId={backupId} />;
   }
 
-  const isYoutube = !isServerProvider && (config.provider === 'youtube' || Boolean(videoId));
+  const recordingSrcEarly = resolveMediaUrl(config.recordingUrl || '');
+  const recordingPartsEarly = Array.isArray(config.recordings) ? config.recordings : [];
+  const youtubeServerReplay =
+    config.streamingDestination === 'youtube_server' &&
+    !live &&
+    Boolean(recordingSrcEarly || recordingPartsEarly.length > 0);
+
+  // YouTube + Server live → embed only. Offline → server recordings (below).
+  if (
+    !youtubeServerReplay &&
+    (config.viewerPlayback === 'youtube' || config.streamingDestination === 'youtube_server') &&
+    live &&
+    videoId
+  ) {
+    return <YouTubePlayer videoId={videoId} />;
+  }
+
+  const isYoutube =
+    !youtubeServerReplay &&
+    !isServerProvider &&
+    (config.provider === 'youtube' || Boolean(videoId));
 
   if (isYoutube) {
     return <YouTubePlayer videoId={videoId} />;

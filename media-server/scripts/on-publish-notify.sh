@@ -28,10 +28,15 @@ if [[ -n "$MEDIA_SECRET" ]]; then
 fi
 
 # Optional Server → YouTube RTMP forward (no-op unless event has it enabled).
+# Invoke with bash: repo file mode is 100644, so -x is often false after git pull.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -x "${SCRIPT_DIR}/youtube-forward-start.sh" ]]; then
-  "${SCRIPT_DIR}/youtube-forward-start.sh" "$PATH_NAME" \
+FORWARD_START="${SCRIPT_DIR}/youtube-forward-start.sh"
+if [[ -f "$FORWARD_START" ]]; then
+  echo "on-publish-notify: starting youtube forward for ${PATH_NAME}" >&2
+  bash "$FORWARD_START" "$PATH_NAME" \
     || echo "on-publish-notify: warning — youtube forward start failed for ${PATH_NAME}" >&2
+else
+  echo "on-publish-notify: youtube-forward-start.sh missing — skip forward" >&2
 fi
 
 exit 0

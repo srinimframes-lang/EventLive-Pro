@@ -11,10 +11,12 @@ import {
 
 test('normalizeStreamingDestination accepts aliases', () => {
   assert.equal(normalizeStreamingDestination('server'), 'server');
-  assert.equal(normalizeStreamingDestination('YouTube Only'), null);
+  assert.equal(normalizeStreamingDestination('YouTube Only'), 'youtube');
   assert.equal(normalizeStreamingDestination('youtube'), 'youtube');
   assert.equal(normalizeStreamingDestination('server_youtube'), 'server_youtube');
   assert.equal(normalizeStreamingDestination('server+youtube'), 'server_youtube');
+  assert.equal(normalizeStreamingDestination('youtube_server'), 'youtube_server');
+  assert.equal(normalizeStreamingDestination('youtube+server'), 'youtube_server');
 });
 
 test('normalizeYoutubeRtmpUrl accepts rtmp/rtmps', () => {
@@ -69,6 +71,23 @@ test('applyYoutubeForwardFields accepts valid simultaneous config', () => {
   assert.equal(target.streamingDestination, 'server_youtube');
   assert.equal(target.youtubeForwardEnabled, true);
   assert.equal(target.youtubeStreamKey, 'xxxx-yyyy-zzzz');
+});
+
+test('applyYoutubeForwardFields accepts youtube_server destination', () => {
+  const target = {};
+  const err = applyYoutubeForwardFields(
+    target,
+    {
+      streamingDestination: 'youtube_server',
+      youtubeRtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+      youtubeStreamKey: 'aaaa-bbbb-cccc-dddd',
+      youtubeForwardEnabled: true,
+    },
+    { isCreate: true }
+  );
+  assert.equal(err, null);
+  assert.equal(target.streamingDestination, 'youtube_server');
+  assert.equal(target.youtubeForwardEnabled, true);
 });
 
 test('sanitizeStreamingSecrets never returns the key', () => {

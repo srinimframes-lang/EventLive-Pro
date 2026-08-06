@@ -16,8 +16,9 @@ export const CREDIT_UNIT_PRICE = 100;
 export const LINK_COSTS = {
   youtube: 1,
   server: 5,
-  // Simultaneous uses the MediaMTX server path (same as Server Only).
+  // Simultaneous modes use the MediaMTX server path (same as Server).
   server_youtube: 5,
+  youtube_server: 5,
 };
 
 // Purchasable credit packs shown to the customer. Each grants `credits` credits
@@ -51,6 +52,8 @@ export function getProductById(id) {
 }
 
 export function linkCost(linkType) {
-  if (linkType === 'server_youtube') return LINK_COSTS.server_youtube;
+  if (linkType === 'server_youtube' || linkType === 'youtube_server') {
+    return LINK_COSTS[linkType];
+  }
   return LINK_COSTS[linkType] ?? LINK_COSTS.youtube;
 }

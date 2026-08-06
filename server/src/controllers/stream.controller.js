@@ -132,15 +132,37 @@ async function findEventOr404(id, res, { withKey = false } = {}) {
 function publicStreamConfig(event, { isPublishing = null } = {}) {
   const youtubeVideoId =
     extractYouTubeId(event.youtubeVideoId) || extractYouTubeId(event.streamUrl) || '';
+  const destination = event.streamingDestination || '';
+  // YouTube + Server: ingest/record/forward on MediaMTX, but live website = YouTube embed.
+  const youtubeServerLiveEmbed = destination === 'youtube_server';
+
   const isServerProvider =
     event.streamProvider === 'rtmp' ||
     event.streamProvider === 'hls' ||
     event.streamProvider === 'webrtc';
-  const provider = isServerProvider
+  let provider = isServerProvider
     ? event.streamProvider
     : event.streamProvider === 'youtube' || youtubeVideoId
       ? 'youtube'
       : event.streamProvider;
+
+  const liveFromProbeEarly = isPublishing === true;
+  const offlineFromProbeEarly = isPublishing === false;
+  const reconnectingEarly = isWithinReconnectGrace(event);
+  const isLiveEarly = liveFromProbeEarly
+    ? true
+    : reconnectingEarly
+      ? true
+      : offlineFromProbeEarly
+        ? false
+        : Boolean(event.isLive);
+
+  // While live (or reconnecting), force YouTube embed for youtube_server.
+  // When offline, keep rtmp so server recordings / replay still play.
+  if (youtubeServerLiveEmbed && isLiveEarly && youtubeVideoId) {
+    provider = 'youtube';
+  }
+
   const isServer = provider === 'rtmp' || provider === 'hls';
   const playbackUrl = isServer
     ? normalizePlaybackUrl(deriveHlsPlaybackUrl(event))
@@ -170,13 +192,24 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const base = {
     eventId: event.id,
     provider,
+    streamingDestination: destination || undefined,
+    // Hint for clients: live site player preference.
+    viewerPlayback:
+      youtubeServerLiveEmbed && isLive && youtubeVideoId
+        ? 'youtube'
+        : isServer
+          ? 'hls'
+          : provider === 'youtube'
+            ? 'youtube'
+            : undefined,
     youtubeVideoId,
     streamUrl: event.streamUrl || '',
-    hlsUrl: isServer ? playbackUrl : event.hlsUrl,
-    playbackUrl,
+    // Hide HLS URLs from the live public payload for youtube_server (embed only).
+    hlsUrl: youtubeServerLiveEmbed && isLive ? '' : isServer ? playbackUrl : event.hlsUrl,
+    playbackUrl: youtubeServerLiveEmbed && isLive ? '' : playbackUrl,
     hlsCdnEnabled: isHlsCdnEnabled(),
     hlsPlaybackBase: getViewerHlsPlaybackBase(),
-    webrtcUrl,
+    webrtcUrl: youtubeServerLiveEmbed && isLive ? '' : webrtcUrl,
     poster: event.coverImage || '',
     isLive,
     reconnecting,
@@ -692,13 +725,18 @@ export const youtubeForwardConfig = asyncHandler(async (req, res) => {
     return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
   }
 
-  // Only forward when explicitly configured for simultaneous Server + YouTube.
+  // Only forward when explicitly configured for simultaneous Server↔YouTube modes.
   const allowForward =
     Boolean(event.youtubeForwardEnabled) &&
     (event.streamingDestination === 'server_youtube' ||
+      event.streamingDestination === 'youtube_server' ||
       (!event.streamingDestination && event.streamProvider === 'rtmp'));
 
-  if (!allowForward || event.streamingDestination === 'server' || event.streamingDestination === 'youtube') {
+  if (
+    !allowForward ||
+    event.streamingDestination === 'server' ||
+    event.streamingDestination === 'youtube'
+  ) {
     return res.status(200).json({ ok: true, enabled: false, reason: 'forward_disabled' });
   }
 

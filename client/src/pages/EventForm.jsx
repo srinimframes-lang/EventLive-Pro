@@ -20,12 +20,13 @@ import BackupStreamSettings, {
   validateBackupStreamFields,
 } from '../components/live/BackupStreamSettings.jsx';
 
-const LINK_COSTS = { youtube: 1, server: 5, server_youtube: 5 };
+const LINK_COSTS = { youtube: 1, server: 5, server_youtube: 5, youtube_server: 5 };
 
 const STREAMING_DESTINATIONS = [
-  { value: 'server', label: 'Server Only' },
-  { value: 'youtube', label: 'YouTube Only' },
+  { value: 'server', label: 'Server' },
+  { value: 'youtube', label: 'YouTube' },
   { value: 'server_youtube', label: 'Server + YouTube' },
+  { value: 'youtube_server', label: 'YouTube + Server' },
 ];
 
 const EMPTY = {
@@ -101,7 +102,9 @@ export default function EventForm() {
       ? 'youtube'
       : searchParams.get('type') === 'server_youtube'
         ? 'server_youtube'
-        : 'server'
+        : searchParams.get('type') === 'youtube_server'
+          ? 'youtube_server'
+          : 'server'
   );
   const balance = user?.creditBalance ?? 0;
   const cost = LINK_COSTS[streamType] || 1;
@@ -132,9 +135,16 @@ export default function EventForm() {
     );
   const canEditBackup = failoverFeatureEnabled && (isSuperAdmin || isEventOwner);
   const showBackupSection =
-    canEditBackup && form.isOnline && (streamType === 'server' || streamType === 'server_youtube');
-  const usesServerIngest = streamType === 'server' || streamType === 'server_youtube';
-  const showYoutubeRtmpFields = streamType === 'youtube' || streamType === 'server_youtube';
+    canEditBackup &&
+    form.isOnline &&
+    (streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server');
+  const usesServerIngest =
+    streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
+  const showYoutubeRtmpFields =
+    streamType === 'youtube' || streamType === 'server_youtube' || streamType === 'youtube_server';
+  const showYoutubeEmbedUrl = streamType === 'youtube' || streamType === 'youtube_server';
+  const needsYoutubeForward =
+    streamType === 'server_youtube' || streamType === 'youtube_server';
 
   useEffect(() => {
     if (!isEdit) return;
@@ -200,7 +210,12 @@ export default function EventForm() {
           createdBy: event.createdBy?.id || event.createdBy?._id || event.createdBy || '',
         });
         const dest = event.streamingDestination || '';
-        if (dest === 'server' || dest === 'youtube' || dest === 'server_youtube') {
+        if (
+          dest === 'server' ||
+          dest === 'youtube' ||
+          dest === 'server_youtube' ||
+          dest === 'youtube_server'
+        ) {
           setStreamType(dest);
         } else {
           const provider = event.streamProvider || '';
@@ -220,7 +235,7 @@ export default function EventForm() {
   }, [id, isEdit]);
 
   useEffect(() => {
-    const usesServer = streamType === 'server' || streamType === 'server_youtube';
+    const usesServer = streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
     if (!isEdit || !id || !usesServer || !form.isOnline) {
       setServerStream(null);
       return undefined;
@@ -369,24 +384,30 @@ export default function EventForm() {
     }
 
     const youtubeVideoId =
-      form.isOnline && streamType === 'youtube' ? extractYouTubeId(form.youtubeUrl) : '';
+      form.isOnline && (streamType === 'youtube' || streamType === 'youtube_server')
+        ? extractYouTubeId(form.youtubeUrl)
+        : '';
 
-    if (form.isOnline && streamType === 'youtube' && !youtubeVideoId) {
-      setError('A valid YouTube Live URL is required for YouTube Live events.');
+    if (form.isOnline && (streamType === 'youtube' || streamType === 'youtube_server') && !youtubeVideoId) {
+      setError(
+        streamType === 'youtube_server'
+          ? 'A valid YouTube Live / embed URL is required for YouTube + Server.'
+          : 'A valid YouTube Live URL is required for YouTube Live events.'
+      );
       saveInFlightRef.current = false;
       setSubmitting(false);
       return;
     }
 
-    if (form.isOnline && streamType === 'server_youtube') {
+    if (form.isOnline && needsYoutubeForward) {
       if (!form.youtubeRtmpUrl?.trim()) {
-        setError('YouTube Server URL is required for Server + YouTube.');
+        setError('YouTube Server URL is required for this destination.');
         saveInFlightRef.current = false;
         setSubmitting(false);
         return;
       }
       if (!form.youtubeStreamKey?.trim() && !form.youtubeStreamKeySet) {
-        setError('YouTube Stream Key is required for Server + YouTube.');
+        setError('YouTube Stream Key is required for this destination.');
         saveInFlightRef.current = false;
         setSubmitting(false);
         return;
@@ -453,12 +474,16 @@ export default function EventForm() {
         if (form.youtubeStreamKey?.trim()) {
           payload.youtubeStreamKey = form.youtubeStreamKey.trim();
         }
-      } else if (streamType === 'server_youtube') {
+      } else if (streamType === 'server_youtube' || streamType === 'youtube_server') {
         payload.streamProvider = 'rtmp';
         payload.youtubeForwardEnabled = form.youtubeForwardEnabled !== false;
         payload.youtubeRtmpUrl = form.youtubeRtmpUrl?.trim() || 'rtmp://a.rtmp.youtube.com/live2';
         if (form.youtubeStreamKey?.trim()) {
           payload.youtubeStreamKey = form.youtubeStreamKey.trim();
+        }
+        if (streamType === 'youtube_server') {
+          payload.streamUrl = form.youtubeUrl?.trim() || '';
+          payload.youtubeVideoId = youtubeVideoId;
         }
         if (form.hlsUrl?.trim()) payload.hlsUrl = form.hlsUrl.trim();
         if (showBackupSection) {
@@ -468,7 +493,7 @@ export default function EventForm() {
             : '';
         }
       } else {
-        // Server Only
+        // Server
         payload.streamProvider = 'rtmp';
         payload.youtubeVideoId = '';
         payload.streamUrl = '';
@@ -822,8 +847,8 @@ export default function EventForm() {
                   <p className="mt-2 text-xs text-slate-500">
                     Your balance: {balance} credit{balance === 1 ? '' : 's'}.{' '}
                     {streamType === 'youtube'
-                      ? 'YouTube Only costs 1 credit.'
-                      : 'Server Only and Server + YouTube cost 5 credits.'}{' '}
+                      ? 'YouTube costs 1 credit.'
+                      : 'Server, Server + YouTube, and YouTube + Server cost 5 credits.'}{' '}
                     Credits are deducted when the event is created.
                   </p>
                 )}
@@ -839,11 +864,15 @@ export default function EventForm() {
                 )}
               </div>
 
-              {streamType === 'youtube' && (
+              {showYoutubeEmbedUrl && (
                 <Field
-                  label="YouTube Live URL"
+                  label={streamType === 'youtube_server' ? 'YouTube Video / Embed URL' : 'YouTube Live URL'}
                   htmlFor="youtubeUrl"
-                  hint="Paste the YouTube Live URL or video ID. It will be embedded on the watch page."
+                  hint={
+                    streamType === 'youtube_server'
+                      ? 'Used on the public watch page (YouTube embed). Server HLS is hidden while live.'
+                      : 'Paste the YouTube Live URL or video ID. It will be embedded on the watch page.'
+                  }
                 >
                   <input
                     id="youtubeUrl"
@@ -871,7 +900,9 @@ export default function EventForm() {
                   <p className="text-xs text-slate-600">
                     {streamType === 'server_youtube'
                       ? 'OBS streams only to MediaMTX. MediaMTX forwards the same feed to YouTube when forwarding is enabled. The website plays server HLS.'
-                      : 'Optional: store your YouTube Studio RTMP URL and stream key for OBS. The website still embeds the YouTube Live URL above.'}
+                      : streamType === 'youtube_server'
+                        ? 'OBS streams only to MediaMTX (recordings stay on the server). MediaMTX forwards to YouTube. The website plays the YouTube embed — not server HLS.'
+                        : 'Optional: store your YouTube Studio RTMP URL and stream key for OBS. The website still embeds the YouTube Live URL above.'}
                   </p>
                   <Field
                     label="YouTube Server URL"
@@ -886,7 +917,7 @@ export default function EventForm() {
                       placeholder="rtmp://a.rtmp.youtube.com/live2"
                       value={form.youtubeRtmpUrl}
                       onChange={handleChange}
-                      required={streamType === 'server_youtube'}
+                      required={needsYoutubeForward}
                     />
                   </Field>
                   <Field
@@ -907,10 +938,10 @@ export default function EventForm() {
                       placeholder={form.youtubeStreamKeySet ? '•••••••• (saved)' : 'YouTube stream key'}
                       value={form.youtubeStreamKey}
                       onChange={handleChange}
-                      required={streamType === 'server_youtube' && !form.youtubeStreamKeySet}
+                      required={needsYoutubeForward && !form.youtubeStreamKeySet}
                     />
                   </Field>
-                  {streamType === 'server_youtube' && (
+                  {needsYoutubeForward && (
                     <label className="flex items-center gap-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
@@ -927,10 +958,16 @@ export default function EventForm() {
               {usesServerIngest && (
                 <div className="space-y-4 rounded-xl border border-gold-200 bg-gold-50/50 p-4">
                   <p className="text-sm text-slate-600">
-                    {streamType === 'server_youtube'
+                    {streamType === 'server_youtube' || streamType === 'youtube_server'
                       ? 'Point OBS at our MediaMTX server only. YouTube receives a forwarded copy automatically when forwarding is enabled.'
                       : 'Stream to our premium RTMP server. Use these credentials in OBS or your encoder.'}
                   </p>
+                  {streamType === 'youtube_server' && (
+                    <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                      Public watch page uses the <strong>YouTube embed</strong> while live. Server
+                      recordings / replay still come from MediaMTX after the stream ends.
+                    </p>
+                  )}
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     OBS Settings → Output → Streaming: Keyframe Interval = <strong>2</strong> (seconds),
                     Rate Control CBR, bitrate 1500–2500 kbps for 720p. Put only the Stream Key in OBS —

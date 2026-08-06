@@ -7,11 +7,14 @@ const DEFAULT_YOUTUBE_RTMP = 'rtmp://a.rtmp.youtube.com/live2';
 
 /** Normalize destination from request body or stored event. */
 export function normalizeStreamingDestination(raw) {
-  const v = String(raw || '').trim().toLowerCase();
+  const v = String(raw || '').trim().toLowerCase().replace(/\s+/g, '_');
   if (v === 'server' || v === 'server_only') return 'server';
   if (v === 'youtube' || v === 'youtube_only') return 'youtube';
   if (v === 'server_youtube' || v === 'server+youtube' || v === 'simultaneous') {
     return 'server_youtube';
+  }
+  if (v === 'youtube_server' || v === 'youtube+server') {
+    return 'youtube_server';
   }
   return null;
 }
@@ -97,8 +100,8 @@ export function applyYoutubeForwardFields(target, body = {}, { isCreate = false 
   }
 
   const dest = target.streamingDestination || destination;
-  if (dest === 'server_youtube') {
-    // Simultaneous mode: website = server HLS; MediaMTX may forward to YouTube.
+  if (dest === 'server_youtube' || dest === 'youtube_server') {
+    // Simultaneous / YouTube+Server: MediaMTX may forward to YouTube.
     if (body.youtubeForwardEnabled === undefined && target.youtubeForwardEnabled == null) {
       target.youtubeForwardEnabled = true;
     }
@@ -118,13 +121,16 @@ export function applyYoutubeForwardFields(target, body = {}, { isCreate = false 
 
   // Validate required credentials when forward is active.
   const forwardOn =
-    (dest === 'server_youtube' || target.streamingDestination === 'server_youtube') &&
+    (dest === 'server_youtube' ||
+      dest === 'youtube_server' ||
+      target.streamingDestination === 'server_youtube' ||
+      target.streamingDestination === 'youtube_server') &&
     Boolean(target.youtubeForwardEnabled);
 
   if (forwardOn) {
     const url = normalizeYoutubeRtmpUrl(target.youtubeRtmpUrl || DEFAULT_YOUTUBE_RTMP);
     if (!url) {
-      return 'YouTube Server URL is required for Server + YouTube streaming.';
+      return 'YouTube Server URL is required for Server + YouTube / YouTube + Server streaming.';
     }
     target.youtubeRtmpUrl = url;
     const hasKey = Boolean(String(target.youtubeStreamKey || '').trim());

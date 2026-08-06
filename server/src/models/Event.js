@@ -222,16 +222,16 @@ const eventSchema = new Schema(
     creditType: { type: String, enum: ['youtube', 'server', 'none'], default: 'none' },
     createdByRole: { type: String, default: '' },
     // Public streaming destination (UI). Additive — missing on legacy docs is fine.
-    // server = Server Only, youtube = YouTube Only, server_youtube = simultaneous.
+    // server | youtube | server_youtube (HLS on site) | youtube_server (YouTube embed on site).
     streamingDestination: {
       type: String,
-      enum: ['server', 'youtube', 'server_youtube'],
+      enum: ['server', 'youtube', 'server_youtube', 'youtube_server'],
     },
     // YouTube RTMP ingest (for OBS→YouTube or MediaMTX→YouTube forward).
     youtubeRtmpUrl: { type: String, trim: true, default: '' },
     // YouTube stream key — never returned unless explicitly selected.
     youtubeStreamKey: { type: String, default: '', select: false },
-    // When true (and destination is server_youtube), MediaMTX forwards RTMP to YouTube.
+    // When true (server_youtube / youtube_server), MediaMTX forwards RTMP to YouTube.
     youtubeForwardEnabled: { type: Boolean, default: false },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
