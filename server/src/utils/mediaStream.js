@@ -22,12 +22,12 @@ export function streamKeyFromEventId(eventId) {
 }
 
 /**
- * Adaptive HLS (ABR) is ON unless explicitly disabled.
- * Live only — recordings stay original single-file quality.
+ * Adaptive HLS (ABR) is OFF by default (Standard / low-cost).
+ * Only runs when an event explicitly has adaptiveStreaming === true
+ * (Super Admin “Adaptive / Premium” mode). Live only — recordings stay original.
  */
 export function isAdaptiveStreamingEnabled(event = {}) {
-  if (event && event.adaptiveStreaming === false) return false;
-  return true;
+  return Boolean(event && event.adaptiveStreaming === true);
 }
 
 /** Viewer playlist filename: master.m3u8 (ABR) or index.m3u8 (single quality). */

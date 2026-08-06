@@ -49,7 +49,7 @@ else
   fi
 fi
 
-# 2-quality Adaptive HLS (live only). No-op when adaptiveStreaming is OFF.
+# 2-quality Adaptive HLS (live only). No-op unless Super Admin enabled Adaptive for the event.
 ABR_START="${SCRIPT_DIR}/abr-transcode-start.sh"
 if [[ -f "$ABR_START" ]]; then
   echo "on-publish-notify: starting ABR transcoder for ${PATH_NAME}" >&2

@@ -9,15 +9,16 @@ import {
 } from './mediaStream.js';
 import { rewriteViewerHlsUrl, setHlsCdnEnabled } from './hlsCdn.js';
 
-test('adaptiveStreaming defaults ON', () => {
-  assert.equal(isAdaptiveStreamingEnabled({}), true);
-  assert.equal(isAdaptiveStreamingEnabled({ adaptiveStreaming: true }), true);
+test('adaptiveStreaming defaults OFF (Standard)', () => {
+  assert.equal(isAdaptiveStreamingEnabled({}), false);
   assert.equal(isAdaptiveStreamingEnabled({ adaptiveStreaming: false }), false);
+  assert.equal(isAdaptiveStreamingEnabled({ adaptiveStreaming: true }), true);
 });
 
 test('hlsPlaylistName switches master vs index', () => {
-  assert.equal(hlsPlaylistName({}), 'master.m3u8');
+  assert.equal(hlsPlaylistName({}), 'index.m3u8');
   assert.equal(hlsPlaylistName({ adaptiveStreaming: false }), 'index.m3u8');
+  assert.equal(hlsPlaylistName({ adaptiveStreaming: true }), 'master.m3u8');
 });
 
 test('buildHlsPlaybackUrl uses master when adaptive ON', () => {

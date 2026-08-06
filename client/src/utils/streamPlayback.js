@@ -3,8 +3,8 @@
  * Prefer the API-provided playback URL so the Super Admin CDN toggle and
  * Adaptive Streaming (master.m3u8) apply without rebuilding the client.
  *
- * Adaptive ON  → .../live/{key}/master.m3u8
- * Adaptive OFF → .../live/{key}/index.m3u8
+ * Adaptive ON  → .../live/{key}/master.m3u8 (Super Admin opt-in only)
+ * Adaptive OFF (default) → .../live/{key}/index.m3u8
  * CDN OFF → https://stream.eventlivepro.com/live/...
  * CDN ON  → https://cdn.eventlivepro.com/live/...
  */
@@ -26,9 +26,9 @@ function viewerBaseFromConfig(config) {
 }
 
 function playlistFromConfig(config) {
-  // Explicit false → single quality. Missing / true → ABR master.
-  if (config && config.adaptiveStreaming === false) return 'index.m3u8';
-  return 'master.m3u8';
+  // Explicit true → ABR master. Missing / false → single-quality MediaMTX index.
+  if (config && config.adaptiveStreaming === true) return 'master.m3u8';
+  return 'index.m3u8';
 }
 
 /** Build HLS manifest URL for a stream key using the active viewer base. */

@@ -67,8 +67,23 @@ const EDITABLE_FIELDS = [
   'youtubeForwardEnabled',
   'facebookRtmpUrl',
   'facebookForwardEnabled',
-  'adaptiveStreaming',
 ];
+
+function applyAdaptiveStreamingField(target, body, user, { isCreate = false } = {}) {
+  // Super Admin only may enable Adaptive (Premium) ABR. Everyone else stays Standard.
+  // On update, non–super-admins omit the field so existing events are unchanged.
+  if (user?.role === 'superadmin') {
+    if (body.adaptiveStreaming !== undefined) {
+      target.adaptiveStreaming = Boolean(body.adaptiveStreaming);
+    } else if (isCreate) {
+      target.adaptiveStreaming = false;
+    }
+    return;
+  }
+  if (isCreate) {
+    target.adaptiveStreaming = false;
+  }
+}
 
 async function decorateEventResponse(eventDoc) {
   const plain = eventDoc?.toJSON ? eventDoc.toJSON() : { ...eventDoc };
@@ -425,6 +440,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(fbForwardErr);
   }
+  applyAdaptiveStreamingField(payload, req.body, req.user, { isCreate: true });
   applyBackupStreamFields(payload, req.body, res);
 
   try {
@@ -543,6 +559,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(fbForwardErr);
   }
+  applyAdaptiveStreamingField(event, req.body, req.user, { isCreate: false });
   applyBackupStreamFields(event, req.body, res);
 
   try {
