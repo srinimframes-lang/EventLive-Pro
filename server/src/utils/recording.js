@@ -134,8 +134,12 @@ export function findRecordingPart(event, partId) {
   if (!partId) return null;
   const id = String(partId);
   return (
-    ensureRecordingsArray(event).find((p) => p && String(p._id || p.id) === id && !p.deletedAt) ||
-    null
+    ensureRecordingsArray(event).find((p) => {
+      if (!p || p.deletedAt) return false;
+      if (p.filename && String(p.filename) === id) return true;
+      if (String(p._id || p.id || '') === id) return true;
+      return false;
+    }) || null
   );
 }
 
@@ -173,8 +177,8 @@ export function syncLegacyRecordingFields(event) {
 
 function partPlayPath(event, part) {
   const id = eventIdOf(event);
-  const partId = part?._id || part?.id;
-  if (partId) return `/api/events/${id}/stream/recording?part=${partId}`;
+  const partId = part?.filename || part?._id || part?.id;
+  if (partId) return `/api/events/${id}/stream/recording?part=${encodeURIComponent(String(partId))}`;
   return `/api/events/${id}/stream/recording`;
 }
 
@@ -232,30 +236,37 @@ export function getRecordingState(event, { now = new Date() } = {}) {
       ? `/api/events/${eventIdOf(event)}/stream/recording/download`
       : '',
     firstPlayPath: first ? partPlayPath(event, first) : '',
-    parts: parts.map((p, index) => ({
-      id: String(p._id || p.id || ''),
-      part: index + 1,
-      filename: p.filename || '',
-      durationSec: Math.max(0, Number(p.durationSec) || 0),
-      sizeBytes: Math.max(0, Number(p.sizeBytes) || 0),
-      storage: p.storage === 'r2' ? 'r2' : 'local',
-      r2Key: p.r2Key || '',
-      startedAt: p.startedAt || null,
-      endedAt: p.endedAt || null,
-      createdAt: p.createdAt || null,
-      playPath: partPlayPath(event, p),
-      downloadPath: p._id || p.id
-        ? `/api/events/${eventIdOf(event)}/stream/recording/download?part=${p._id || p.id}`
-        : `/api/events/${eventIdOf(event)}/stream/recording/download`,
-    })),
+    parts: parts.map((p, index) => {
+      const stableId = String(p.filename || p._id || p.id || '');
+      return {
+        id: stableId,
+        part: index + 1,
+        filename: p.filename || '',
+        durationSec: Math.max(0, Number(p.durationSec) || 0),
+        sizeBytes: Math.max(0, Number(p.sizeBytes) || 0),
+        storage: p.storage === 'r2' ? 'r2' : 'local',
+        r2Key: p.r2Key || '',
+        startedAt: p.startedAt || null,
+        endedAt: p.endedAt || null,
+        createdAt: p.createdAt || null,
+        playPath: partPlayPath(event, p),
+        downloadPath: stableId
+          ? `/api/events/${eventIdOf(event)}/stream/recording/download?part=${encodeURIComponent(stableId)}`
+          : `/api/events/${eventIdOf(event)}/stream/recording/download`,
+      };
+    }),
   };
 }
 
 export function buildPublicRecordingUrl(event, { apiOrigin = '' } = {}) {
   const state = getRecordingState(event);
   if (!state.publiclyVisible || !state.playPath) return '';
-  // Prefer Part 1 (oldest) so replay starts chronologically.
-  const path = state.firstPlayPath || state.playPath;
+  // Prefer merged final when ready; otherwise Part 1 (oldest).
+  const preferFinal =
+    event.finalRecordingStatus === 'ready' && Boolean(event.finalRecordingR2Key);
+  const path = preferFinal
+    ? `/api/events/${event.id || event._id}/stream/recording`
+    : state.firstPlayPath || state.playPath;
   const origin = String(apiOrigin || '').replace(/\/+$/, '');
   return origin ? `${origin}${path}` : path;
 }
@@ -336,6 +347,12 @@ export function applyRecordingToEvent(event, { filePath, durationSec = 0, record
   } else {
     // Extend public window from the newest session.
     event.recordingPublicUntil = addDays(when, RECORDING_PUBLIC_DAYS);
+  }
+
+  // A new part invalidates any previously merged final (parts remain intact).
+  if (event.finalRecordingStatus === 'ready' || event.finalRecordingStatus === 'failed') {
+    event.finalRecordingStatus = 'none';
+    event.finalRecordingError = 'New recording part added — re-finalize to refresh the merged replay.';
   }
 
   syncLegacyRecordingFields(event);

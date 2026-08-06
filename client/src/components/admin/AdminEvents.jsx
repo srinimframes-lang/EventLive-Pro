@@ -116,6 +116,16 @@ export default function AdminEvents() {
         URL.revokeObjectURL(url);
         return;
       }
+      if (action === 'finalize') {
+        if (
+          !window.confirm(
+            `Create one merged replay from all ${recordingMeta[ev.id]?.recordingCount || ''} parts? Original parts are kept.`
+          )
+        ) {
+          return;
+        }
+        await streamService.finalizeRecording(ev.id);
+      }
       if (action === 'delete-part') {
         if (
           !window.confirm(
@@ -320,6 +330,16 @@ export default function AdminEvents() {
                             {rec.recordingHidden && ' · Hidden by admin'}
                             {rec.recordingExpired && !rec.recordingHidden && ' · Expired (hidden from public)'}
                           </p>
+                          {rec.finalRecordingStatus && rec.finalRecordingStatus !== 'none' && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              Merged final:{' '}
+                              <span className="font-semibold">{rec.finalRecordingStatus}</span>
+                              {rec.finalRecordingDurationSec
+                                ? ` · ${Math.round(rec.finalRecordingDurationSec / 60)}m`
+                                : ''}
+                              {rec.finalRecordingError ? ` · ${rec.finalRecordingError}` : ''}
+                            </p>
+                          )}
                           <div className="mt-2 space-y-2">
                             {(rec.parts || []).map((part) => (
                               <div
@@ -363,6 +383,30 @@ export default function AdminEvents() {
                             ))}
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
+                            {rec.canFinalize !== false &&
+                              rec.recordingCount > 0 &&
+                              !['queued', 'processing'].includes(rec.finalRecordingStatus || '') && (
+                                <button
+                                  type="button"
+                                  className="btn-outline text-xs"
+                                  disabled={recordingBusyId === ev.id}
+                                  onClick={() => runRecordingAction(ev, 'finalize')}
+                                >
+                                  {rec.finalRecordingStatus === 'ready'
+                                    ? 'Re-finalize merged replay'
+                                    : 'Finalize Recording (merge parts)'}
+                                </button>
+                              )}
+                            {['queued', 'processing'].includes(rec.finalRecordingStatus || '') && (
+                              <button
+                                type="button"
+                                className="btn-outline text-xs"
+                                disabled={recordingBusyId === ev.id}
+                                onClick={() => refreshRecordingMeta(ev)}
+                              >
+                                Refresh merge status
+                              </button>
+                            )}
                             {rec.recordingHidden || rec.recordingExpired ? (
                               <button
                                 type="button"

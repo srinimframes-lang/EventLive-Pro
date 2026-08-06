@@ -27,6 +27,7 @@ import {
   hideRecording,
   restoreRecording,
   deleteRecordingPermanently,
+  finalizeRecording,
   getChatHistory,
   listQuestions,
 } from '../controllers/stream.controller.js';
@@ -72,6 +73,7 @@ router.get('/:id/stream/recording/url', optionalAuth, getRecordingPlayUrl);
 router.get('/:id/stream/recording', optionalAuth, playRecording);
 router.get('/:id/stream/recording/download', protect, downloadRecording);
 router.get('/:id/stream/recording/meta', protect, getRecordingMeta);
+router.post('/:id/stream/recording/finalize', protect, finalizeRecording);
 router.post('/:id/stream/recording/hide', protect, hideRecording);
 router.post('/:id/stream/recording/restore', protect, restoreRecording);
 router.delete('/:id/stream/recording', protect, deleteRecordingPermanently);

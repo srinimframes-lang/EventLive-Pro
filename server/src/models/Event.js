@@ -243,6 +243,18 @@ const eventSchema = new Schema(
         deletedAt: { type: Date },
       },
     ],
+    // Optional single merged replay (ffmpeg concat). Original parts always kept in R2.
+    finalRecordingR2Key: { type: String, trim: true, default: '' },
+    finalRecordingR2Url: { type: String, trim: true, default: '' },
+    finalRecordingStatus: {
+      type: String,
+      enum: ['none', 'queued', 'processing', 'ready', 'failed', 'incompatible'],
+      default: 'none',
+    },
+    finalRecordingDurationSec: { type: Number, default: 0, min: 0 },
+    finalRecordingCreatedAt: { type: Date },
+    finalRecordingError: { type: String, trim: true, default: '' },
+    finalRecordingPartCount: { type: Number, default: 0, min: 0 },
     isLive: { type: Boolean, default: false, index: true },
     liveStartedAt: { type: Date },
     liveEndedAt: { type: Date },

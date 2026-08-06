@@ -41,6 +41,10 @@ export const streamService = {
     const { data } = await api.post(`/api/events/${eventId}/stream/recording/restore`);
     return data.data;
   },
+  async finalizeRecording(eventId) {
+    const { data } = await api.post(`/api/events/${eventId}/stream/recording/finalize`);
+    return data.data;
+  },
   async deleteRecording(eventId, { partId = '', all = false } = {}) {
     const params = {};
     if (all) params.all = '1';

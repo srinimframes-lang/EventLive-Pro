@@ -32,6 +32,13 @@ import {
   resolveRecordingPartForPlayback,
 } from '../utils/recording.js';
 import {
+  adminFinalRecordingMeta,
+  hasReadyFinalRecording,
+  queueEventRecordingMerge,
+  resolveFinalRecordingPlayUrl,
+  finalRecordingPublicMeta,
+} from '../utils/recordingMerge.js';
+import {
   deleteRecordingFromR2,
   isR2Configured,
   presignRecordingUrl,
@@ -77,6 +84,8 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const rec = getRecordingState(event);
   const recordingUrl = isLive ? '' : buildPublicRecordingUrl(event);
   const playbackMode = isLive ? 'live' : recordingUrl ? 'recorded' : 'offline';
+  const finalReady = !isLive && hasReadyFinalRecording(event);
+  const finalMeta = finalRecordingPublicMeta(event);
 
   return {
     eventId: event.id,
@@ -102,19 +111,24 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
     recordingAvailable: Boolean(recordingUrl),
     recordingPublicUntil: rec.recordingPublicUntil,
     recordingRecordedAt: rec.recordingRecordedAt,
-    recordingDurationSec: rec.recordingDurationSec,
+    recordingDurationSec: finalReady
+      ? event.finalRecordingDurationSec || rec.recordingDurationSec
+      : rec.recordingDurationSec,
     recordingCount: rec.recordingCount,
-    // Lightweight part list for the player (no R2 URLs — resolve per part on demand).
-    recordings: recordingUrl
-      ? rec.parts.map((p) => ({
-          id: p.id,
-          part: p.part,
-          durationSec: p.durationSec,
-          startedAt: p.startedAt,
-          createdAt: p.createdAt,
-          filename: p.filename,
-        }))
-      : [],
+    ...finalMeta,
+    // Public viewers get a single video when the merged final is ready.
+    // Otherwise expose multi-part list for the Part player fallback.
+    recordings:
+      recordingUrl && !finalReady
+        ? rec.parts.map((p) => ({
+            id: p.id,
+            part: p.part,
+            durationSec: p.durationSec,
+            startedAt: p.startedAt,
+            createdAt: p.createdAt,
+            filename: p.filename,
+          }))
+        : [],
   };
 }
 
@@ -125,6 +139,7 @@ function adminRecordingConfig(event) {
     ...rec,
     recordingUrl: buildAdminRecordingUrl(event),
     downloadUrl: rec.downloadPath,
+    ...adminFinalRecordingMeta(event),
   };
 }
 
@@ -568,14 +583,15 @@ async function uploadEventRecordingToR2(eventId) {
 
 /**
  * @route GET /api/events/:id/stream/recording
- * @desc  Stream / redirect a recorded MP4 part (public within 30 days; admins always).
- *        Optional query: ?part=<recordingPartId> (defaults to Part 1 / oldest).
+ * @desc  Stream / redirect a recorded MP4 (public within 30 days; admins always).
+ *        Optional query: ?part=<id|filename> — specific part (admin/public multi-part).
+ *        With no part: prefers merged final when ready, else Part 1.
  * @access Public (gated) / Private admin override
  */
 export const playRecording = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res);
   const rec = getRecordingState(event);
-  if (!rec.hasRecording) {
+  if (!rec.hasRecording && !hasReadyFinalRecording(event)) {
     res.status(404);
     throw new Error('Recording not found');
   }
@@ -587,6 +603,18 @@ export const playRecording = asyncHandler(async (req, res) => {
   }
 
   const partId = String(req.query.part || '').trim();
+
+  // Merged final replay (public default when ready and no explicit part requested).
+  if (!partId && hasReadyFinalRecording(event)) {
+    const publicUrl = r2PublicUrl(event.finalRecordingR2Key);
+    const target = publicUrl || (await presignRecordingUrl(event.finalRecordingR2Key));
+    if (!target) {
+      res.status(500);
+      throw new Error('R2 recording URL unavailable');
+    }
+    return res.redirect(302, target);
+  }
+
   const part = resolveRecordingPartForPlayback(event, partId || undefined);
   if (partId && !part) {
     res.status(404);
@@ -618,14 +646,14 @@ export const playRecording = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/events/:id/stream/recording/url
- * @desc  JSON play URL for one recording part (presigned R2 or same-origin API).
- *        Optional query: ?part=<recordingPartId>
+ * @desc  JSON play URL for final merge or one recording part.
+ *        Optional query: ?part=<id|filename>
  * @access Public (gated) / Private admin override
  */
 export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res);
   const rec = getRecordingState(event);
-  if (!rec.hasRecording) {
+  if (!rec.hasRecording && !hasReadyFinalRecording(event)) {
     res.status(404);
     throw new Error('Recording not found');
   }
@@ -637,6 +665,16 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   }
 
   const partId = String(req.query.part || '').trim();
+
+  if (!partId && hasReadyFinalRecording(event)) {
+    const data = await resolveFinalRecordingPlayUrl(event);
+    if (!data?.url) {
+      res.status(500);
+      throw new Error('R2 recording URL unavailable');
+    }
+    return res.status(200).json({ success: true, data });
+  }
+
   const part = resolveRecordingPartForPlayback(event, partId || undefined);
   if (partId && !part) {
     res.status(404);
@@ -660,13 +698,16 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
         storage: 'r2',
         expiresInSec: publicUrl ? null : 6 * 3600,
         filename,
-        partId: part ? String(part._id || part.id || '') : '',
+        partId: part ? String(part.filename || part._id || part.id || '') : '',
       },
     });
   }
 
   const apiOrigin = `${req.protocol}://${req.get('host') || 'localhost'}`.replace(/\/+$/, '');
-  const qs = part && (part._id || part.id) ? `?part=${part._id || part.id}` : '';
+  const qs =
+    part && (part.filename || part._id || part.id)
+      ? `?part=${encodeURIComponent(part.filename || part._id || part.id)}`
+      : '';
   return res.status(200).json({
     success: true,
     data: {
@@ -674,7 +715,7 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
       storage: 'local',
       expiresInSec: null,
       filename,
-      partId: part ? String(part._id || part.id || '') : '',
+      partId: part ? String(part.filename || part._id || part.id || '') : '',
     },
   });
 });
@@ -731,6 +772,60 @@ export const getRecordingMeta = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res);
   assertCanManageEvent(event, req.user, res);
   res.status(200).json({ success: true, data: adminRecordingConfig(event) });
+});
+
+/**
+ * @route POST /api/events/:id/stream/recording/finalize
+ * @desc  Queue ffmpeg concat merge of all R2 parts into one final MP4 (admin/owner).
+ *        Original part objects are never deleted. Safe to call when the event is not live.
+ * @access Private
+ */
+export const finalizeRecording = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+
+  if (event.isLive) {
+    res.status(409);
+    throw new Error('Cannot finalize while the event is live');
+  }
+
+  const publishing = await publishingStatusForEvent(event);
+  if (publishing === true) {
+    res.status(409);
+    throw new Error('Cannot finalize while OBS is still publishing');
+  }
+
+  const rec = getRecordingState(event);
+  if (!rec.hasRecording || rec.recordingCount < 1) {
+    res.status(404);
+    throw new Error('No recording parts available to finalize');
+  }
+
+  if (['queued', 'processing'].includes(event.finalRecordingStatus || '')) {
+    res.status(409);
+    throw new Error('A finalize job is already in progress for this event');
+  }
+
+  event.finalRecordingStatus = 'queued';
+  event.finalRecordingError = '';
+  await event.save();
+
+  // Respond immediately; merge runs in the background (single-flight queue).
+  res.status(202).json({
+    success: true,
+    data: {
+      queued: true,
+      ...adminRecordingConfig(event),
+    },
+  });
+
+  queueEventRecordingMerge(event.id)
+    .then((result) => {
+      console.log(`[merge] finalize complete for ${event.id}:`, result?.status || result);
+    })
+    .catch((err) => {
+      console.error(`[merge] finalize failed for ${event.id}:`, err.message);
+    });
 });
 
 /**
