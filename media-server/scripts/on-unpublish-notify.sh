@@ -27,10 +27,21 @@ if [[ -n "$MEDIA_SECRET" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FORWARD_STOP="${SCRIPT_DIR}/youtube-forward-stop.sh"
-if [[ -f "$FORWARD_STOP" ]]; then
-  bash "$FORWARD_STOP" "$PATH_NAME" \
-    || echo "on-unpublish-notify: warning — youtube forward stop failed for ${PATH_NAME}" >&2
+MULTI_STOP="${SCRIPT_DIR}/rtmp-forward-stop.sh"
+if [[ -f "$MULTI_STOP" ]]; then
+  bash "$MULTI_STOP" "$PATH_NAME" \
+    || echo "on-unpublish-notify: warning — rtmp forward stop failed for ${PATH_NAME}" >&2
+else
+  YT_STOP="${SCRIPT_DIR}/youtube-forward-stop.sh"
+  if [[ -f "$YT_STOP" ]]; then
+    bash "$YT_STOP" "$PATH_NAME" \
+      || echo "on-unpublish-notify: warning — youtube forward stop failed for ${PATH_NAME}" >&2
+  fi
+  FB_STOP="${SCRIPT_DIR}/facebook-forward-stop.sh"
+  if [[ -f "$FB_STOP" ]]; then
+    bash "$FB_STOP" "$PATH_NAME" \
+      || echo "on-unpublish-notify: warning — facebook forward stop failed for ${PATH_NAME}" >&2
+  fi
 fi
 
 exit 0

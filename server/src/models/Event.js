@@ -233,6 +233,10 @@ const eventSchema = new Schema(
     youtubeStreamKey: { type: String, default: '', select: false },
     // When true (server_youtube / youtube_server), MediaMTX forwards RTMP to YouTube.
     youtubeForwardEnabled: { type: Boolean, default: false },
+    // Facebook Live RTMP forward (additive; OBS still publishes only to MediaMTX).
+    facebookRtmpUrl: { type: String, trim: true, default: '' },
+    facebookStreamKey: { type: String, default: '', select: false },
+    facebookForwardEnabled: { type: Boolean, default: false },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
     // Full OBS publish URL for Premium Server Live (rtmp://host:1935/live/<eventId>).
@@ -468,6 +472,7 @@ eventSchema.set('toJSON', {
     // Never leak ingest secrets in JSON responses.
     delete ret.rtmpStreamKey;
     delete ret.youtubeStreamKey;
+    delete ret.facebookStreamKey;
     return ret;
   },
 });

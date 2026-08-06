@@ -20,6 +20,7 @@ import {
   streamTypeFromEvent,
 } from '../utils/streamType.js';
 import { applyYoutubeForwardFields, sanitizeStreamingSecrets } from '../utils/youtubeForward.js';
+import { applyFacebookForwardFields } from '../utils/streamForward.js';
 import { freshServerStreamUrls } from '../utils/mediaStream.js';
 import { canManageEvent } from '../utils/ownership.js';
 import { createdByFilter, isAdminPanelUser } from '../utils/tenantScope.js';
@@ -64,6 +65,8 @@ const EDITABLE_FIELDS = [
   'streamingDestination',
   'youtubeRtmpUrl',
   'youtubeForwardEnabled',
+  'facebookRtmpUrl',
+  'facebookForwardEnabled',
 ];
 
 async function decorateEventResponse(eventDoc) {
@@ -71,11 +74,18 @@ async function decorateEventResponse(eventDoc) {
   if (plain._id && plain.id == null) plain.id = String(plain._id);
   const id = plain.id || plain._id;
   let hasYtKey = false;
+  let hasFbKey = false;
   if (id) {
-    const keyed = await Event.findById(id).select('+youtubeStreamKey').lean();
+    const keyed = await Event.findById(id)
+      .select('+youtubeStreamKey +facebookStreamKey')
+      .lean();
     hasYtKey = Boolean(keyed?.youtubeStreamKey);
+    hasFbKey = Boolean(keyed?.facebookStreamKey);
   }
-  sanitizeStreamingSecrets(plain, { hasYoutubeStreamKey: hasYtKey });
+  sanitizeStreamingSecrets(plain, {
+    hasYoutubeStreamKey: hasYtKey,
+    hasFacebookStreamKey: hasFbKey,
+  });
   if (!plain.streamingDestination) {
     plain.streamingDestination = streamTypeFromEvent(plain);
   }
@@ -326,9 +336,13 @@ export const getEvent = asyncHandler(async (req, res) => {
   delete data.rtmpPublishUrl;
   delete data.rtmpStreamKey;
   delete data.youtubeStreamKey;
+  delete data.facebookStreamKey;
   {
-    const keyed = await Event.findById(event._id).select('+youtubeStreamKey').lean();
+    const keyed = await Event.findById(event._id)
+      .select('+youtubeStreamKey +facebookStreamKey')
+      .lean();
     data.youtubeStreamKeySet = Boolean(keyed?.youtubeStreamKey);
+    data.facebookStreamKeySet = Boolean(keyed?.facebookStreamKey);
   }
   if (!data.streamingDestination) {
     data.streamingDestination = streamTypeFromEvent(data);
@@ -405,9 +419,10 @@ export const createEvent = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(forwardErr);
   }
-  // youtubeStreamKey is select:false — set explicitly from body after validation.
-  if (req.body.youtubeStreamKey !== undefined && payload.youtubeStreamKey) {
-    // already on payload from applyYoutubeForwardFields
+  const fbForwardErr = applyFacebookForwardFields(payload, req.body, { isCreate: true });
+  if (fbForwardErr) {
+    res.status(400);
+    throw new Error(fbForwardErr);
   }
   applyBackupStreamFields(payload, req.body, res);
 
@@ -486,7 +501,7 @@ export const createEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const updateEvent = asyncHandler(async (req, res) => {
-  const event = await Event.findById(req.params.id).select('+youtubeStreamKey');
+  const event = await Event.findById(req.params.id).select('+youtubeStreamKey +facebookStreamKey');
   if (!event) {
     res.status(404);
     throw new Error('Event not found');
@@ -521,6 +536,11 @@ export const updateEvent = asyncHandler(async (req, res) => {
   if (forwardErr) {
     res.status(400);
     throw new Error(forwardErr);
+  }
+  const fbForwardErr = applyFacebookForwardFields(event, req.body, { isCreate: false });
+  if (fbForwardErr) {
+    res.status(400);
+    throw new Error(fbForwardErr);
   }
   applyBackupStreamFields(event, req.body, res);
 

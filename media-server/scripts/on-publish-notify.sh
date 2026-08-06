@@ -27,16 +27,26 @@ if [[ -n "$MEDIA_SECRET" ]]; then
     || echo "on-publish-notify: warning — stream/started failed for ${PATH_NAME}" >&2
 fi
 
-# Optional Server → YouTube RTMP forward (no-op unless event has it enabled).
-# Invoke with bash: repo file mode is 100644, so -x is often false after git pull.
+# Multi-destination RTMP forward (YouTube + Facebook). No-op unless enabled.
+# Invoke with bash: repo file mode is often 100644 after git pull.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FORWARD_START="${SCRIPT_DIR}/youtube-forward-start.sh"
-if [[ -f "$FORWARD_START" ]]; then
-  echo "on-publish-notify: starting youtube forward for ${PATH_NAME}" >&2
-  bash "$FORWARD_START" "$PATH_NAME" \
-    || echo "on-publish-notify: warning — youtube forward start failed for ${PATH_NAME}" >&2
+MULTI_START="${SCRIPT_DIR}/rtmp-forward-start.sh"
+if [[ -f "$MULTI_START" ]]; then
+  echo "on-publish-notify: starting rtmp forwards for ${PATH_NAME}" >&2
+  bash "$MULTI_START" "$PATH_NAME" \
+    || echo "on-publish-notify: warning — rtmp forward start failed for ${PATH_NAME}" >&2
 else
-  echo "on-publish-notify: youtube-forward-start.sh missing — skip forward" >&2
+  # Legacy fallbacks (single-platform scripts).
+  YT_START="${SCRIPT_DIR}/youtube-forward-start.sh"
+  if [[ -f "$YT_START" ]]; then
+    bash "$YT_START" "$PATH_NAME" \
+      || echo "on-publish-notify: warning — youtube forward start failed for ${PATH_NAME}" >&2
+  fi
+  FB_START="${SCRIPT_DIR}/facebook-forward-start.sh"
+  if [[ -f "$FB_START" ]]; then
+    bash "$FB_START" "$PATH_NAME" \
+      || echo "on-publish-notify: warning — facebook forward start failed for ${PATH_NAME}" >&2
+  fi
 fi
 
 exit 0

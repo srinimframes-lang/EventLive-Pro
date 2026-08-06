@@ -20,6 +20,8 @@ import {
   authenticateStream,
   mediamtxAuth,
   youtubeForwardConfig,
+  facebookForwardConfig,
+  streamForwardsConfig,
   streamStarted,
   streamStopped,
   recordingReady,
@@ -61,6 +63,10 @@ router.post('/stream/auth', authenticateStream);
 router.post('/stream/mediamtx-auth', mediamtxAuth);
 router.get('/stream/youtube-forward', youtubeForwardConfig);
 router.post('/stream/youtube-forward', youtubeForwardConfig);
+router.get('/stream/facebook-forward', facebookForwardConfig);
+router.post('/stream/facebook-forward', facebookForwardConfig);
+router.get('/stream/forwards', streamForwardsConfig);
+router.post('/stream/forwards', streamForwardsConfig);
 router.post('/stream/started', streamStarted);
 router.post('/stream/stopped', streamStopped);
 router.post('/stream/recording-ready', recordingReady);

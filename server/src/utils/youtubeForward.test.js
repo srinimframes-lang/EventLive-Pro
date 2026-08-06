@@ -92,11 +92,18 @@ test('applyYoutubeForwardFields accepts youtube_server destination', () => {
 
 test('sanitizeStreamingSecrets never returns the key', () => {
   const data = sanitizeStreamingSecrets(
-    { youtubeStreamKey: 'secret', rtmpStreamKey: 'id', title: 'T' },
-    { hasYoutubeStreamKey: true }
+    {
+      youtubeStreamKey: 'secret',
+      facebookStreamKey: 'fb-secret',
+      rtmpStreamKey: 'id',
+      title: 'T',
+    },
+    { hasYoutubeStreamKey: true, hasFacebookStreamKey: true }
   );
   assert.equal(data.youtubeStreamKey, undefined);
+  assert.equal(data.facebookStreamKey, undefined);
   assert.equal(data.rtmpStreamKey, undefined);
   assert.equal(data.youtubeStreamKeySet, true);
+  assert.equal(data.facebookStreamKeySet, true);
   assert.equal(data.title, 'T');
 });

@@ -22,12 +22,17 @@ import BackupStreamSettings, {
 
 const LINK_COSTS = { youtube: 1, server: 5, server_youtube: 5, youtube_server: 5 };
 
-const STREAMING_DESTINATIONS = [
-  { value: 'server', label: 'Server' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'server_youtube', label: 'Server + YouTube' },
-  { value: 'youtube_server', label: 'YouTube + Server' },
-];
+const DEFAULT_FACEBOOK_RTMP = 'rtmps://live-api-s.facebook.com:443/rtmp';
+
+/** Map checkbox destinations → existing streamingDestination (website playback). */
+function streamTypeFromDestinations(destServer, destYoutube, websitePlayer) {
+  if (destServer && destYoutube) {
+    return websitePlayer === 'youtube' ? 'youtube_server' : 'server_youtube';
+  }
+  if (destYoutube && !destServer) return 'youtube';
+  if (destServer) return 'server';
+  return '';
+}
 
 const EMPTY = {
   title: '',
@@ -45,6 +50,10 @@ const EMPTY = {
   youtubeStreamKey: '',
   youtubeStreamKeySet: false,
   youtubeForwardEnabled: true,
+  facebookRtmpUrl: DEFAULT_FACEBOOK_RTMP,
+  facebookStreamKey: '',
+  facebookStreamKeySet: false,
+  facebookForwardEnabled: false,
   chatEnabled: true,
   capacity: 0,
   tags: '',
@@ -96,16 +105,28 @@ export default function EventForm() {
   const saveInFlightRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
-  // Streaming destination: Server Only (default) | YouTube Only | Server + YouTube.
-  const [streamType, setStreamType] = useState(
-    searchParams.get('type') === 'youtube'
-      ? 'youtube'
-      : searchParams.get('type') === 'server_youtube'
-        ? 'server_youtube'
-        : searchParams.get('type') === 'youtube_server'
-          ? 'youtube_server'
-          : 'server'
+  // Streaming destinations (checkboxes). Website playback still uses the four
+  // streamingDestination values; Facebook is an additive MediaMTX forward.
+  const [destServer, setDestServer] = useState(
+    searchParams.get('type') !== 'youtube'
   );
+  const [destYoutube, setDestYoutube] = useState(
+    searchParams.get('type') === 'youtube' ||
+      searchParams.get('type') === 'server_youtube' ||
+      searchParams.get('type') === 'youtube_server'
+  );
+  const [destFacebook, setDestFacebook] = useState(false);
+  // When Server + YouTube: 'hls' → server_youtube, 'youtube' → youtube_server.
+  const [websitePlayer, setWebsitePlayer] = useState(
+    searchParams.get('type') === 'youtube_server' ? 'youtube' : 'hls'
+  );
+
+  const streamType =
+    streamTypeFromDestinations(
+      destServer || destFacebook,
+      destYoutube,
+      websitePlayer
+    ) || 'server';
   const balance = user?.creditBalance ?? 0;
   const cost = LINK_COSTS[streamType] || 1;
   const showCreditCosts = !isAdmin && !isEdit;
@@ -134,17 +155,16 @@ export default function EventForm() {
           String(eventOwnerIds.createdBy) === String(user.id))
     );
   const canEditBackup = failoverFeatureEnabled && (isSuperAdmin || isEventOwner);
+  const effectiveServer = destServer || destFacebook;
   const showBackupSection =
-    canEditBackup &&
-    form.isOnline &&
-    (streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server');
-  const usesServerIngest =
-    streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
-  const showYoutubeRtmpFields =
-    streamType === 'youtube' || streamType === 'server_youtube' || streamType === 'youtube_server';
-  const showYoutubeEmbedUrl = streamType === 'youtube' || streamType === 'youtube_server';
+    canEditBackup && form.isOnline && effectiveServer && streamType !== 'youtube';
+  const usesServerIngest = effectiveServer && streamType !== 'youtube';
+  const showYoutubeRtmpFields = destYoutube;
+  const showYoutubeEmbedUrl =
+    streamType === 'youtube' || streamType === 'youtube_server';
   const needsYoutubeForward =
     streamType === 'server_youtube' || streamType === 'youtube_server';
+  const showFacebookFields = destFacebook;
 
   useEffect(() => {
     if (!isEdit) return;
@@ -203,29 +223,45 @@ export default function EventForm() {
           youtubeForwardEnabled:
             event.youtubeForwardEnabled !== undefined
               ? Boolean(event.youtubeForwardEnabled)
-              : event.streamingDestination === 'server_youtube',
+              : event.streamingDestination === 'server_youtube' ||
+                event.streamingDestination === 'youtube_server',
+          facebookRtmpUrl: event.facebookRtmpUrl || DEFAULT_FACEBOOK_RTMP,
+          facebookStreamKey: '',
+          facebookStreamKeySet: Boolean(event.facebookStreamKeySet),
+          facebookForwardEnabled: Boolean(event.facebookForwardEnabled),
         });
         setEventOwnerIds({
           organizer: event.organizer?.id || event.organizer?._id || event.organizer || '',
           createdBy: event.createdBy?.id || event.createdBy?._id || event.createdBy || '',
         });
         const dest = event.streamingDestination || '';
+        let resolved = dest;
         if (
-          dest === 'server' ||
-          dest === 'youtube' ||
-          dest === 'server_youtube' ||
-          dest === 'youtube_server'
+          dest !== 'server' &&
+          dest !== 'youtube' &&
+          dest !== 'server_youtube' &&
+          dest !== 'youtube_server'
         ) {
-          setStreamType(dest);
-        } else {
           const provider = event.streamProvider || '';
           const credit = event.creditType || '';
           if (provider === 'rtmp' || provider === 'hls' || credit === 'server') {
-            setStreamType(event.youtubeForwardEnabled ? 'server_youtube' : 'server');
+            resolved = event.youtubeForwardEnabled ? 'server_youtube' : 'server';
           } else {
-            setStreamType('youtube');
+            resolved = 'youtube';
           }
         }
+        setDestServer(
+          resolved === 'server' ||
+            resolved === 'server_youtube' ||
+            resolved === 'youtube_server'
+        );
+        setDestYoutube(
+          resolved === 'youtube' ||
+            resolved === 'server_youtube' ||
+            resolved === 'youtube_server'
+        );
+        setDestFacebook(Boolean(event.facebookForwardEnabled));
+        setWebsitePlayer(resolved === 'youtube_server' ? 'youtube' : 'hls');
       })
       .catch((err) => active && setError(err.message))
       .finally(() => active && setLoading(false));
@@ -235,7 +271,8 @@ export default function EventForm() {
   }, [id, isEdit]);
 
   useEffect(() => {
-    const usesServer = streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
+    const usesServer =
+      streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
     if (!isEdit || !id || !usesServer || !form.isOnline) {
       setServerStream(null);
       return undefined;
@@ -376,8 +413,8 @@ export default function EventForm() {
     saveInFlightRef.current = true;
     setSubmitting(true);
 
-    if (form.isOnline && !streamType) {
-      setError('Please select a stream type.');
+    if (form.isOnline && !destServer && !destYoutube && !destFacebook) {
+      setError('Please select at least one streaming destination.');
       saveInFlightRef.current = false;
       setSubmitting(false);
       return;
@@ -408,6 +445,21 @@ export default function EventForm() {
       }
       if (!form.youtubeStreamKey?.trim() && !form.youtubeStreamKeySet) {
         setError('YouTube Stream Key is required for this destination.');
+        saveInFlightRef.current = false;
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    if (form.isOnline && destFacebook) {
+      if (!form.facebookRtmpUrl?.trim()) {
+        setError('Facebook RTMP URL is required when Facebook is enabled.');
+        saveInFlightRef.current = false;
+        setSubmitting(false);
+        return;
+      }
+      if (!form.facebookStreamKey?.trim() && !form.facebookStreamKeySet) {
+        setError('Facebook Stream Key is required when Facebook is enabled.');
         saveInFlightRef.current = false;
         setSubmitting(false);
         return;
@@ -493,7 +545,7 @@ export default function EventForm() {
             : '';
         }
       } else {
-        // Server
+        // Server (optionally + Facebook forward)
         payload.streamProvider = 'rtmp';
         payload.youtubeVideoId = '';
         payload.streamUrl = '';
@@ -505,6 +557,16 @@ export default function EventForm() {
             ? extractYouTubeId(form.backupYoutubeVideoId) || ''
             : '';
         }
+      }
+      // Facebook is additive — never changes website playback destination.
+      payload.facebookForwardEnabled = Boolean(destFacebook);
+      if (destFacebook) {
+        payload.facebookRtmpUrl = form.facebookRtmpUrl?.trim() || DEFAULT_FACEBOOK_RTMP;
+        if (form.facebookStreamKey?.trim()) {
+          payload.facebookStreamKey = form.facebookStreamKey.trim();
+        }
+      } else {
+        payload.facebookForwardEnabled = false;
       }
     }
 
@@ -827,28 +889,75 @@ export default function EventForm() {
           {form.isOnline ? (
             <>
               <div>
-                <Field label="Streaming Destination" htmlFor="streamingDestination">
-                  <select
-                    id="streamingDestination"
-                    name="streamingDestination"
-                    className="input"
-                    value={streamType}
-                    onChange={(e) => setStreamType(e.target.value)}
-                    required
-                  >
-                    {STREAMING_DESTINATIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <p className="mb-2 text-sm font-medium text-slate-700">Streaming destinations</p>
+                <p className="mb-3 text-xs text-slate-500">
+                  OBS always publishes to MediaMTX when Server (or Facebook) is enabled. MediaMTX
+                  forwards to every checked destination. Website playback follows Server / YouTube
+                  rules below — Facebook never changes the watch-page player.
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-6">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={destServer || destFacebook}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setDestServer(on);
+                        if (!on) setDestFacebook(false);
+                      }}
+                    />
+                    Server
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={destYoutube}
+                      onChange={(e) => setDestYoutube(e.target.checked)}
+                    />
+                    YouTube
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={destFacebook}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setDestFacebook(on);
+                        if (on) setDestServer(true);
+                      }}
+                    />
+                    Facebook
+                  </label>
+                </div>
+                {(destServer || destFacebook) && destYoutube && (
+                  <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-medium text-slate-700">Website live player</p>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name="websitePlayer"
+                        checked={websitePlayer === 'hls'}
+                        onChange={() => setWebsitePlayer('hls')}
+                      />
+                      Server HLS (Server + YouTube)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name="websitePlayer"
+                        checked={websitePlayer === 'youtube'}
+                        onChange={() => setWebsitePlayer('youtube')}
+                      />
+                      YouTube Embed (YouTube + Server)
+                    </label>
+                  </div>
+                )}
                 {showCreditCosts && (
                   <p className="mt-2 text-xs text-slate-500">
                     Your balance: {balance} credit{balance === 1 ? '' : 's'}.{' '}
                     {streamType === 'youtube'
                       ? 'YouTube costs 1 credit.'
-                      : 'Server, Server + YouTube, and YouTube + Server cost 5 credits.'}{' '}
+                      : 'Server destinations (including Facebook / YouTube forward) cost 5 credits.'}{' '}
                     Credits are deducted when the event is created.
                   </p>
                 )}
@@ -952,6 +1061,55 @@ export default function EventForm() {
                       Enable YouTube forwarding for this event
                     </label>
                   )}
+                </div>
+              )}
+
+              {showFacebookFields && (
+                <div className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                  <p className="text-sm font-medium text-slate-800">Facebook Live credentials</p>
+                  <p className="text-xs text-slate-600">
+                    OBS streams only to MediaMTX. MediaMTX forwards a copy to Facebook Live. The
+                    website player is unchanged (Server HLS or YouTube embed per destinations above).
+                  </p>
+                  <Field
+                    label="Facebook RTMP URL"
+                    htmlFor="facebookRtmpUrl"
+                    hint="From Facebook Live Producer → Go Live → Streaming software (usually rtmps://live-api-s.facebook.com:443/rtmp)."
+                  >
+                    <input
+                      id="facebookRtmpUrl"
+                      name="facebookRtmpUrl"
+                      type="text"
+                      className="input font-mono text-xs"
+                      placeholder={DEFAULT_FACEBOOK_RTMP}
+                      value={form.facebookRtmpUrl}
+                      onChange={handleChange}
+                      required
+                    />
+                  </Field>
+                  <Field
+                    label="Facebook Stream Key"
+                    htmlFor="facebookStreamKey"
+                    hint={
+                      form.facebookStreamKeySet
+                        ? 'A key is already saved. Leave blank to keep it, or paste a new key to replace it.'
+                        : 'From Facebook Live Producer. Never shared on public pages or API responses.'
+                    }
+                  >
+                    <input
+                      id="facebookStreamKey"
+                      name="facebookStreamKey"
+                      type="password"
+                      autoComplete="off"
+                      className="input font-mono text-xs"
+                      placeholder={
+                        form.facebookStreamKeySet ? '•••••••• (saved)' : 'Facebook stream key'
+                      }
+                      value={form.facebookStreamKey}
+                      onChange={handleChange}
+                      required={!form.facebookStreamKeySet}
+                    />
+                  </Field>
                 </div>
               )}
 

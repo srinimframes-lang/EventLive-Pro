@@ -55,6 +55,11 @@ import {
   DEFAULT_YOUTUBE_RTMP,
 } from '../utils/youtubeForward.js';
 import {
+  DEFAULT_FACEBOOK_RTMP,
+  listEnabledForwardTargets,
+  buildForwardTarget,
+} from '../utils/streamForward.js';
+import {
   clearMergeTimer,
   clearOfflineTimer,
   isWithinReconnectGrace,
@@ -741,6 +746,93 @@ export const youtubeForwardConfig = asyncHandler(async (req, res) => {
     // Key only over media-secret channel for VPS ffmpeg; never for browsers.
     streamKey: ytKey,
     target,
+  });
+});
+
+/**
+ * @route GET|POST /api/events/stream/facebook-forward
+ * @desc  MediaMTX VPS hook asks whether to ffmpeg-forward this path to Facebook Live.
+ * @access Media server (x-media-secret)
+ */
+export const facebookForwardConfig = asyncHandler(async (req, res) => {
+  if (!mediaSecretOk(req)) {
+    res.status(401);
+    throw new Error('Unauthorized');
+  }
+
+  const streamKey = parseMediaMtxPath(
+    req.query.path || req.query.streamKey || req.body?.path || req.body?.streamKey || ''
+  );
+  if (!streamKey) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'missing_path' });
+  }
+
+  const event = await findEventByStreamKey(streamKey);
+  if (!event) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
+  }
+
+  if (!event.facebookForwardEnabled) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'forward_disabled' });
+  }
+
+  const dest = String(event.streamingDestination || '').toLowerCase();
+  if (dest === 'youtube') {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'no_server_ingest' });
+  }
+
+  const fbKey = event.facebookStreamKey || '';
+  const fbUrl = event.facebookRtmpUrl || DEFAULT_FACEBOOK_RTMP;
+  const target = buildForwardTarget(fbUrl, fbKey, { fallbackUrl: DEFAULT_FACEBOOK_RTMP });
+  if (!target) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'missing_credentials' });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    enabled: true,
+    eventId: String(event._id),
+    rtmpUrl: fbUrl,
+    streamKey: fbKey,
+    target,
+  });
+});
+
+/**
+ * @route GET|POST /api/events/stream/forwards
+ * @desc  Multi-destination RTMP forward config for MediaMTX (YouTube + Facebook).
+ * @access Media server (x-media-secret)
+ */
+export const streamForwardsConfig = asyncHandler(async (req, res) => {
+  if (!mediaSecretOk(req)) {
+    res.status(401);
+    throw new Error('Unauthorized');
+  }
+
+  const streamKey = parseMediaMtxPath(
+    req.query.path || req.query.streamKey || req.body?.path || req.body?.streamKey || ''
+  );
+  if (!streamKey) {
+    return res.status(200).json({ ok: true, enabled: false, targets: [], reason: 'missing_path' });
+  }
+
+  const event = await findEventByStreamKey(streamKey);
+  if (!event) {
+    return res.status(200).json({
+      ok: true,
+      enabled: false,
+      targets: [],
+      reason: 'event_not_found',
+    });
+  }
+
+  const targets = listEnabledForwardTargets(event);
+  return res.status(200).json({
+    ok: true,
+    enabled: targets.length > 0,
+    eventId: String(event._id),
+    targets,
+    reason: targets.length ? undefined : 'forward_disabled',
   });
 });
 

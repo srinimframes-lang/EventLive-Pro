@@ -142,12 +142,17 @@ export function applyYoutubeForwardFields(target, body = {}, { isCreate = false 
   return null;
 }
 
-/** Strip secrets from a plain event object; expose presence flag for editors. */
-export function sanitizeStreamingSecrets(data, { hasYoutubeStreamKey = false } = {}) {
+/** Strip secrets from a plain event object; expose presence flags for editors. */
+export function sanitizeStreamingSecrets(
+  data,
+  { hasYoutubeStreamKey = false, hasFacebookStreamKey = false } = {}
+) {
   if (!data || typeof data !== 'object') return data;
   delete data.youtubeStreamKey;
+  delete data.facebookStreamKey;
   delete data.rtmpStreamKey;
   data.youtubeStreamKeySet = Boolean(hasYoutubeStreamKey);
+  data.facebookStreamKeySet = Boolean(hasFacebookStreamKey);
   return data;
 }
 
