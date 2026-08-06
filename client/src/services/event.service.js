@@ -89,12 +89,6 @@ export const eventService = {
 };
 
 export const EVENT_CATEGORIES = [
-  'conference',
-  'workshop',
-  'webinar',
-  'concert',
-  'meetup',
-  'sports',
   'other',
 ];
 

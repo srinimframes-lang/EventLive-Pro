@@ -25,7 +25,7 @@ const LINK_COSTS = { youtube: 1, server: 5 };
 const EMPTY = {
   title: '',
   description: '',
-  category: 'webinar',
+  category: 'other',
   status: 'draft',
   startTime: '',
   endTime: '',
@@ -130,7 +130,7 @@ export default function EventForm() {
         setForm({
           title: event.title || '',
           description: event.description || '',
-          category: event.category || 'webinar',
+          category: event.category || 'other',
           status: event.status || 'draft',
           startTime: toDateTimeLocal(event.startTime),
           endTime: toDateTimeLocal(event.endTime),
@@ -375,17 +375,25 @@ export default function EventForm() {
       }
     }
 
+    const startIso = form.startTime ? new Date(form.startTime).toISOString() : undefined;
+    // End time UI removed — keep API required field by defaulting to 24h after start when unset.
+    let endIso = form.endTime ? new Date(form.endTime).toISOString() : undefined;
+    if (!endIso && startIso) {
+      endIso = new Date(new Date(startIso).getTime() + 24 * 60 * 60 * 1000).toISOString();
+    }
+
     const payload = {
       title: form.title.trim(),
-      description: form.description.trim(),
-      category: form.category,
+      // Description removed from create UI; backend still requires a value.
+      description: form.description.trim() || form.title.trim(),
+      category: form.category || 'other',
       status: form.status,
       isOnline: form.isOnline,
       location: form.isOnline ? 'Online' : form.location,
       venue: form.venue?.trim() || '',
       capacity: Number(form.capacity) || 0,
-      startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
-      endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
+      startTime: startIso,
+      endTime: endIso,
       brideName: form.brideName?.trim() || '',
       groomName: form.groomName?.trim() || '',
       pageTemplate: form.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
@@ -571,15 +579,18 @@ export default function EventForm() {
               placeholder="e.g. Aarav & Priya — Wedding Live" />
           </Field>
 
-          <Field label="Description" htmlFor="description">
-            <textarea id="description" name="description" required rows={5}
-              className="input" value={form.description} onChange={handleChange} />
-          </Field>
+          {isEdit && (
+            <Field label="Description" htmlFor="description">
+              <textarea id="description" name="description" rows={5}
+                className="input" value={form.description} onChange={handleChange} />
+            </Field>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Category" htmlFor="category">
               <select id="category" name="category" className="input capitalize"
-                value={form.category} onChange={handleChange}>
+                value={EVENT_CATEGORIES.includes(form.category) ? form.category : 'other'}
+                onChange={handleChange}>
                 {EVENT_CATEGORIES.map((c) => (
                   <option key={c} value={c} className="capitalize">{c}</option>
                 ))}
@@ -595,16 +606,10 @@ export default function EventForm() {
             </Field>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Start time" htmlFor="startTime">
-              <input id="startTime" name="startTime" type="datetime-local" required
-                className="input" value={form.startTime} onChange={handleChange} />
-            </Field>
-            <Field label="End time" htmlFor="endTime">
-              <input id="endTime" name="endTime" type="datetime-local" required
-                className="input" value={form.endTime} onChange={handleChange} />
-            </Field>
-          </div>
+          <Field label="Start time" htmlFor="startTime">
+            <input id="startTime" name="startTime" type="datetime-local" required
+              className="input" value={form.startTime} onChange={handleChange} />
+          </Field>
         </Section>
 
         {/* ── Page template ──────────────────────────────────── */}
