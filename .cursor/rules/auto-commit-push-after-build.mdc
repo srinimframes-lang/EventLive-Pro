@@ -1,0 +1,30 @@
+---
+description: Auto-commit and push after successful builds without asking
+alwaysApply: true
+---
+
+# Auto commit & push after successful builds
+
+After every **successful** production build (and relevant tests when they are part of the task):
+
+1. **Commit** the changes you made for that work automatically.
+2. **Push** to the **current Git branch** automatically.
+3. **Do not ask** for commit or push confirmation.
+
+## Stop and do not commit/push when
+
+- Build error
+- Test failure
+- Merge conflict
+- Potentially destructive change (force push, hard reset, deleting production data, overwriting secrets, etc.)
+
+## Otherwise
+
+- Continue automatically.
+- In the final response, show **only the commit hash** after pushing (keep any critical failure notes if you had to stop).
+
+## Commit hygiene
+
+- Stage only files related to the work just completed; exclude unrelated paths (e.g. `backups/`, local secrets, `.env`).
+- Use a concise commit message focused on why.
+- Never update git config; never force-push to main/master unless explicitly requested.
