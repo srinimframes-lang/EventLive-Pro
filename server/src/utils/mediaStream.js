@@ -211,7 +211,7 @@ export async function findEventByStreamKey(rawKey) {
   if (!key) return null;
   const or = [{ rtmpStreamKey: key }];
   if (mongoose.isValidObjectId(key)) or.push({ _id: key });
-  return Event.findOne({ $or: or }).select('+rtmpStreamKey');
+  return Event.findOne({ $or: or }).select('+rtmpStreamKey +youtubeStreamKey');
 }
 
 export async function ensureEventStreamKey(event) {

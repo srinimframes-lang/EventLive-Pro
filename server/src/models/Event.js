@@ -221,6 +221,18 @@ const eventSchema = new Schema(
     // and the role of the creator ('admin' events consume no credits).
     creditType: { type: String, enum: ['youtube', 'server', 'none'], default: 'none' },
     createdByRole: { type: String, default: '' },
+    // Public streaming destination (UI). Additive — missing on legacy docs is fine.
+    // server = Server Only, youtube = YouTube Only, server_youtube = simultaneous.
+    streamingDestination: {
+      type: String,
+      enum: ['server', 'youtube', 'server_youtube'],
+    },
+    // YouTube RTMP ingest (for OBS→YouTube or MediaMTX→YouTube forward).
+    youtubeRtmpUrl: { type: String, trim: true, default: '' },
+    // YouTube stream key — never returned unless explicitly selected.
+    youtubeStreamKey: { type: String, default: '', select: false },
+    // When true (and destination is server_youtube), MediaMTX forwards RTMP to YouTube.
+    youtubeForwardEnabled: { type: Boolean, default: false },
     // Secret RTMP ingest key — never returned unless explicitly selected.
     rtmpStreamKey: { type: String, default: '', select: false },
     // Full OBS publish URL for Premium Server Live (rtmp://host:1935/live/<eventId>).
@@ -453,6 +465,9 @@ eventSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc, ret) => {
     delete ret.__v;
+    // Never leak ingest secrets in JSON responses.
+    delete ret.rtmpStreamKey;
+    delete ret.youtubeStreamKey;
     return ret;
   },
 });

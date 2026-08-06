@@ -27,4 +27,11 @@ if [[ -n "$MEDIA_SECRET" ]]; then
     || echo "on-publish-notify: warning — stream/started failed for ${PATH_NAME}" >&2
 fi
 
+# Optional Server → YouTube RTMP forward (no-op unless event has it enabled).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "${SCRIPT_DIR}/youtube-forward-start.sh" ]]; then
+  "${SCRIPT_DIR}/youtube-forward-start.sh" "$PATH_NAME" \
+    || echo "on-publish-notify: warning — youtube forward start failed for ${PATH_NAME}" >&2
+fi
+
 exit 0

@@ -19,6 +19,7 @@ import {
   emergencyStreamControl,
   authenticateStream,
   mediamtxAuth,
+  youtubeForwardConfig,
   streamStarted,
   streamStopped,
   recordingReady,
@@ -58,6 +59,8 @@ router
 // never collides with the slug/:id param routes below.
 router.post('/stream/auth', authenticateStream);
 router.post('/stream/mediamtx-auth', mediamtxAuth);
+router.get('/stream/youtube-forward', youtubeForwardConfig);
+router.post('/stream/youtube-forward', youtubeForwardConfig);
 router.post('/stream/started', streamStarted);
 router.post('/stream/stopped', streamStopped);
 router.post('/stream/recording-ready', recordingReady);

@@ -76,6 +76,37 @@ if (!withKey.hlsUrl?.includes(withKey.rtmpStreamKey)) {
 }
 console.log('OK Server event', srvEvent.shortCode, 'rtmp=', withKey.rtmpPublishUrl);
 
+// Server + YouTube simultaneous
+const { applyYoutubeForwardFields } = await import('../src/utils/youtubeForward.js');
+const bothPayload = { ...base, title: 'Server+YouTube Stream Test' };
+applyStreamTypeSelection(bothPayload, normalizeStreamType({ streamType: 'server_youtube' }), {
+  isCreate: true,
+});
+const fwdErr = applyYoutubeForwardFields(
+  bothPayload,
+  {
+    streamingDestination: 'server_youtube',
+    youtubeRtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+    youtubeStreamKey: 'xxxx-yyyy-zzzz-aaaa',
+    youtubeForwardEnabled: true,
+  },
+  { isCreate: true }
+);
+if (fwdErr) throw new Error(fwdErr);
+const bothEvent = await Event.create(bothPayload);
+if (bothEvent.streamProvider !== 'rtmp') throw new Error('Simultaneous should use rtmp provider');
+if (bothEvent.streamingDestination !== 'server_youtube') {
+  throw new Error('Simultaneous destination mismatch');
+}
+if (!bothEvent.youtubeForwardEnabled) throw new Error('Forward should be enabled');
+const bothKeyed = await Event.findById(bothEvent._id).select('+youtubeStreamKey');
+if (bothKeyed.youtubeStreamKey !== 'xxxx-yyyy-zzzz-aaaa') {
+  throw new Error('YouTube stream key not stored');
+}
+const bothJson = bothEvent.toJSON();
+if (bothJson.youtubeStreamKey) throw new Error('YouTube stream key leaked in toJSON');
+console.log('OK Server+YouTube event', bothEvent.shortCode);
+
 const { deriveHlsPlaybackUrl } = await import('../src/utils/mediaStream.js');
 const playback = deriveHlsPlaybackUrl(withKey);
 const expectedPlayback = `https://stream.eventlivepro.com/live/${srvEvent._id}/index.m3u8`;

@@ -51,6 +51,10 @@ import {
   resolveBackupYoutubeId,
 } from '../utils/streamFailover.js';
 import {
+  buildYoutubeForwardTarget,
+  DEFAULT_YOUTUBE_RTMP,
+} from '../utils/youtubeForward.js';
+import {
   clearMergeTimer,
   clearOfflineTimer,
   isWithinReconnectGrace,
@@ -661,6 +665,59 @@ export const mediamtxAuth = asyncHandler(async (req, res) => {
     return res.status(401).json({ ok: false });
   }
   return res.status(200).json({ ok: true });
+});
+
+/**
+ * @route GET /api/events/stream/youtube-forward
+ * @desc  MediaMTX VPS hook asks whether to ffmpeg-forward this path to YouTube.
+ *        Returns the RTMP target only when forward is enabled for the event.
+ *        Never expose this without x-media-secret.
+ * @access Media server (x-media-secret)
+ */
+export const youtubeForwardConfig = asyncHandler(async (req, res) => {
+  if (!mediaSecretOk(req)) {
+    res.status(401);
+    throw new Error('Unauthorized');
+  }
+
+  const streamKey = parseMediaMtxPath(
+    req.query.path || req.query.streamKey || req.body?.path || req.body?.streamKey || ''
+  );
+  if (!streamKey) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'missing_path' });
+  }
+
+  const event = await findEventByStreamKey(streamKey);
+  if (!event) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
+  }
+
+  // Only forward when explicitly configured for simultaneous Server + YouTube.
+  const allowForward =
+    Boolean(event.youtubeForwardEnabled) &&
+    (event.streamingDestination === 'server_youtube' ||
+      (!event.streamingDestination && event.streamProvider === 'rtmp'));
+
+  if (!allowForward || event.streamingDestination === 'server' || event.streamingDestination === 'youtube') {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'forward_disabled' });
+  }
+
+  const ytKey = event.youtubeStreamKey || '';
+  const ytUrl = event.youtubeRtmpUrl || DEFAULT_YOUTUBE_RTMP;
+  const target = buildYoutubeForwardTarget(ytUrl, ytKey);
+  if (!target) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'missing_credentials' });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    enabled: true,
+    eventId: String(event._id),
+    rtmpUrl: ytUrl,
+    // Key only over media-secret channel for VPS ffmpeg; never for browsers.
+    streamKey: ytKey,
+    target,
+  });
 });
 
 /**

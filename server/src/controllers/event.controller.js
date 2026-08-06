@@ -17,7 +17,9 @@ import {
   applyStreamTypeSelection,
   resolveStreamType,
   validateOnlineStreamPayload,
+  streamTypeFromEvent,
 } from '../utils/streamType.js';
+import { applyYoutubeForwardFields, sanitizeStreamingSecrets } from '../utils/youtubeForward.js';
 import { freshServerStreamUrls } from '../utils/mediaStream.js';
 import { canManageEvent } from '../utils/ownership.js';
 import { createdByFilter, isAdminPanelUser } from '../utils/tenantScope.js';
@@ -59,7 +61,26 @@ const EDITABLE_FIELDS = [
   'hlsUrl',
   'webrtcUrl',
   'chatEnabled',
+  'streamingDestination',
+  'youtubeRtmpUrl',
+  'youtubeForwardEnabled',
 ];
+
+async function decorateEventResponse(eventDoc) {
+  const plain = eventDoc?.toJSON ? eventDoc.toJSON() : { ...eventDoc };
+  if (plain._id && plain.id == null) plain.id = String(plain._id);
+  const id = plain.id || plain._id;
+  let hasYtKey = false;
+  if (id) {
+    const keyed = await Event.findById(id).select('+youtubeStreamKey').lean();
+    hasYtKey = Boolean(keyed?.youtubeStreamKey);
+  }
+  sanitizeStreamingSecrets(plain, { hasYoutubeStreamKey: hasYtKey });
+  if (!plain.streamingDestination) {
+    plain.streamingDestination = streamTypeFromEvent(plain);
+  }
+  return plain;
+}
 
 /**
  * Normalize + validate backup stream fields for Premium Server events only.
@@ -304,6 +325,14 @@ export const getEvent = asyncHandler(async (req, res) => {
   }
   delete data.rtmpPublishUrl;
   delete data.rtmpStreamKey;
+  delete data.youtubeStreamKey;
+  {
+    const keyed = await Event.findById(event._id).select('+youtubeStreamKey').lean();
+    data.youtubeStreamKeySet = Boolean(keyed?.youtubeStreamKey);
+  }
+  if (!data.streamingDestination) {
+    data.streamingDestination = streamTypeFromEvent(data);
+  }
 
   // Fresh R2 (or legacy) display URLs for gallery images.
   try {
@@ -371,6 +400,15 @@ export const createEvent = asyncHandler(async (req, res) => {
     throw new Error(streamError);
   }
   if (streamType) applyStreamTypeSelection(payload, streamType, { isCreate: true });
+  const forwardErr = applyYoutubeForwardFields(payload, req.body, { isCreate: true });
+  if (forwardErr) {
+    res.status(400);
+    throw new Error(forwardErr);
+  }
+  // youtubeStreamKey is select:false — set explicitly from body after validation.
+  if (req.body.youtubeStreamKey !== undefined && payload.youtubeStreamKey) {
+    // already on payload from applyYoutubeForwardFields
+  }
   applyBackupStreamFields(payload, req.body, res);
 
   try {
@@ -380,20 +418,20 @@ export const createEvent = asyncHandler(async (req, res) => {
       payload.createdBy = req.user._id;
       payload.creditType = 'none';
       const event = await Event.create(payload);
-      const populated = await loadVerifiedEvent(event._id);
+      const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
       scheduleEventQrSync(event._id);
       // eslint-disable-next-line no-console
       console.info(`[events] created admin user=${userId} id=${event._id} shortCode=${event.shortCode}`);
       return res.status(201).json({ success: true, data: populated });
     }
 
-    // ── Everyone else: pay with credits (YouTube = 1, Server = 5) ────────
+    // ── Everyone else: pay with credits (YouTube = 1, Server / Simultaneous = 5) ────────
     const linkType = streamType || (req.body.linkType === 'server' ? 'server' : 'youtube');
-    const cost = linkCost(linkType);
+    const cost = linkCost(linkType === 'server_youtube' ? 'server_youtube' : linkType);
     payload.organizer = req.user._id;
     // Tenant owner is the admin who created this customer/subadmin (if any).
     payload.createdBy = req.user.createdBy || null;
-    payload.creditType = linkType;
+    payload.creditType = linkType === 'server_youtube' ? 'server' : linkType;
 
     const updated = await changeBalance({
       userId: req.user._id,
@@ -423,7 +461,7 @@ export const createEvent = asyncHandler(async (req, res) => {
       throw err;
     }
 
-    const populated = await loadVerifiedEvent(event._id);
+    const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
     scheduleEventQrSync(event._id);
     // eslint-disable-next-line no-console
     console.info(`[events] created user=${userId} id=${event._id} shortCode=${event.shortCode}`);
@@ -445,7 +483,7 @@ export const createEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const updateEvent = asyncHandler(async (req, res) => {
-  const event = await Event.findById(req.params.id);
+  const event = await Event.findById(req.params.id).select('+youtubeStreamKey');
   if (!event) {
     res.status(404);
     throw new Error('Event not found');
@@ -476,11 +514,16 @@ export const updateEvent = asyncHandler(async (req, res) => {
     }
     applyStreamTypeSelection(event, streamType);
   }
+  const forwardErr = applyYoutubeForwardFields(event, req.body, { isCreate: false });
+  if (forwardErr) {
+    res.status(400);
+    throw new Error(forwardErr);
+  }
   applyBackupStreamFields(event, req.body, res);
 
   try {
     await event.save();
-    const populated = await loadVerifiedEvent(event._id);
+    const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
     scheduleEventQrSync(event._id);
     // eslint-disable-next-line no-console
     console.info(`[events] updated user=${req.user._id} id=${event._id}`);

@@ -26,4 +26,10 @@ if [[ -n "$MEDIA_SECRET" ]]; then
     || echo "on-unpublish-notify: warning — stream/stopped failed for ${PATH_NAME}" >&2
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "${SCRIPT_DIR}/youtube-forward-stop.sh" ]]; then
+  "${SCRIPT_DIR}/youtube-forward-stop.sh" "$PATH_NAME" \
+    || echo "on-unpublish-notify: warning — youtube forward stop failed for ${PATH_NAME}" >&2
+fi
+
 exit 0

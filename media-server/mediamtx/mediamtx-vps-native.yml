@@ -68,6 +68,10 @@ authHTTPExclude:
 # Automatic recording: starts when OBS publishes, stops when the stream ends.
 # Native format is fMP4 (.mp4); finalize-recording.sh remuxes to standard MP4
 # under recordings/<eventId>/ after the stream ends (never during live).
+#
+# Server + YouTube: on-publish-notify.sh optionally starts ffmpeg to forward
+# the same RTMP publish to the event's YouTube RTMP URL+key (when enabled).
+# Website playback remains MediaMTX HLS — unchanged.
 readTimeout: 60s
 writeTimeout: 30s
 
