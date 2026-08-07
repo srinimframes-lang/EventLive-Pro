@@ -48,4 +48,5 @@ server/uploads/
 !.env.production
 uploads/
 recordings/
+backups/
 hls-cache/

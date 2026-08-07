@@ -59,6 +59,15 @@ import {
   postSystemHealthRestart,
   postSystemHealthAck,
 } from '../controllers/systemHealth.controller.js';
+import {
+  getBackupStatus,
+  getBackups,
+  getBackupLogs,
+  postRunBackup,
+  downloadBackup,
+  postRestoreBackup,
+  deleteBackup,
+} from '../controllers/backup.controller.js';
 import { protect, authorize, authorizePlatformAdmin } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 import { bannerUpload } from '../middleware/bannerUpload.middleware.js';
@@ -143,5 +152,14 @@ router.get('/system-health/logs', authorizePlatformAdmin, getSystemHealthLogs);
 router.post('/system-health/test', authorizePlatformAdmin, postSystemHealthTest);
 router.post('/system-health/restart', authorizePlatformAdmin, postSystemHealthRestart);
 router.post('/system-health/ack', authorizePlatformAdmin, postSystemHealthAck);
+
+// Backup Manager (platform Super Admin — MongoDB + recordings archives)
+router.get('/backups/status', authorizePlatformAdmin, getBackupStatus);
+router.get('/backups/logs', authorizePlatformAdmin, getBackupLogs);
+router.get('/backups', authorizePlatformAdmin, getBackups);
+router.post('/backups/run', authorizePlatformAdmin, postRunBackup);
+router.get('/backups/:id/download', authorizePlatformAdmin, downloadBackup);
+router.post('/backups/:id/restore', authorizePlatformAdmin, postRestoreBackup);
+router.delete('/backups/:id', authorizePlatformAdmin, deleteBackup);
 
 export default router;

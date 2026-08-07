@@ -159,6 +159,62 @@ export const adminService = {
     return data.data;
   },
 
+  // ── Backup Manager (Super Admin) ────────────────────────
+  async getBackupStatus() {
+    const { data } = await api.get('/api/admin/backups/status');
+    return data.data;
+  },
+  async listBackups(params = {}) {
+    const { data } = await api.get('/api/admin/backups', { params });
+    return data.data;
+  },
+  async runBackup() {
+    const { data } = await api.post('/api/admin/backups/run', {}, { timeout: 30 * 60 * 1000 });
+    if (!data.success) throw new Error(data.message || 'Backup failed');
+    return data.data;
+  },
+  async restoreBackup(id, payload) {
+    const { data } = await api.post(`/api/admin/backups/${id}/restore`, payload, {
+      timeout: 60 * 60 * 1000,
+    });
+    return data.data;
+  },
+  async downloadBackup(id) {
+    const base = api.defaults.baseURL || '';
+    const token = localStorage.getItem('token');
+    const url = `${base}/api/admin/backups/${encodeURIComponent(id)}/download`;
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let msg = `Download failed (${res.status})`;
+      try {
+        const j = await res.json();
+        if (j.message) msg = j.message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    // R2 redirect or zip body
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const j = await res.json();
+      throw new Error(j.message || 'Download unavailable');
+    }
+    const blob = await res.blob();
+    const disp = res.headers.get('content-disposition') || '';
+    const m = /filename="?([^"]+)"?/i.exec(disp);
+    const filename = m?.[1] || `backup-${id}.zip`;
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(objectUrl);
+  },
+
   // ── White-label: per-customer branding ──────────────────
   async updateCustomerBranding(id, payload) {
     const { data } = await api.patch(`/api/admin/customers/${id}/branding`, payload);

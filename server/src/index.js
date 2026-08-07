@@ -5,6 +5,7 @@ import { connectDB } from './config/db.js';
 import { initSocket } from './realtime/socket.js';
 import { runSeed } from './config/seed.js';
 import { startFailoverHealthWorker } from './services/failoverHealthWorker.js';
+import { startBackupWorker } from './services/backupWorker.js';
 import { syncHlsCdnFromSettings } from './controllers/settings.controller.js';
 
 async function start() {
@@ -34,6 +35,9 @@ async function start() {
 
   // Dormant unless FAILOVER_ENABLED=true — does not alter livestream when off.
   startFailoverHealthWorker({ getIo: () => app.get('io') });
+
+  // Daily MongoDB + recordings backup (never stops MediaMTX / OBS).
+  startBackupWorker({ getIo: () => app.get('io') });
 
   server.listen(env.port, () => {
     // eslint-disable-next-line no-console
