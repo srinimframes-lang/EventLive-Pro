@@ -9,6 +9,7 @@ import AdminDomains from '../components/admin/AdminDomains.jsx';
 import AdminThemes from '../components/admin/AdminThemes.jsx';
 import AdminBanners from '../components/admin/AdminBanners.jsx';
 import AdminAdmins from '../components/admin/AdminAdmins.jsx';
+import AdminSystemHealth from '../components/admin/AdminSystemHealth.jsx';
 
 const BASE_TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -22,6 +23,7 @@ const SUPER_TABS = [
   { id: 'admins', label: 'Admins' },
   { id: 'themes', label: 'Themes' },
   { id: 'banners', label: 'Banners' },
+  { id: 'health', label: 'System Health' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -69,6 +71,7 @@ export default function Admin() {
         {isSuperAdmin && activeTab === 'admins' && <AdminAdmins />}
         {isSuperAdmin && activeTab === 'themes' && <AdminThemes />}
         {isSuperAdmin && activeTab === 'banners' && <AdminBanners />}
+        {isSuperAdmin && activeTab === 'health' && <AdminSystemHealth />}
         {isSuperAdmin && activeTab === 'settings' && <AdminSettings />}
       </div>
     </div>

@@ -137,6 +137,28 @@ export const adminService = {
     return data.data;
   },
 
+  // ── System Health (Super Admin) ─────────────────────────
+  async getSystemHealth() {
+    const { data } = await api.get('/api/admin/system-health');
+    return data.data;
+  },
+  async getSystemHealthLogs(params = {}) {
+    const { data } = await api.get('/api/admin/system-health/logs', { params });
+    return data.data;
+  },
+  async runSystemHealthTest(test) {
+    const { data } = await api.post('/api/admin/system-health/test', { test });
+    return data.data;
+  },
+  async restartSystemService(service) {
+    const { data } = await api.post('/api/admin/system-health/restart', { service });
+    return data.data;
+  },
+  async ackSystemHealth(payload) {
+    const { data } = await api.post('/api/admin/system-health/ack', payload);
+    return data.data;
+  },
+
   // ── White-label: per-customer branding ──────────────────
   async updateCustomerBranding(id, payload) {
     const { data } = await api.patch(`/api/admin/customers/${id}/branding`, payload);

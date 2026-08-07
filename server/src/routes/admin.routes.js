@@ -52,6 +52,13 @@ import {
   adminUploadBannerImage,
   adminDeleteBanner,
 } from '../controllers/banner.controller.js';
+import {
+  getSystemHealth,
+  getSystemHealthLogs,
+  postSystemHealthTest,
+  postSystemHealthRestart,
+  postSystemHealthAck,
+} from '../controllers/systemHealth.controller.js';
 import { protect, authorize, authorizePlatformAdmin } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 import { bannerUpload } from '../middleware/bannerUpload.middleware.js';
@@ -129,5 +136,12 @@ router.post(
   adminUploadBannerImage
 );
 router.delete('/banners/:id', authorizePlatformAdmin, adminDeleteBanner);
+
+// System Health (platform Super Admin only — diagnostics / safe restarts)
+router.get('/system-health', authorizePlatformAdmin, getSystemHealth);
+router.get('/system-health/logs', authorizePlatformAdmin, getSystemHealthLogs);
+router.post('/system-health/test', authorizePlatformAdmin, postSystemHealthTest);
+router.post('/system-health/restart', authorizePlatformAdmin, postSystemHealthRestart);
+router.post('/system-health/ack', authorizePlatformAdmin, postSystemHealthAck);
 
 export default router;
