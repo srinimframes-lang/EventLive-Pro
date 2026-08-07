@@ -8,6 +8,8 @@ import {
   normalizeForwardRtmpUrl,
   normalizeForwardStreamKey,
   sanitizeForwardSecrets,
+  describeForwardEligibility,
+  coerceStoredStreamKey,
 } from './streamForward.js';
 import { sanitizeStreamingSecrets } from './youtubeForward.js';
 
@@ -17,6 +19,27 @@ test('normalizeForwardRtmpUrl accepts Facebook rtmps', () => {
     'rtmps://live-api-s.facebook.com:443/rtmp'
   );
   assert.equal(normalizeForwardRtmpUrl('https://facebook.com'), null);
+});
+
+test('coerceStoredStreamKey accepts opaque platform keys', () => {
+  assert.equal(coerceStoredStreamKey('FB-abc_123.xyz'), 'FB-abc_123.xyz');
+  assert.equal(coerceStoredStreamKey('a b'), null);
+});
+
+test('describeForwardEligibility reports missing keys without leaking secrets', () => {
+  const d = describeForwardEligibility({
+    streamingDestination: 'server_youtube',
+    streamProvider: 'rtmp',
+    youtubeForwardEnabled: true,
+    youtubeStreamKey: '',
+    facebookForwardEnabled: true,
+    facebookStreamKey: '',
+  });
+  assert.equal(d.youtubeWanted, true);
+  assert.equal(d.hasYoutubeStreamKey, false);
+  assert.equal(d.youtubeSkipReason, 'missing_youtube_stream_key');
+  assert.equal(d.facebookWanted, true);
+  assert.equal(d.facebookSkipReason, 'missing_facebook_stream_key');
 });
 
 test('normalizeForwardStreamKey accepts Facebook-style keys', () => {

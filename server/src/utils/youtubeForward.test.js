@@ -34,6 +34,11 @@ test('normalizeYoutubeStreamKey enforces charset and length', () => {
   assert.equal(normalizeYoutubeStreamKey('bad key!'), null);
 });
 
+test('buildYoutubeForwardTarget accepts longer stored keys', () => {
+  const longKey = `yt-${'a'.repeat(200)}`;
+  assert.ok(buildYoutubeForwardTarget('rtmp://a.rtmp.youtube.com/live2', longKey)?.includes(longKey));
+});
+
 test('buildYoutubeForwardTarget joins url and key', () => {
   assert.equal(
     buildYoutubeForwardTarget('rtmp://a.rtmp.youtube.com/live2', 'xxxx-xxxx-xxxx'),

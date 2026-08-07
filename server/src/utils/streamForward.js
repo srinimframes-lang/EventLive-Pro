@@ -21,7 +21,7 @@ export function normalizeForwardRtmpUrl(raw) {
 
 /**
  * Opaque stream keys (YouTube / Facebook Live).
- * Facebook keys are often longer; allow 6–256 safe chars.
+ * Facebook keys are often longer; allow 6–256 safe chars on save.
  */
 export function normalizeForwardStreamKey(raw) {
   const value = String(raw || '').trim();
@@ -31,9 +31,23 @@ export function normalizeForwardStreamKey(raw) {
   return value;
 }
 
+/**
+ * Coerce an already-stored stream key for RTMP target building.
+ * Looser than save-time validation so legacy / platform keys still forward.
+ */
+export function coerceStoredStreamKey(raw) {
+  const value = String(raw || '').trim();
+  if (value.length < 4 || value.length > 512) return null;
+  if (/[\r\n\0\s]/.test(value)) return null;
+  return value;
+}
+
 export function buildForwardTarget(rtmpUrl, streamKey, { fallbackUrl = '' } = {}) {
   const base = normalizeForwardRtmpUrl(rtmpUrl) || normalizeForwardRtmpUrl(fallbackUrl);
-  const key = normalizeForwardStreamKey(streamKey);
+  const key =
+    normalizeForwardStreamKey(streamKey) ||
+    normalizeYoutubeStreamKey(streamKey) ||
+    coerceStoredStreamKey(streamKey);
   if (!base || !key) return null;
   return `${base.replace(/\/+$/, '')}/${key}`;
 }
@@ -65,9 +79,9 @@ export function applyFacebookForwardFields(target, body = {}, { isCreate = false
     if (!raw) {
       if (isCreate) target.facebookStreamKey = '';
     } else {
-      const key = normalizeForwardStreamKey(raw);
+      const key = normalizeForwardStreamKey(raw) || coerceStoredStreamKey(raw);
       if (key === null) {
-        return 'Facebook stream key must be 6–256 characters (letters, numbers, . _ -).';
+        return 'Facebook stream key must be 6–256 characters (no spaces).';
       }
       target.facebookStreamKey = key;
     }
@@ -113,6 +127,61 @@ export function applyFacebookForwardFields(target, body = {}, { isCreate = false
   return null;
 }
 
+/** Non-secret diagnostics for VPS forward hooks / logs. */
+export function describeForwardEligibility(event = {}) {
+  const dest = normalizeStreamingDestination(event.streamingDestination);
+  const hasYtKey = Boolean(coerceStoredStreamKey(event.youtubeStreamKey));
+  const hasFbKey = Boolean(coerceStoredStreamKey(event.facebookStreamKey));
+  const youtubeWanted =
+    Boolean(event.youtubeForwardEnabled) &&
+    (dest === 'server_youtube' ||
+      dest === 'youtube_server' ||
+      (!dest && event.streamProvider === 'rtmp')) &&
+    dest !== 'server' &&
+    dest !== 'youtube';
+  const facebookWanted =
+    Boolean(event.facebookForwardEnabled) && eventUsesServerIngest(event);
+
+  let youtubeSkipReason = '';
+  if (!Boolean(event.youtubeForwardEnabled)) youtubeSkipReason = 'youtube_forward_disabled';
+  else if (dest === 'server' || dest === 'youtube') youtubeSkipReason = 'destination_blocks_youtube';
+  else if (!youtubeWanted) youtubeSkipReason = 'destination_not_youtube_forward';
+  else if (!hasYtKey) youtubeSkipReason = 'missing_youtube_stream_key';
+  else if (
+    !buildForwardTarget(event.youtubeRtmpUrl || DEFAULT_YOUTUBE_RTMP, event.youtubeStreamKey, {
+      fallbackUrl: DEFAULT_YOUTUBE_RTMP,
+    }) &&
+    !buildYoutubeForwardTarget(event.youtubeRtmpUrl || DEFAULT_YOUTUBE_RTMP, event.youtubeStreamKey)
+  ) {
+    youtubeSkipReason = 'youtube_target_build_failed';
+  }
+
+  let facebookSkipReason = '';
+  if (!Boolean(event.facebookForwardEnabled)) facebookSkipReason = 'facebook_forward_disabled';
+  else if (!eventUsesServerIngest(event)) facebookSkipReason = 'no_server_ingest';
+  else if (!hasFbKey) facebookSkipReason = 'missing_facebook_stream_key';
+  else if (
+    !buildForwardTarget(event.facebookRtmpUrl || DEFAULT_FACEBOOK_RTMP, event.facebookStreamKey, {
+      fallbackUrl: DEFAULT_FACEBOOK_RTMP,
+    })
+  ) {
+    facebookSkipReason = 'facebook_target_build_failed';
+  }
+
+  return {
+    streamingDestination: dest || event.streamingDestination || '',
+    streamProvider: event.streamProvider || '',
+    youtubeForwardEnabled: Boolean(event.youtubeForwardEnabled),
+    facebookForwardEnabled: Boolean(event.facebookForwardEnabled),
+    hasYoutubeStreamKey: hasYtKey,
+    hasFacebookStreamKey: hasFbKey,
+    youtubeWanted,
+    facebookWanted,
+    youtubeSkipReason,
+    facebookSkipReason,
+  };
+}
+
 /**
  * List enabled MediaMTX → destination RTMP forwards for an event.
  * Used by the VPS multi-forward hook (x-media-secret only).
@@ -142,7 +211,7 @@ export function listEnabledForwardTargets(event = {}) {
         id: 'youtube',
         platform: 'youtube',
         rtmpUrl: normalizeYoutubeRtmpUrl(ytUrl) || DEFAULT_YOUTUBE_RTMP,
-        streamKey: ytKey,
+        streamKey: coerceStoredStreamKey(ytKey) || ytKey,
         target,
       });
     }
@@ -157,7 +226,7 @@ export function listEnabledForwardTargets(event = {}) {
         id: 'facebook',
         platform: 'facebook',
         rtmpUrl: normalizeForwardRtmpUrl(fbUrl) || DEFAULT_FACEBOOK_RTMP,
-        streamKey: fbKey,
+        streamKey: coerceStoredStreamKey(fbKey) || fbKey,
         target,
       });
     }

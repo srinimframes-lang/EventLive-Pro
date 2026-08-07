@@ -4,23 +4,26 @@
 # HLS playback, recording, or Server Only / YouTube Only events.
 set -euo pipefail
 
+log() { echo "youtube-forward-start: $*" >&2; }
+
 PATH_NAME="${MTX_PATH:-${1:-}}"
 if [[ -z "$PATH_NAME" ]]; then
-  echo "youtube-forward-start: empty path — exit" >&2
+  log "empty path — exit"
   exit 0
 fi
 
-# MediaMTX paths look like "live/<eventId>" — flatten for pid files.
+log "begin path=${PATH_NAME}"
+
 SAFE_NAME="$(echo "$PATH_NAME" | tr '/ ' '__')"
 PID_DIR="${YT_FORWARD_PID_DIR:-/tmp/eventlive-yt-forward}"
 mkdir -p "$PID_DIR"
 PID_FILE="${PID_DIR}/${SAFE_NAME}.pid"
 LOG_FILE="${PID_DIR}/${SAFE_NAME}.log"
 
-# Stop any previous forwarder for this path.
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [[ -n "${OLD_PID:-}" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+    log "stopping previous pid=${OLD_PID}"
     kill "$OLD_PID" 2>/dev/null || true
     sleep 0.5
     kill -9 "$OLD_PID" 2>/dev/null || true
@@ -35,21 +38,23 @@ if [[ -f "$SECRET_FILE" ]]; then
   MEDIA_SECRET="$(grep -E '^MEDIA_SERVER_SECRET=' "$SECRET_FILE" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
 fi
 if [[ -z "$MEDIA_SECRET" ]]; then
-  echo "youtube-forward-start: MEDIA_SERVER_SECRET missing — exit" >&2
+  log "FAILED reason=MEDIA_SERVER_SECRET_missing"
   exit 0
 fi
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "youtube-forward-start: ffmpeg not installed — exit" >&2
+  log "FAILED reason=ffmpeg_not_installed"
   exit 0
 fi
 
-RESP="$(curl -sS -m 8 -G "${API_BASE}/api/events/stream/youtube-forward" \
+RAW="$(curl -sS -m 10 -G "${API_BASE}/api/events/stream/youtube-forward" \
   --data-urlencode "path=${PATH_NAME}" \
   -H "x-media-secret: ${MEDIA_SECRET}" \
+  -w "\n%{http_code}" \
   || true)"
-
-echo "youtube-forward-start: api response for ${PATH_NAME}: ${RESP}" >&2
+HTTP_CODE="$(echo "$RAW" | tail -n1)"
+RESP="$(echo "$RAW" | sed '$d')"
+log "api http=${HTTP_CODE} body=${RESP}"
 
 ENABLED="$(RESP="$RESP" python3 - <<'PY'
 import json, os
@@ -68,24 +73,34 @@ TARGET="$(echo "$ENABLED" | sed -n '2p')"
 REASON="$(echo "$ENABLED" | sed -n '3p')"
 
 if [[ "$ENABLED_FLAG" != "1" || -z "$TARGET" ]]; then
-  echo "youtube-forward-start: forward disabled for ${PATH_NAME} reason=${REASON:-unknown}" >&2
+  log "destination=youtube enabled=false reason=${REASON:-unknown}"
   exit 0
 fi
 
-# Local MediaMTX RTMP read (auth excludes "read").
+log "destination=youtube enabled=true"
 SOURCE="rtmp://127.0.0.1:1935/${PATH_NAME}"
-
-# Brief wait so the publisher is fully ready.
 sleep 2
 
-echo "youtube-forward-start: ffmpeg ${SOURCE} -> YouTube (key redacted) log=${LOG_FILE}" >&2
+log "Forward started ffmpeg ${SOURCE} -> YouTube (key redacted) log=${LOG_FILE}"
 nohup ffmpeg -hide_banner -loglevel error \
   -rw_timeout 15000000 \
   -i "$SOURCE" \
   -c copy -f flv \
   "$TARGET" \
   >>"$LOG_FILE" 2>&1 &
-echo $! >"$PID_FILE"
-echo "youtube-forward-start: started pid=$(cat "$PID_FILE") for ${PATH_NAME}" >&2
+FFPID=$!
+echo "$FFPID" >"$PID_FILE"
+log "ffmpeg_pid=${FFPID}"
+
+sleep 2
+if kill -0 "$FFPID" 2>/dev/null; then
+  log "Forward success ffmpeg_pid=${FFPID} still_running=true"
+else
+  wait "$FFPID" 2>/dev/null || true
+  CODE=$?
+  ERR="$(tail -c 2000 "$LOG_FILE" 2>/dev/null | tr -d '\r' || true)"
+  log "FAILED reason=ffmpeg_exited_early exit_code=${CODE} error_output=${ERR}"
+  rm -f "$PID_FILE"
+fi
 
 exit 0

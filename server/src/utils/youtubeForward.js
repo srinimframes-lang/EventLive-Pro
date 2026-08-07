@@ -39,18 +39,23 @@ export function normalizeYoutubeRtmpUrl(raw) {
   return `${url.protocol}//${url.host}${path}`;
 }
 
-/** YouTube stream keys are opaque; allow common safe charset, length 6–128. */
+/** YouTube stream keys are opaque; allow common safe charset, length 6–256. */
 export function normalizeYoutubeStreamKey(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
-  if (value.length < 6 || value.length > 128) return null;
+  if (value.length < 6 || value.length > 256) return null;
   if (!/^[A-Za-z0-9._\-]+$/.test(value)) return null;
   return value;
 }
 
 export function buildYoutubeForwardTarget(rtmpUrl, streamKey) {
   const base = normalizeYoutubeRtmpUrl(rtmpUrl) || DEFAULT_YOUTUBE_RTMP;
-  const key = normalizeYoutubeStreamKey(streamKey);
+  // Prefer strict normalize; fall back to trimmed stored key (legacy / longer keys).
+  let key = normalizeYoutubeStreamKey(streamKey);
+  if (!key) {
+    const raw = String(streamKey || '').trim();
+    if (raw.length >= 4 && raw.length <= 512 && !/[\r\n\0\s]/.test(raw)) key = raw;
+  }
   if (!key) return null;
   return `${base.replace(/\/+$/, '')}/${key}`;
 }
@@ -89,7 +94,7 @@ export function applyYoutubeForwardFields(target, body = {}, { isCreate = false 
     } else {
       const key = normalizeYoutubeStreamKey(raw);
       if (key === null) {
-        return 'YouTube stream key must be 6–128 characters (letters, numbers, . _ -).';
+        return 'YouTube stream key must be 6–256 characters (letters, numbers, . _ -).';
       }
       target.youtubeStreamKey = key;
     }

@@ -59,6 +59,7 @@ import {
   DEFAULT_FACEBOOK_RTMP,
   listEnabledForwardTargets,
   buildForwardTarget,
+  describeForwardEligibility,
 } from '../utils/streamForward.js';
 import {
   clearMergeTimer,
@@ -737,9 +738,15 @@ export const youtubeForwardConfig = asyncHandler(async (req, res) => {
   const ytUrl = event.youtubeRtmpUrl || DEFAULT_YOUTUBE_RTMP;
   const target = buildYoutubeForwardTarget(ytUrl, ytKey);
   if (!target) {
+    // eslint-disable-next-line no-console
+    console.info(
+      `[forward] youtube disabled path=${streamKey} reason=missing_credentials hasKey=${Boolean(ytKey)}`
+    );
     return res.status(200).json({ ok: true, enabled: false, reason: 'missing_credentials' });
   }
 
+  // eslint-disable-next-line no-console
+  console.info(`[forward] youtube enabled path=${streamKey} eventId=${event._id}`);
   return res.status(200).json({
     ok: true,
     enabled: true,
@@ -787,9 +794,15 @@ export const facebookForwardConfig = asyncHandler(async (req, res) => {
   const fbUrl = event.facebookRtmpUrl || DEFAULT_FACEBOOK_RTMP;
   const target = buildForwardTarget(fbUrl, fbKey, { fallbackUrl: DEFAULT_FACEBOOK_RTMP });
   if (!target) {
+    // eslint-disable-next-line no-console
+    console.info(
+      `[forward] facebook disabled path=${streamKey} reason=missing_credentials hasKey=${Boolean(fbKey)}`
+    );
     return res.status(200).json({ ok: true, enabled: false, reason: 'missing_credentials' });
   }
 
+  // eslint-disable-next-line no-console
+  console.info(`[forward] facebook enabled path=${streamKey} eventId=${event._id}`);
   return res.status(200).json({
     ok: true,
     enabled: true,
@@ -829,12 +842,27 @@ export const streamForwardsConfig = asyncHandler(async (req, res) => {
   }
 
   const targets = listEnabledForwardTargets(event);
+  const diagnostics = describeForwardEligibility(event);
+  const reason = targets.length
+    ? undefined
+    : diagnostics.youtubeSkipReason ||
+      diagnostics.facebookSkipReason ||
+      'forward_disabled';
+
+  // eslint-disable-next-line no-console
+  console.info(
+    `[forward] multi path=${streamKey} enabled=${targets.length > 0} targets=${targets
+      .map((t) => t.id)
+      .join(',') || 'none'} reason=${reason || 'ok'} dest=${diagnostics.streamingDestination} yt=${diagnostics.youtubeForwardEnabled}/${diagnostics.hasYoutubeStreamKey} fb=${diagnostics.facebookForwardEnabled}/${diagnostics.hasFacebookStreamKey}`
+  );
+
   return res.status(200).json({
     ok: true,
     enabled: targets.length > 0,
     eventId: String(event._id),
     targets,
-    reason: targets.length ? undefined : 'forward_disabled',
+    reason,
+    diagnostics,
   });
 });
 
