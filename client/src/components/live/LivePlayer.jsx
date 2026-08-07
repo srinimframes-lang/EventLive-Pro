@@ -277,9 +277,15 @@ function isActivelyPlaying(video) {
  * Shared chrome: auto-hiding controls, center play, volume, fullscreen, scrubber.
  * @param {React.MutableRefObject} videoRef
  * @param {React.MutableRefObject} shellRef
- * @param {{ isLiveMode?: boolean, onUserSeek?: (t: number) => void, mediaActive?: boolean, syncKey?: string|number }} [options]
+ * @param {{ isLiveMode?: boolean, onUserSeek?: (t: number) => void, mediaActive?: boolean, syncKey?: string|number, onResumeFromPause?: (video: HTMLVideoElement) => Promise<void>|void }} [options]
  */
-function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek, mediaActive = true, syncKey = 0 } = {}) {
+function usePlayerChrome(videoRef, shellRef, {
+  isLiveMode = false,
+  onUserSeek,
+  mediaActive = true,
+  syncKey = 0,
+  onResumeFromPause,
+} = {}) {
   const [paused, setPaused] = useState(true);
   const [ended, setEnded] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -292,6 +298,8 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek, m
   const hideTimer = useRef(null);
   const onUserSeekRef = useRef(onUserSeek);
   onUserSeekRef.current = onUserSeek;
+  const onResumeFromPauseRef = useRef(onResumeFromPause);
+  onResumeFromPauseRef.current = onResumeFromPause;
 
   const bumpControls = useCallback(() => {
     setControlsVisible(true);
@@ -382,15 +390,26 @@ function usePlayerChrome(videoRef, shellRef, { isLiveMode = false, onUserSeek, m
     if (!video) return;
     if (video.paused) {
       setPaused(false);
-      video.play?.().catch(() => {
-        setPaused(true);
-      });
+      const run = async () => {
+        try {
+          // Live HLS: after pause the playhead is often outside the sliding window.
+          // Resume must re-sync to the live edge (and restart HLS load) before play().
+          if (isLiveMode && onResumeFromPauseRef.current) {
+            await onResumeFromPauseRef.current(video);
+          } else {
+            await video.play?.();
+          }
+        } catch {
+          setPaused(true);
+        }
+      };
+      run();
     } else {
       setPaused(true);
       video.pause();
     }
     bumpControls();
-  }, [videoRef, bumpControls]);
+  }, [videoRef, bumpControls, isLiveMode]);
 
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
@@ -688,15 +707,126 @@ function HlsPlayer({
     markDvrIntent('dvr');
   }, [markDvrIntent]);
 
+  const markMediaPlayingRef = useRef(null);
+  const syncFromVideoRef = useRef(null);
+  const intentionalPauseRef = useRef(false);
+
+  const seekVideoToLiveEdge = useCallback((video, hls) => {
+    let target = null;
+    if (hls && Number.isFinite(hls.liveSyncPosition)) {
+      target = hls.liveSyncPosition;
+    } else if (video?.seekable && video.seekable.length > 0) {
+      target = Math.max(0, video.seekable.end(video.seekable.length - 1) - 0.25);
+    }
+    if (target != null && Number.isFinite(target)) {
+      try {
+        video.currentTime = target;
+      } catch {
+        /* ignore seek race */
+      }
+      return true;
+    }
+    return false;
+  }, []);
+
+  /**
+   * Resume after user pause: restart HLS loading, jump to live edge, play.
+   * Preserves mute/volume (fullscreen is on the shell — untouched).
+   */
+  const resumeLivePlayback = useCallback(
+    async (video) => {
+      if (!video) return;
+      intentionalPauseRef.current = false;
+
+      const wasMuted = video.muted;
+      const wasVolume = video.volume;
+      const hls = hlsRef.current;
+
+      markDvrIntent('live');
+      clearPlaybackPosition(eventId, 'live');
+      setBehindLive(false);
+      setLagSec(0);
+      setNewLiveAvailable(false);
+      setOverlay(OVERLAY.BUFFERING);
+      setPlaybackHealthy(false);
+
+      if (hls) {
+        try {
+          // Resume fragment/playlist loading after pause (live window moves on).
+          hls.startLoad();
+        } catch {
+          /* ignore */
+        }
+        try {
+          if (video.error) hls.recoverMediaError();
+        } catch {
+          /* ignore */
+        }
+
+        // Allow liveSyncPosition to refresh after startLoad.
+        await new Promise((r) => setTimeout(r, 80));
+
+        let edged = seekVideoToLiveEdge(video, hls);
+        if (!edged && src) {
+          // Soft playlist refresh without destroying the player shell / chrome state.
+          try {
+            hls.loadSource(src);
+            hls.startLoad(-1);
+          } catch {
+            /* ignore */
+          }
+          await new Promise((r) => setTimeout(r, 120));
+          edged = seekVideoToLiveEdge(video, hls);
+        }
+      } else {
+        // Safari native HLS
+        let edged = seekVideoToLiveEdge(video, null);
+        if (!edged && src) {
+          const keepSrc = video.currentSrc || src;
+          try {
+            video.src = keepSrc;
+            video.load();
+          } catch {
+            /* ignore */
+          }
+          await new Promise((resolve) => {
+            const done = () => {
+              video.removeEventListener('loadedmetadata', done);
+              resolve();
+            };
+            video.addEventListener('loadedmetadata', done, { once: true });
+            setTimeout(resolve, 1500);
+          });
+          seekVideoToLiveEdge(video, null);
+        }
+      }
+
+      // Restore A/V prefs (never leave unmuted state changed by autoplay policies silently).
+      video.muted = wasMuted;
+      try {
+        video.volume = wasVolume;
+      } catch {
+        /* ignore */
+      }
+
+      await video.play();
+      hasPlayedRef.current = true;
+      markMediaPlayingRef.current?.();
+      setPlaybackHealthy(true);
+      setOverlay(OVERLAY.NONE);
+      syncFromVideoRef.current?.();
+    },
+    [eventId, src, markDvrIntent, seekVideoToLiveEdge]
+  );
+
   const chrome = usePlayerChrome(videoRef, shellRef, {
     isLiveMode: true,
     onUserSeek: handleUserSeek,
     mediaActive: userStarted,
     syncKey: reloadKey,
+    onResumeFromPause: resumeLivePlayback,
   });
-  const markMediaPlayingRef = useRef(chrome.markMediaPlaying);
   markMediaPlayingRef.current = chrome.markMediaPlaying;
-  const syncFromVideoRef = useRef(chrome.syncFromVideo);
   syncFromVideoRef.current = chrome.syncFromVideo;
 
   useEffect(() => {
@@ -733,10 +863,12 @@ function HlsPlayer({
     const video = videoRef.current;
     if (!video) return undefined;
     const onPause = () => {
+      intentionalPauseRef.current = true;
       setPlaybackHealthy(false);
       syncFromVideoRef.current?.();
     };
     const onPlaying = () => {
+      intentionalPauseRef.current = false;
       markMediaPlayingRef.current?.();
       setPlaybackHealthy(true);
       setOverlay(OVERLAY.NONE);
@@ -784,30 +916,23 @@ function HlsPlayer({
     const video = videoRef.current;
     const hls = hlsRef.current;
     if (!video) return;
+    intentionalPauseRef.current = false;
     markDvrIntent('live');
     clearPlaybackPosition(eventId, 'live');
     setNewLiveAvailable(false);
-    let target = null;
-    if (hls && Number.isFinite(hls.liveSyncPosition)) {
-      target = hls.liveSyncPosition;
-    } else if (video.seekable && video.seekable.length > 0) {
-      const end = video.seekable.end(video.seekable.length - 1);
-      target = Math.max(0, end - 0.25);
+    try {
+      hls?.startLoad?.();
+    } catch {
+      /* ignore */
     }
-    if (target != null && Number.isFinite(target)) {
-      try {
-        video.currentTime = target;
-      } catch {
-        /* ignore seek race */
-      }
-    }
+    seekVideoToLiveEdge(video, hls);
     video.play?.().catch(() => {});
     setBehindLive(false);
     setLagSec(0);
     markMediaPlayingRef.current?.();
     setPlaybackHealthy(true);
     chrome.bumpControls();
-  }, [chrome, eventId, markDvrIntent]);
+  }, [chrome, eventId, markDvrIntent, seekVideoToLiveEdge]);
 
   const tryRestoreOrLive = useCallback(
     (video, hls) => {
@@ -1011,9 +1136,27 @@ function HlsPlayer({
     const onLoadedData = () => {
       if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) markPlaying();
     };
+    const recoverStall = () => {
+      // User intentionally paused — do not auto-resume.
+      if (intentionalPauseRef.current || video.paused) return;
+      if (!hasPlayedRef.current) return;
+      setOverlay(OVERLAY.BUFFERING);
+      const h = hlsRef.current;
+      try {
+        h?.startLoad?.();
+      } catch {
+        /* ignore */
+      }
+      seekVideoToLiveEdge(video, h);
+      video.play?.().catch(() => {});
+    };
     const onWaiting = () => {
+      if (intentionalPauseRef.current || video.paused) return;
       if (hasPlayedRef.current && isActivelyPlaying(video)) return;
       if (hasPlayedRef.current) setOverlay(OVERLAY.BUFFERING);
+    };
+    const onStalled = () => {
+      recoverStall();
     };
     const onTimeUpdate = () => {
       if (video.currentTime > 0) markPlaying();
@@ -1037,6 +1180,7 @@ function HlsPlayer({
     video.addEventListener('playing', onPlaying);
     video.addEventListener('loadeddata', onLoadedData);
     video.addEventListener('waiting', onWaiting);
+    video.addEventListener('stalled', onStalled);
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onVideoError);
@@ -1050,6 +1194,7 @@ function HlsPlayer({
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('stalled', onStalled);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onVideoError);
@@ -1089,6 +1234,7 @@ function HlsPlayer({
     showOverlayIfNotPlaying,
     tryRestoreOrLive,
     markDvrIntent,
+    seekVideoToLiveEdge,
   ]);
 
   const pickLevel = (index) => {
