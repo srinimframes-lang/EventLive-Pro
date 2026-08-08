@@ -114,7 +114,7 @@ export const adminService = {
   },
   async createDomain(payload) {
     const { data } = await api.post('/api/admin/domains', payload);
-    return data.data;
+    return { ...(data.data || {}), meta: data.meta };
   },
   async verifyDomain(id) {
     const { data } = await api.post(`/api/admin/domains/${id}/verify`);
@@ -127,6 +127,11 @@ export const adminService = {
   async suspendDomain(id) {
     const { data } = await api.post(`/api/admin/domains/${id}/suspend`);
     return data.data;
+  },
+  /** Suspend apex EventLive mapping and ensure live.<apex> exists (no delete). */
+  async migrateDomainToLive(id) {
+    const { data } = await api.post(`/api/admin/domains/${id}/migrate-to-live`);
+    return { ...(data.data || {}), message: data.message };
   },
   async refreshDomain(id) {
     const { data } = await api.post(`/api/admin/domains/${id}/refresh`);

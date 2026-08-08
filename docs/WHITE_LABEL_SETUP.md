@@ -37,18 +37,43 @@ https://live.ramstudios.com loads the customer's branded site
 
 ## 2. DNS records the customer must add
 
-For each domain, the app shows the exact records. There are two:
+**Recommended:** keep the customer’s existing website on the **root** domain.
+Use a **live subdomain** for EventLivePro (do not change the root A record).
 
-| Type  | Name / Host                         | Value                  | Purpose            |
-| ----- | ----------------------------------- | ---------------------- | ------------------ |
-| TXT   | `_eventlive-verify.<domain>`        | `<verifyToken>`        | Ownership proof    |
-| CNAME | `<domain>` (e.g. `live`)            | `cname.vercel-dns.com` | Routing + SSL      |
+### Subdomain (recommended — e.g. `live.maaevents9.in` / `live.customer.com`)
 
-> For an apex/root domain, Vercel uses an `A` record (`76.76.21.21`) instead of a
-> CNAME. Subdomains (recommended) use the CNAME above.
+| Type  | Host / Name              | Value                  | Purpose         |
+| ----- | ------------------------ | ---------------------- | --------------- |
+| TXT   | `_eventlive-verify.live` | `<verifyToken>`        | Ownership proof |
+| CNAME | `live`                   | `cname.vercel-dns.com` | Routing + SSL   |
 
-After the records propagate, the customer (or admin) clicks **Verify**, then the
-Super Admin clicks **Approve**.
+On GoDaddy (zone = apex, e.g. `maaevents9.in`): add those two records only.
+**Do not** change `A @ → 68.178.159.168` (or whatever hosts the existing site).
+
+### Apex / root domain (legacy — avoid; takes over existing website)
+
+Root domains **cannot** use a CNAME on GoDaddy and most registrars. Adding EventLive
+on the apex requires an A record to Vercel and would replace the existing site on `@`.
+New domain adds are auto-rewritten to `live.<apex>`.
+
+| Type | Host / Name         | Value           | Purpose         |
+| ---- | ------------------- | --------------- | --------------- |
+| TXT  | `_eventlive-verify` | `<verifyToken>` | Ownership proof |
+| A    | `@`                 | `76.76.21.21`   | Routing + SSL   |
+
+### Registrar Guide
+
+| Registrar  | Field name | TXT Host (live subdomain) | Routing (live subdomain) |
+| ---------- | ---------- | ------------------------- | ------------------------ |
+| GoDaddy    | Host       | `_eventlive-verify.live`  | CNAME `live` → `cname.vercel-dns.com` |
+| Hostinger  | Host       | `_eventlive-verify.live`  | CNAME `live` → `cname.vercel-dns.com` |
+| Namecheap  | Host       | `_eventlive-verify.live`  | CNAME `live` → `cname.vercel-dns.com` |
+| Cloudflare | Name       | `_eventlive-verify.live`  | CNAME `live` → `cname.vercel-dns.com` |
+| Other      | Host/Name  | `_eventlive-verify.live`  | CNAME left-most label |
+
+After the records propagate, click **Verify**. On success the app sets
+`dnsVerified`, attaches the custom domain, refreshes the tenant cache, and
+starts SSL (automatic when Vercel is configured, otherwise manual).
 
 ---
 

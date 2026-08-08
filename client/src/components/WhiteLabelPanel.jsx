@@ -87,10 +87,11 @@ export default function WhiteLabelPanel({ initialBranding }) {
     setBusy(true);
     setError('');
     try {
-      await tenantService.addDomain(newHost.trim());
+      const res = await tenantService.addDomain(newHost.trim());
       setNewHost('');
       await loadDomains();
-      flash('Domain added. Add the DNS records, then verify.');
+      const metaMsg = res?.meta?.message;
+      flash(metaMsg || 'Domain added. Add the DNS records, then verify.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -104,12 +105,39 @@ export default function WhiteLabelPanel({ initialBranding }) {
       const result = await tenantService.verifyDomain(id);
       const updated = result.domain || result;
       setDomains((list) => list.map((d) => (d.id === id ? updated : d)));
-      flash(
-        result.message ||
-          (updated.dnsVerified ? 'DNS verified! Domain is active.' : 'DNS record not found yet.')
-      );
+      const check = result.dnsCheck || {};
+      if (updated.dnsVerified) {
+        flash(
+          result.message ||
+            'DNS verified successfully. Your custom domain is active and SSL provisioning has started.'
+        );
+      } else {
+        const lookedUp = check.lookedUp ? ` Queried: ${check.lookedUp}.` : '';
+        const found =
+          Array.isArray(check.found) && check.found.length
+            ? ` Returned: ${check.found.join(', ')}.`
+            : ' Returned records: (none).';
+        setError(
+          `${result.message || check.reason || 'DNS verification failed.'}${lookedUp}${found}`
+        );
+      }
     } catch (err) {
-      setError(err.message);
+      const check = err.response?.data?.dnsCheck;
+      const detail =
+        check?.reason ||
+        check?.message ||
+        err.response?.data?.message;
+      const raw = err.message || '';
+      const isNetwork =
+        err.code === 'ERR_NETWORK' ||
+        raw === 'Network Error' ||
+        raw.toLowerCase() === 'network error';
+      setError(
+        detail ||
+          (isNetwork
+            ? 'Network error while contacting the server. Check your connection and try Verify again.'
+            : raw || 'DNS verification failed')
+      );
     }
   };
 
@@ -190,15 +218,32 @@ export default function WhiteLabelPanel({ initialBranding }) {
 
       {/* Domains */}
       <div className="mt-6 border-t border-slate-100 pt-4">
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <p className="font-semibold text-slate-800">How custom domains work</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              <span className="font-medium text-slate-800">Root domain</span> (e.g. yourbusiness.com) — keep for your
+              existing website. Do not point it at EventLivePro.
+            </li>
+            <li>
+              <span className="font-medium text-slate-800">Recommended live domain</span> —{' '}
+              <code className="rounded bg-white px-1 ring-1 ring-slate-200">live.yourbusiness.com</code> for EventLive
+              pages (CNAME only).
+            </li>
+          </ul>
+        </div>
         <form onSubmit={addDomain} className="flex flex-wrap items-end gap-2">
           <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Add a custom domain</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Add a custom live domain</label>
             <input
               className="input"
               placeholder="live.yourbusiness.com"
               value={newHost}
               onChange={(e) => setNewHost(e.target.value)}
             />
+            <p className="mt-1 text-[11px] text-slate-500">
+              If you enter a root domain, we automatically use <code className="rounded bg-slate-100 px-1">live.&lt;domain&gt;</code>.
+            </p>
           </div>
           <button type="submit" className="btn-outline" disabled={busy}>
             Add domain

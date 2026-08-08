@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { adminService } from '../../services/admin.service.js';
-import DnsInstructions from '../DnsInstructions.jsx';
+import DnsInstructions, { isApexHostname } from '../DnsInstructions.jsx';
 
 const STATUS_STYLES = {
   active: 'bg-emerald-100 text-emerald-700',
@@ -86,7 +86,24 @@ export default function AdminDomains() {
     if (created) {
       setForm({ customerId: '', host: '' });
       await load();
-      flash('Domain added');
+      flash(created.meta?.message || 'Domain added');
+    }
+  };
+
+  const migrateToLive = async (d) => {
+    if (
+      !window.confirm(
+        `Suspend EventLive mapping on ${d.host} and use live.${d.host} instead?\n\n` +
+          `This does NOT delete ${d.host} and does NOT change GoDaddy DNS. ` +
+          `Your existing website on the root domain stays as-is.`
+      )
+    ) {
+      return;
+    }
+    const result = await act(adminService.migrateDomainToLive, d.id);
+    if (result) {
+      flash(result.message || 'Migrated to live subdomain');
+      await load();
     }
   };
 
@@ -203,6 +220,18 @@ export default function AdminDomains() {
             {integration.vercel?.enabled ? 'Auto SSL: Vercel connected' : 'Auto SSL: manual mode'}
           </span>
         </div>
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <p className="font-semibold text-slate-800">Root vs live subdomain</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              Root domain (e.g. customer.com) — keep for the customer’s existing website. Do not point @ at EventLivePro.
+            </li>
+            <li>
+              Recommended: <code className="rounded bg-white px-1 ring-1 ring-slate-200">live.customer.com</code> for
+              EventLive pages. Entering a root domain auto-rewrites to <code className="rounded bg-white px-1">live.*</code>.
+            </li>
+          </ul>
+        </div>
         <form onSubmit={createDomain} className="mt-3 flex flex-wrap items-end gap-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Customer</label>
@@ -220,7 +249,7 @@ export default function AdminDomains() {
             </select>
           </div>
           <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Domain</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Live domain</label>
             <input
               className="input"
               placeholder="live.customer.com"
@@ -282,6 +311,16 @@ export default function AdminDomains() {
                         {d.status === 'active' && (
                           <button type="button" className="btn-ghost px-2 py-1 text-xs text-amber-700" onClick={() => suspend(d.id)}>
                             Suspend
+                          </button>
+                        )}
+                        {isApexHostname(d.host) && d.status !== 'suspended' && (
+                          <button
+                            type="button"
+                            className="btn-ghost px-2 py-1 text-xs text-indigo-700"
+                            onClick={() => migrateToLive(d)}
+                            title="Suspend root EventLive mapping; use live.<domain> instead"
+                          >
+                            Use live subdomain
                           </button>
                         )}
                         <button type="button" className="btn-ghost px-2 py-1 text-xs text-red-600" onClick={() => remove(d.id)}>

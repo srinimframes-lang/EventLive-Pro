@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import { Event, EVENT_STATUSES, EVENT_CATEGORIES } from '../models/Event.js';
-import { Domain } from '../models/Domain.js';
 import { Theme } from '../models/Theme.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
@@ -11,7 +10,7 @@ import { extractYouTubeId } from '../utils/youtube.js';
 import {
   normalizeStudioFields,
 } from '../utils/studioFields.js';
-import { syncEventQrCode } from '../utils/eventQr.js';
+import { syncEventQrCode, resolveEventBrandDomain } from '../utils/eventQr.js';
 import { loadVerifiedEvent, scheduleEventQrSync } from '../utils/eventSave.js';
 import {
   applyStreamTypeSelection,
@@ -380,10 +379,7 @@ export const getEvent = asyncHandler(async (req, res) => {
 
   const organizerId = event.organizer?._id || event.organizer;
   if (organizerId) {
-    const dom = await Domain.findOne({ customer: organizerId, status: 'active' })
-      .select('host')
-      .lean();
-    data.brandDomain = dom ? dom.host : '';
+    data.brandDomain = await resolveEventBrandDomain(organizerId);
     // Embed page: hide EventLivePro logo when WL domain is active or Super Admin
     // enabled disableBranding on the customer.
     try {

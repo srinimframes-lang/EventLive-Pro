@@ -8,13 +8,18 @@ import { Settings } from '../models/Settings.js';
 import { getSiteUrl, watchPath } from './seo.js';
 import { removeUpload } from './storage.js';
 import { UPLOADS_DIR } from '../middleware/upload.middleware.js';
+import { isApexHostname } from './dnsRecords.js';
 
 export async function resolveEventBrandDomain(organizerId) {
   if (!organizerId) return '';
-  const dom = await Domain.findOne({ customer: organizerId, status: 'active' })
+  const domains = await Domain.find({ customer: organizerId, status: 'active' })
     .select('host')
     .lean();
-  return dom?.host || '';
+  if (!domains.length) return '';
+  // Prefer live.* (or any subdomain) over apex so share URLs never hit an
+  // existing root website that is not EventLivePro.
+  const sub = domains.find((d) => d.host && !isApexHostname(d.host));
+  return (sub || domains[0]).host || '';
 }
 
 /** Canonical public watch URL used inside QR codes. */

@@ -3,7 +3,7 @@ import { User } from '../models/User.js';
 import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { verifyDomainDns, checkDnsTxt, DNS_VERIFY_REASON } from '../utils/dnsVerify.js';
-import { txtLookupName } from '../utils/dnsRecords.js';
+import { normalizeCustomDomainHost, txtLookupName, isApexHostname, recommendedLiveHostname } from '../utils/dnsRecords.js';
 import { refreshDomainCache } from '../utils/domainCache.js';
 import { attachDomain, detachDomain, getDomainStatus } from '../utils/vercel.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
@@ -12,6 +12,7 @@ import {
   createdByFilter,
   isPlatformAdmin,
 } from '../utils/tenantScope.js';
+import { migrateApexDomainToLiveSubdomain } from '../utils/domainLiveMigrate.js';
 
 function normaliseHost(raw) {
   return String(raw || '')
@@ -102,21 +103,35 @@ export const listDomains = asyncHandler(async (req, res) => {
  * @access Private/Admin
  */
 export const createDomain = asyncHandler(async (req, res) => {
-  const host = normaliseHost(req.body.host);
+  const { host, rewrittenFromApex, apex } = normalizeCustomDomainHost(req.body.host);
   const customerId = req.body.customerId;
   if (!host || !customerId) {
     res.status(400);
-    throw new Error('customerId and host are required');
+    throw new Error('customerId and host are required (use live.yourbusiness.com)');
   }
   await findScopedCustomerForDomain(customerId, req.user, res);
   if (await Domain.findOne({ host })) {
     res.status(409);
-    throw new Error('That domain is already registered');
+    throw new Error(
+      rewrittenFromApex
+        ? `${apex} cannot be used for EventLive (keep root for the existing website). ${host} is already registered.`
+        : 'That domain is already registered'
+    );
   }
   const domain = await Domain.create({ customer: customerId, host });
   domain.ensureVerifyToken();
   if (domain.isModified('verifyToken')) await domain.save();
-  res.status(201).json({ success: true, data: domain });
+  res.status(201).json({
+    success: true,
+    data: domain,
+    meta: rewrittenFromApex
+      ? {
+          rewrittenFromApex: true,
+          apex,
+          message: `Root ${apex} kept for the existing website. EventLive domain set to ${host}.`,
+        }
+      : undefined,
+  });
 });
 
 function buildVerifyPayload(domain, dnsCheck) {
@@ -338,6 +353,34 @@ export const removeDomain = asyncHandler(async (req, res) => {
   await domain.deleteOne();
   await refreshDomainCache();
   res.status(200).json({ success: true, data: { id: req.params.id } });
+});
+
+/**
+ * @route POST /api/admin/domains/:id/migrate-to-live
+ * @desc  Suspend an apex EventLive mapping and ensure live.<apex> exists (no delete).
+ * @access Private/Admin
+ */
+export const migrateDomainToLive = asyncHandler(async (req, res) => {
+  const domain = await Domain.findById(req.params.id);
+  if (!domain) {
+    res.status(404);
+    throw new Error('Domain not found');
+  }
+  await assertDomainAccess(domain, req.user, res);
+  if (!isApexHostname(domain.host)) {
+    res.status(400);
+    throw new Error(`Use this only for root domains. Suggested live host: ${recommendedLiveHostname(domain.host)}`);
+  }
+  const result = await migrateApexDomainToLiveSubdomain(domain);
+  res.status(200).json({
+    success: true,
+    data: {
+      apex: result.apexDomain,
+      live: result.liveDomain,
+      createdLive: result.createdLive,
+    },
+    message: result.message,
+  });
 });
 
 const BRANDING_FIELDS = [

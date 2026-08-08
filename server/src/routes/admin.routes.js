@@ -34,6 +34,7 @@ import {
   getIntegrationStatus,
   updateCustomerBranding,
   uploadCustomerBrandingLogo,
+  migrateDomainToLive,
 } from '../controllers/adminDomain.controller.js';
 import {
   adminListThemes,
@@ -116,6 +117,7 @@ router.route('/domains').get(listDomains).post(createDomain);
 router.post('/domains/:id/verify', verifyDomain);
 router.post('/domains/:id/approve', approveDomain);
 router.post('/domains/:id/suspend', suspendDomain);
+router.post('/domains/:id/migrate-to-live', migrateDomainToLive);
 router.post('/domains/:id/refresh', refreshDomainStatus);
 router.delete('/domains/:id', removeDomain);
 

@@ -2,12 +2,18 @@
  * DNS instruction helpers for white-label custom domains.
  * Registrars (GoDaddy, Namecheap, Cloudflare, Hostinger, …) expect the
  * relative Host/Name label — never the full FQDN in the Host field.
+ *
+ * Recommended setup: keep the customer’s existing website on the root domain
+ * (do not point @ at EventLivePro). Use a live subdomain instead, e.g.
+ * live.customer.com → CNAME cname.vercel-dns.com.
  */
 
 export const TXT_HOST_LABEL = '_eventlive-verify';
 export const CNAME_TARGET = 'cname.vercel-dns.com';
 export const VERCEL_A_IP = '76.76.21.21';
 export const DNS_TTL_SECONDS = 3600;
+/** Preferred left-most label for EventLivePro custom live pages. */
+export const LIVE_SUBDOMAIN_LABEL = 'live';
 
 /** Common multi-part public suffixes so apex detection works for .co.in etc. */
 const MULTI_PART_TLDS = new Set([
@@ -57,9 +63,47 @@ export function isApexHostname(host) {
   return parts.length === 2;
 }
 
-/** Host label for the ownership TXT record (always relative). */
-export function txtHostLabel() {
-  return TXT_HOST_LABEL;
+/**
+ * Recommended EventLive live-host for an apex (or any) domain.
+ * example.com → live.example.com
+ * live.example.com → live.example.com (unchanged)
+ */
+export function recommendedLiveHostname(host) {
+  const h = sanitizeHostname(host);
+  if (!h) return '';
+  if (!isApexHostname(h)) return h;
+  return `${LIVE_SUBDOMAIN_LABEL}.${h}`;
+}
+
+/**
+ * Normalize inbound host for Domain.create:
+ * - strip scheme/path
+ * - if customer typed an apex/root domain, rewrite to live.<apex>
+ *   so EventLivePro never takes over an existing website on @.
+ */
+export function normalizeCustomDomainHost(raw) {
+  const h = sanitizeHostname(raw);
+  if (!h) return { host: '', rewrittenFromApex: false, apex: '' };
+  if (isApexHostname(h)) {
+    return {
+      host: recommendedLiveHostname(h),
+      rewrittenFromApex: true,
+      apex: h,
+    };
+  }
+  return { host: h, rewrittenFromApex: false, apex: '' };
+}
+
+/**
+ * Host label for the ownership TXT record (relative to the DNS zone).
+ * - apex host example.com → `_eventlive-verify`
+ * - subdomain live.example.com → `_eventlive-verify.live`
+ *   (GoDaddy/Namecheap zone is usually the apex; Host must include the subdomain label)
+ */
+export function txtHostLabel(host) {
+  const h = sanitizeHostname(host);
+  if (!h || isApexHostname(h)) return TXT_HOST_LABEL;
+  return `${TXT_HOST_LABEL}.${h.split('.')[0]}`;
 }
 
 /**
@@ -147,8 +191,8 @@ export function toRelativeHostLabel(nameOrHost, zoneHost) {
 
 /**
  * Recommended DNS records for the registrar UI (relative Host labels).
- * Apex/root domains cannot use CNAME on GoDaddy and most registrars — use A → Vercel.
- * Subdomains use CNAME → cname.vercel-dns.com.
+ * Prefer a live.* subdomain (CNAME). Apex A→Vercel is legacy — it would take
+ * over an existing website on @ and is rewritten away at domain-create time.
  */
 export function buildDnsInstructionRecords(host, token) {
   const h = String(host || '')
@@ -159,8 +203,8 @@ export function buildDnsInstructionRecords(host, token) {
   const records = [
     {
       type: 'TXT',
-      name: txtHostLabel(),
-      host: txtHostLabel(),
+      name: txtHostLabel(h),
+      host: txtHostLabel(h),
       value,
       ttl: DNS_TTL_SECONDS,
     },

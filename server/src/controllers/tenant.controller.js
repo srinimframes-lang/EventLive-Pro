@@ -2,7 +2,8 @@ import { Domain } from '../models/Domain.js';
 import { User } from '../models/User.js';
 import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { checkDnsTxt } from '../utils/dnsVerify.js';
+import { verifyDomainDns, DNS_VERIFY_REASON } from '../utils/dnsVerify.js';
+import { normalizeCustomDomainHost, txtLookupName } from '../utils/dnsRecords.js';
 import { persistUpload, removeUpload } from '../utils/storage.js';
 import { refreshDomainCache } from '../utils/domainCache.js';
 import { attachDomain, getDomainStatus } from '../utils/vercel.js';
@@ -44,7 +45,9 @@ export const resolveByHost = asyncHandler(async (req, res) => {
   const host = normaliseHost(req.query.host || req.hostname);
   if (!host) return res.status(200).json({ success: true, data: { isCustom: false } });
 
-  const domain = await Domain.findOne({ host, status: 'active' }).populate('customer');
+  const domain = await Domain.findOne({ host, status: 'active' })
+    .populate('customer', 'branding')
+    .lean();
   if (!domain || !domain.customer) {
     return res.status(200).json({ success: true, data: { isCustom: false } });
   }
@@ -53,7 +56,7 @@ export const resolveByHost = asyncHandler(async (req, res) => {
     data: {
       isCustom: true,
       host,
-      customerId: domain.customer.id,
+      customerId: String(domain.customer._id || domain.customer.id || ''),
       branding: publicBranding(domain.customer),
     },
   });
@@ -85,10 +88,10 @@ export const myDomains = asyncHandler(async (req, res) => {
  * @access Private
  */
 export const addMyDomain = asyncHandler(async (req, res) => {
-  const host = normaliseHost(req.body.host);
+  const { host, rewrittenFromApex, apex } = normalizeCustomDomainHost(req.body.host);
   if (!host) {
     res.status(400);
-    throw new Error('Enter a domain like live.yourbusiness.com');
+    throw new Error('Enter a live subdomain like live.yourbusiness.com');
   }
   const count = await Domain.countDocuments({ customer: req.user._id });
   if (count >= MAX_DOMAINS_PER_CUSTOMER) {
@@ -98,18 +101,75 @@ export const addMyDomain = asyncHandler(async (req, res) => {
   const existing = await Domain.findOne({ host });
   if (existing) {
     res.status(409);
-    throw new Error('That domain is already registered.');
+    throw new Error(
+      rewrittenFromApex
+        ? `${apex} cannot be used for EventLive (keep it for your existing website). ${host} is already registered.`
+        : 'That domain is already registered.'
+    );
   }
   const domain = await Domain.create({ customer: req.user._id, host });
   domain.ensureVerifyToken();
   if (domain.isModified('verifyToken')) await domain.save();
-  res.status(201).json({ success: true, data: domain });
+  res.status(201).json({
+    success: true,
+    data: domain,
+    meta: rewrittenFromApex
+      ? {
+          rewrittenFromApex: true,
+          apex,
+          message: `Root domain ${apex} is reserved for your existing website. EventLive will use ${host} instead.`,
+        }
+      : undefined,
+  });
 });
+
+function buildVerifyPayload(domain, dnsCheck) {
+  const reasons = [...(dnsCheck.reasons || [])];
+  let reason = dnsCheck.reason || null;
+  let message = dnsCheck.message || '';
+
+  if (dnsCheck.ok) {
+    if (domain.sslStatus === 'pending') {
+      reasons.push(DNS_VERIFY_REASON.SSL_PENDING);
+      reason = reason || DNS_VERIFY_REASON.SSL_PENDING;
+      message =
+        'DNS verified. Custom domain attached and tenant cache refreshed. SSL is pending — it usually finishes within a few minutes.';
+    } else if (domain.sslStatus === 'manual') {
+      message =
+        'DNS verified. Custom domain attached and tenant cache refreshed. SSL is set to manual — attach the domain in your host dashboard if needed.';
+    } else {
+      message =
+        'DNS verified successfully. Custom domain is active, tenant cache refreshed, and SSL is enabled.';
+    }
+  } else if (!message) {
+    message = reason || 'DNS verification failed';
+  }
+
+  return {
+    success: true,
+    data: domain,
+    message,
+    dnsCheck: {
+      ok: Boolean(dnsCheck.ok),
+      reason,
+      reasons,
+      message,
+      lookedUp: dnsCheck.lookedUp || txtLookupName(domain.host),
+      expected: domain.verifyToken,
+      found: dnsCheck.found || dnsCheck.txt?.found || [],
+      authoritative: Boolean(dnsCheck.authoritative),
+      txt: dnsCheck.txt || null,
+      cname: dnsCheck.cname || null,
+      sslStatus: domain.sslStatus,
+      debug: dnsCheck.debug || null,
+    },
+  };
+}
 
 /**
  * @route POST /api/tenant/my-domains/:id/verify
  * @desc  Customer triggers a DNS ownership check for their own domain.
- *        On success: mark verified, start SSL attach, activate routing.
+ *        On success: mark verified, attach domain, refresh cache, start SSL.
  * @access Private
  */
 export const verifyMyDomain = asyncHandler(async (req, res) => {
@@ -120,12 +180,47 @@ export const verifyMyDomain = asyncHandler(async (req, res) => {
   }
 
   domain.ensureVerifyToken();
-  const dnsCheck = await checkDnsTxt(domain.host, domain.verifyToken);
-  domain.dnsVerified = dnsCheck.ok;
+
+  let dnsCheck;
+  try {
+    dnsCheck = await verifyDomainDns(domain.host, domain.verifyToken);
+  } catch (err) {
+    dnsCheck = {
+      ok: false,
+      reason: DNS_VERIFY_REASON.NETWORK,
+      reasons: [DNS_VERIFY_REASON.NETWORK],
+      message: `Network error during DNS verification: ${err.message || 'lookup failed'}`,
+      found: [],
+      lookedUp: txtLookupName(domain.host),
+    };
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    '[verifyMyDomain] dnsCheck',
+    JSON.stringify(
+      {
+        host: domain.host,
+        lookedUp: dnsCheck.lookedUp,
+        expected: domain.verifyToken,
+        ok: dnsCheck.ok,
+        reason: dnsCheck.reason,
+        found: dnsCheck.found,
+        matchingSources: dnsCheck.matchingSources,
+        debug: dnsCheck.debug,
+        message: dnsCheck.message,
+      },
+      null,
+      2
+    )
+  );
+
+  domain.dnsVerified = Boolean(dnsCheck.ok);
   domain.lastCheckedAt = new Date();
   if (dnsCheck.ok && !domain.verifiedAt) domain.verifiedAt = new Date();
 
   if (dnsCheck.ok) {
+    // Attach custom domain + enable SSL (auto via Vercel, or manual marker).
     if (env.vercel.enabled) {
       const attach = await attachDomain(domain.host);
       if (attach.enabled && attach.ok) domain.hostingAttached = true;
@@ -148,19 +243,10 @@ export const verifyMyDomain = asyncHandler(async (req, res) => {
   }
 
   await domain.save();
-  res.status(200).json({
-    success: true,
-    data: domain,
-    message: dnsCheck.ok
-      ? 'DNS verified. Your domain is active and SSL provisioning has started.'
-      : 'TXT record not found yet. Add the DNS records shown below, wait for propagation, then try again.',
-    dnsCheck: {
-      ok: dnsCheck.ok,
-      lookedUp: `_eventlive-verify.${domain.host}`,
-      expected: domain.verifyToken,
-      found: dnsCheck.found,
-    },
-  });
+  const payload = buildVerifyPayload(domain, dnsCheck);
+  // eslint-disable-next-line no-console
+  console.log('[verifyMyDomain] response.dnsCheck', JSON.stringify(payload.dnsCheck, null, 2));
+  res.status(200).json(payload);
 });
 
 /**

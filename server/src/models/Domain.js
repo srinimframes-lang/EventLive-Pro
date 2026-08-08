@@ -1,5 +1,15 @@
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import {
+  DNS_TTL_SECONDS,
+  buildDnsInstructionRecords,
+  cnameHostLabel,
+  txtHostLabel,
+  txtLookupName,
+  isApexHostname,
+  CNAME_TARGET,
+  VERCEL_A_IP,
+} from '../utils/dnsRecords.js';
 
 const { Schema, model } = mongoose;
 
@@ -62,41 +72,43 @@ const domainSchema = new Schema(
 // Compound lookup used when resolving an organizer's active brand domain.
 domainSchema.index({ customer: 1, status: 1 });
 
-const DNS_TTL_SECONDS = 3600;
-
-/** Recommended DNS records for ownership proof + routing/SSL. */
+/** Recommended DNS records for ownership proof + routing/SSL (relative Host labels). */
 domainSchema.virtual('verification').get(function verification() {
   const token = this.verifyToken || '';
-  const txtHost = `_eventlive-verify.${this.host}`;
-  const txt = {
-    type: 'TXT',
-    name: txtHost,
-    host: txtHost,
-    value: token,
-    ttl: DNS_TTL_SECONDS,
-  };
-  const cname = {
-    type: 'CNAME',
-    name: this.host,
-    host: this.host,
-    value: 'cname.vercel-dns.com',
-    ttl: DNS_TTL_SECONDS,
-  };
+  const records = buildDnsInstructionRecords(this.host, token);
+  const txt = records[0];
+  const routing = records[1];
+  const apex = isApexHostname(this.host);
   return {
     type: txt.type,
-    name: txt.name,
+    // Relative labels for registrar UIs — never the full FQDN.
+    name: txt.host,
     host: txt.host,
     value: txt.value,
     ttl: DNS_TTL_SECONDS,
-    cname: {
-      type: cname.type,
-      name: cname.name,
-      host: cname.host,
-      value: cname.value,
-      ttl: DNS_TTL_SECONDS,
+    // Absolute name used only for server-side DNS lookups.
+    lookupName: txtLookupName(this.host),
+    // Routing record: A @ → 76.76.21.21 for apex; CNAME for subdomains.
+    routing: {
+      type: routing.type,
+      name: routing.host,
+      host: routing.host,
+      value: routing.value,
+      ttl: routing.ttl ?? DNS_TTL_SECONDS,
     },
-    // Structured list for admin/customer UI tables.
-    records: [txt, cname],
+    // Back-compat shape used by older UI paths.
+    cname: {
+      type: routing.type,
+      name: routing.host,
+      host: routing.host,
+      value: routing.value || (apex ? VERCEL_A_IP : CNAME_TARGET),
+      ttl: routing.ttl ?? DNS_TTL_SECONDS,
+      hostHint: cnameHostLabel(this.host),
+    },
+    txtHostLabel: txtHostLabel(this.host),
+    cnameHostLabel: cnameHostLabel(this.host),
+    isApex: apex,
+    records,
   };
 });
 

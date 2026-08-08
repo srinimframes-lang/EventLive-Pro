@@ -14,7 +14,7 @@ export const tenantService = {
   },
   async addDomain(host) {
     const { data } = await api.post('/api/tenant/my-domains', { host });
-    return data.data;
+    return { ...(data.data || {}), meta: data.meta };
   },
   async verifyDomain(id) {
     const { data } = await api.post(`/api/tenant/my-domains/${id}/verify`);
