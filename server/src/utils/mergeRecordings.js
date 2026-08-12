@@ -3,6 +3,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import {
   listActiveRecordingParts,
+  markRecordingPartUploaded,
   RECORDINGS_ROOT,
   resolveRecordingAbsolutePath,
   replacePartsWithMergedRecording,
@@ -10,9 +11,14 @@ import {
 import {
   deleteRecordingFromR2,
   downloadR2ObjectToFile,
+  headR2Object,
   isR2Configured,
   uploadRecordingToR2,
 } from './r2.js';
+import {
+  safeUnlinkLocalAfterR2,
+  unlinkOriginalsReplacedByMergedR2,
+} from './recordingR2Sync.js';
 import { Event } from '../models/Event.js';
 
 function runCmd(bin, args, { timeoutMs = 30 * 60 * 1000 } = {}) {
@@ -194,6 +200,7 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
     const endedAt = parts[parts.length - 1]?.endedAt || new Date();
 
     const oldR2Keys = parts.map((p) => p.r2Key).filter(Boolean);
+    const originalLocalPaths = parts.map((p) => p.localPath).filter(Boolean);
 
     replacePartsWithMergedRecording(event, {
       filePath: outPath,
@@ -209,8 +216,15 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
     if (isR2Configured()) {
       try {
         const key = `recordings/${event.id}/${outName}`;
+        console.log(`[r2] upload started ${outPath} -> ${key}`);
         const { url, size } = await uploadRecordingToR2(outPath, key);
-        const { markRecordingPartUploaded } = await import('./recording.js');
+        const head = await headR2Object(key);
+        if (!head?.exists || Number(head.size || 0) !== Number(size || 0) || head.size <= 0) {
+          throw new Error(
+            `R2 HEAD mismatch for ${key}: remote ${head?.size || 0} vs uploaded ${size}`
+          );
+        }
+        console.log(`[r2] upload verified (${size} bytes): ${key}`);
         markRecordingPartUploaded(event, {
           filename: outName,
           localPath: outPath,
@@ -219,11 +233,16 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
           sizeBytes: size,
         });
         await event.save();
-        try {
-          fs.unlinkSync(outPath);
-        } catch {
-          /* keep local if unlink fails */
-        }
+        await safeUnlinkLocalAfterR2({
+          localPath: outPath,
+          r2Key: key,
+          expectedLocalSize: size,
+          storage: 'r2',
+        });
+        await unlinkOriginalsReplacedByMergedR2(originalLocalPaths, {
+          mergedR2Key: key,
+          mergedSize: size,
+        });
         for (const keyOld of oldR2Keys) {
           try {
             await deleteRecordingFromR2(keyOld);
@@ -233,7 +252,7 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
         }
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn(`[merge] R2 upload after merge failed: ${err.message}`);
+        console.error(`[r2] upload failed after merge: ${err.message}`);
       }
     }
 

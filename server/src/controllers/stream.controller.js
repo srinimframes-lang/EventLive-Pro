@@ -29,7 +29,6 @@ import {
   clearAllRecordingFields,
   getRecordingState,
   listActiveRecordingParts,
-  markRecordingPartUploaded,
   RECORDING_PUBLIC_DAYS,
   removeRecordingPart,
   resolveRecordingAbsolutePath,
@@ -40,8 +39,8 @@ import {
   isR2Configured,
   presignRecordingUrl,
   r2PublicUrl,
-  uploadRecordingToR2,
 } from '../utils/r2.js';
+import { scheduleEventRecordingUpload } from '../utils/recordingR2Sync.js';
 import {
   applyEmergencyAction,
   evaluateStreamHealth,
@@ -1033,16 +1032,10 @@ export const recordingReady = asyncHandler(async (req, res) => {
     scheduleRecordingMerge(event.id, io);
   }
 
-  // Durable storage: upload to Cloudflare R2 in the background, verify, then
-  // remove the local VPS copy. Playback keeps working via the API route in
-  // both states (local file first, R2 after migration).
-  if (isR2Configured()) {
-    uploadEventRecordingToR2(event.id).catch((err) => {
-      console.error(`[r2] background upload failed for event ${event.id}:`, err.message);
-    });
-  } else {
-    console.warn('[r2] not configured — recording kept on local disk only');
-  }
+  // Durable storage: retry-safe R2 upload of ALL pending local parts.
+  // recording-ready stays fast for MediaMTX; sweeper retries after restarts.
+  // Playback keeps working via the API route (local first, R2 after verify).
+  scheduleEventRecordingUpload(event.id);
 
   return res.status(200).json({
     ok: true,
@@ -1053,54 +1046,6 @@ export const recordingReady = asyncHandler(async (req, res) => {
     keptLive: keepLive,
   });
 });
-
-/**
- * Upload the newest local recording part to R2, verify it, update that history
- * entry (prior parts untouched), then delete only that local VPS copy.
- */
-async function uploadEventRecordingToR2(eventId) {
-  const event = await Event.findById(eventId);
-  if (!event) throw new Error('event not found');
-
-  const parts = listActiveRecordingParts(event);
-  const pending =
-    parts
-      .slice()
-      .reverse()
-      .find((p) => p.storage !== 'r2' || !p.r2Key) || null;
-
-  const abs = resolveRecordingAbsolutePath(
-    pending?.localPath || event.recordingPath
-  );
-  if (!abs || !fs.existsSync(abs)) {
-    // Already migrated (e.g. race) — nothing to do.
-    if (event.recordingStorage === 'r2' && event.recordingR2Key) return;
-    throw new Error(`local recording missing: ${event.recordingPath}`);
-  }
-
-  const filename = path.basename(abs);
-  const key = `recordings/${event.id}/${filename}`;
-  console.log(`[r2] uploading ${abs} -> ${key}`);
-  const { url, size } = await uploadRecordingToR2(abs, key);
-  console.log(`[r2] upload verified (${size} bytes): ${url}`);
-
-  markRecordingPartUploaded(event, {
-    filename,
-    localPath: abs,
-    r2Key: key,
-    r2Url: url,
-    sizeBytes: size,
-  });
-  await event.save();
-
-  // Only delete the local copy after the verified upload is saved in MongoDB.
-  try {
-    fs.unlinkSync(abs);
-    console.log(`[r2] local copy removed: ${abs}`);
-  } catch (err) {
-    console.warn(`[r2] could not remove local copy ${abs}: ${err.message}`);
-  }
-}
 
 /**
  * @route GET /api/events/:id/stream/recording
