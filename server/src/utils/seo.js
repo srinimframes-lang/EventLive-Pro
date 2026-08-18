@@ -63,6 +63,37 @@ export function buildShareEventDescription() {
 
 const WEDDING_NOISE_TOKEN = /(?:^|-)(wedding|weddings|live|stream|streaming|ceremony)(?=-|$)/g;
 
+/** URL suffix for customer live-link slugs (ravi-priya-wedding). */
+export const LIVE_LINK_TYPE_SLUG = {
+  wedding: 'wedding',
+  engagement: 'engagement',
+  reception: 'reception',
+  sangeet: 'sangeet',
+  haldi: 'haldi',
+  mehendi: 'mehendi',
+  birthday: 'birthday',
+  house_warming: 'housewarming',
+  housewarming: 'housewarming',
+  upanayanam: 'upanayanam',
+  half_saree: 'half-saree',
+  baby_shower: 'baby-shower',
+  corporate: 'live',
+  temple: 'live',
+  memorial: 'live',
+  conference: 'live',
+  workshop: 'live',
+  webinar: 'live',
+  concert: 'live',
+  meetup: 'live',
+  sports: 'live',
+  other: 'live',
+};
+
+export function liveLinkTypeSlug(category) {
+  const key = String(category || 'wedding').toLowerCase().trim();
+  return LIVE_LINK_TYPE_SLUG[key] || 'live';
+}
+
 export function isCoupleWatchSlug(slug) {
   return /(?:^|-)weds(?:-|$)/.test(String(slug || '').toLowerCase());
 }
@@ -88,18 +119,41 @@ export function buildCoupleWatchSlug(event) {
   return bride || groom || '';
 }
 
+/**
+ * Stable EventLivePro live-page slug for NEW customer (and admin) links.
+ * Example: Ravi + Priya + wedding → ravi-priya-wedding
+ * Existing stored slugs are never rewritten.
+ */
+export function buildLivePageSlug(event) {
+  if (!event) return '';
+  const typeToken = liveLinkTypeSlug(event.category);
+  const groom = slugifyName(event.groomName);
+  const bride = slugifyName(event.brideName);
+  if (groom && bride) return `${groom}-${bride}-${typeToken}`;
+  if (groom || bride) return `${groom || bride}-${typeToken}`;
+  const title = slugifyName(event.title);
+  if (!title) return '';
+  if (title === typeToken || title.endsWith(`-${typeToken}`)) return title;
+  return `${title}-${typeToken}`;
+}
+
+/** Alias for older/mismatched imports (`buildLivePagesSlug`). */
+export { buildLivePageSlug as buildLivePagesSlug };
+
 export function coupleSlug(event) {
   return buildCoupleWatchSlug(event);
 }
 
 /**
  * Canonical public watch path.
- * New couple-slug events → /deekha-reddy-weds-tarun-reddy
- * Existing shortCode events (no -weds- slug) → /AM5DJS
+ * New live-link events (publicUrlStyle=live) → /live/ravi-priya-wedding
+ * Existing couple-slug events → /deekha-reddy-weds-tarun-reddy
+ * Existing shortCode events → /AM5DJS
  */
 export function watchPath(event) {
   if (!event) return '';
   const slug = event.slug || '';
+  if (event.publicUrlStyle === 'live' && slug) return `/live/${slug}`;
   if (isCoupleWatchSlug(slug)) return `/${slug}`;
   const code = event.shortCode || slug || event.id || event._id;
   return code ? `/${code}` : '';
@@ -115,6 +169,7 @@ export const RESERVED_PUBLIC_ROOTS = new Set([
   'dashboard',
   'admin',
   'reseller',
+  'live-links',
   'api',
   'uploads',
   'assets',
