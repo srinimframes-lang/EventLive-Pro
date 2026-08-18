@@ -73,6 +73,16 @@ export const eventService = {
     return data.data;
   },
 
+  /** Upload/replace the generated 1280x720 YouTube-style share thumbnail. */
+  async uploadShareThumbnail(id, file) {
+    const fd = new FormData();
+    fd.append('thumbnail', file);
+    const { data } = await api.post(`/api/events/${id}/share-thumbnail`, fd, {
+      timeout: 120_000,
+    });
+    return data.data;
+  },
+
   /** Upload classic-wedding (or template) image. kind: hero | bride | groom */
   async uploadTemplateImage(id, kind, file) {
     const fd = new FormData();

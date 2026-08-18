@@ -77,6 +77,9 @@ export default function EventDetail() {
       : event.brideName || event.groomName || '';
   const watchPath = buildWatchPath(event);
 
+  const couplePhoto = event.coverImage;
+  const sharePreview = event.shareThumbnail || event.coverImage;
+
   return (
     <>
       <EventSeo event={event} pageType="detail" />
@@ -134,13 +137,22 @@ export default function EventDetail() {
         </div>
       )}
 
-      {event.coverImage && (
+      {sharePreview && (
         <img
-          src={resolveMediaUrl(event.coverImage)}
+          src={resolveMediaUrl(sharePreview)}
           alt={coverImageAlt(event)}
           loading="lazy"
           decoding="async"
-          className="mt-6 aspect-[16/9] w-full rounded-2xl object-cover shadow-sm"
+          className="mt-6 aspect-video w-full rounded-2xl object-cover shadow-sm"
+        />
+      )}
+      {couplePhoto && event.shareThumbnail && couplePhoto !== event.shareThumbnail && (
+        <img
+          src={resolveMediaUrl(couplePhoto)}
+          alt={coverImageAlt(event)}
+          loading="lazy"
+          decoding="async"
+          className="mt-4 aspect-[16/9] w-full rounded-2xl object-cover shadow-sm"
         />
       )}
 

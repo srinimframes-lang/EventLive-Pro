@@ -111,6 +111,7 @@ export function buildEventDescription(event, settings) {
 
 export function resolveEventOgImage(event, settings) {
   const candidates = [
+    event?.shareThumbnail,
     event?.coverImage,
     event?.themeSnapshot?.backgroundImage,
     event?.gallery?.[0]?.url,

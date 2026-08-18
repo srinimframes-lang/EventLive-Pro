@@ -330,6 +330,13 @@ const eventSchema = new Schema(
       trim: true,
       default: '',
     },
+    // Generated 1280x720 YouTube-style share/OG thumbnail. Optional; OG falls
+    // back to coverImage for existing events that have never generated one.
+    shareThumbnail: {
+      type: String,
+      trim: true,
+      default: '',
+    },
 
     // ── Professional theme (snapshot at selection — immune to catalog edits) ──
     theme: {

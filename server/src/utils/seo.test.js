@@ -177,6 +177,9 @@ test('buildOgHtml emits og/twitter tags without bouncing crawlers to the SPA', (
   assert.match(html, /name="twitter:title" content="Deekha Reddy ❤️ Tarun Reddy"/);
   assert.match(html, /name="twitter:description" content="Wedding Live Streaming"/);
   assert.match(html, /property="og:url" content="https:\/\/eventlivepro.com\/AM5DJS"/);
+  assert.match(html, /property="og:image" content="https:\/\/example.com\/og.jpg"/);
+  assert.match(html, /property="og:image:width" content="1280"/);
+  assert.match(html, /property="og:image:height" content="720"/);
   assert.equal(html.includes('http-equiv="refresh"'), false);
 });
 

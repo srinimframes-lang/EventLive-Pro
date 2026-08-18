@@ -13,9 +13,11 @@ import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 import EventQrCard from '../components/EventQrCard.jsx';
+import YoutubeThumbnailPreview from '../components/admin/YoutubeThumbnailPreview.jsx';
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
 import { streamService } from '../services/stream.service.js';
+import { generateYoutubeThumbnail } from '../utils/generateYoutubeThumbnail.js';
 import BackupStreamSettings, {
   validateBackupStreamFields,
 } from '../components/live/BackupStreamSettings.jsx';
@@ -72,6 +74,7 @@ const EMPTY = {
   studioYoutube: '',
   studioMapsUrl: '',
   coverImage: '',
+  shareThumbnail: '',
   pageTemplate: 'default',
   heroBackgroundImage: '',
   bridePhoto: '',
@@ -99,6 +102,10 @@ export default function EventForm() {
   const bridePhotoInputRef = useRef(null);
   const groomPhotoInputRef = useRef(null);
   const pendingCoverRef = useRef(null);
+  const pendingThumbRef = useRef(null);
+  const coverSourceRef = useRef(null);
+  const thumbPreviewRef = useRef('');
+  const skipThumbNameEffectRef = useRef(true);
   const pendingLogoRef = useRef(null);
   const pendingHeroRef = useRef(null);
   const pendingBridePhotoRef = useRef(null);
@@ -141,6 +148,11 @@ export default function EventForm() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingThumb, setUploadingThumb] = useState(false);
+  const [generatingThumb, setGeneratingThumb] = useState(false);
+  const [thumbPreview, setThumbPreview] = useState('');
+  const [thumbDirty, setThumbDirty] = useState(false);
+  const [thumbError, setThumbError] = useState('');
   const [uploadingTemplateImg, setUploadingTemplateImg] = useState(false);
   const [error, setError] = useState('');
   const [allThemes, setAllThemes] = useState([]);
@@ -206,6 +218,7 @@ export default function EventForm() {
           studioYoutube: event.studioYoutube || '',
           studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
+          shareThumbnail: event.shareThumbnail || '',
           pageTemplate: event.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
           heroBackgroundImage: event.heroBackgroundImage || '',
           bridePhoto: event.bridePhoto || '',
@@ -232,6 +245,7 @@ export default function EventForm() {
           facebookForwardEnabled: Boolean(event.facebookForwardEnabled),
           adaptiveStreaming: Boolean(event.adaptiveStreaming),
         });
+        if (event.shareThumbnail) setThumbPreview(event.shareThumbnail);
         setEventOwnerIds({
           organizer: event.organizer?.id || event.organizer?._id || event.organizer || '',
           createdBy: event.createdBy?.id || event.createdBy?._id || event.createdBy || '',
@@ -320,6 +334,117 @@ export default function EventForm() {
     setForm((f) => ({ ...f, [name]: type === 'checkbox' ? checked : value }));
   };
 
+  const revokeThumbPreview = () => {
+    if (thumbPreviewRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(thumbPreviewRef.current);
+    }
+    thumbPreviewRef.current = '';
+  };
+
+  const coverSourceForThumb = (coverImage) => {
+    if (coverSourceRef.current instanceof Blob) return coverSourceRef.current;
+    if (pendingCoverRef.current instanceof Blob) return pendingCoverRef.current;
+    if (!coverImage) return null;
+    if (coverImage.startsWith('blob:') || coverImage.startsWith('data:')) return coverImage;
+    return resolveMediaUrl(coverImage);
+  };
+
+  const generateThumbFromForm = useCallback(
+    async (nextForm) => {
+      const source = coverSourceForThumb(nextForm.coverImage);
+      if (!source) {
+        setThumbError('Upload a couple photo first.');
+        return null;
+      }
+      setGeneratingThumb(true);
+      setThumbError('');
+      try {
+        const { file, dataUrl } = await generateYoutubeThumbnail({
+          source,
+          event: nextForm,
+          settings,
+        });
+        revokeThumbPreview();
+        pendingThumbRef.current = file;
+        thumbPreviewRef.current = dataUrl;
+        setThumbPreview(dataUrl);
+        setThumbDirty(true);
+        return file;
+      } catch (err) {
+        setThumbError(err.message || 'Could not generate thumbnail.');
+        return null;
+      } finally {
+        setGeneratingThumb(false);
+      }
+    },
+    [settings]
+  );
+
+  const generateThumbFromFormRef = useRef(generateThumbFromForm);
+  generateThumbFromFormRef.current = generateThumbFromForm;
+
+  useEffect(() => {
+    if (loading) return undefined;
+    if (skipThumbNameEffectRef.current) {
+      skipThumbNameEffectRef.current = false;
+      return undefined;
+    }
+    if (!form.coverImage && !coverSourceRef.current && !pendingCoverRef.current) return undefined;
+    const snapshot = form;
+    const timer = setTimeout(() => {
+      generateThumbFromFormRef.current(snapshot);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [loading, form.brideName, form.groomName, form.title, form.shortCode, form.slug]);
+
+  useEffect(() => {
+    return () => revokeThumbPreview();
+  }, []);
+
+  const persistThumbFile = async (eventId, file) => {
+    if (!eventId || !file) return null;
+    setUploadingThumb(true);
+    setThumbError('');
+    try {
+      const { shareThumbnail } = await eventService.uploadShareThumbnail(eventId, file);
+      pendingThumbRef.current = null;
+      setForm((f) => ({ ...f, shareThumbnail }));
+      setThumbDirty(false);
+      return shareThumbnail;
+    } catch (err) {
+      setThumbError(err.message || 'Could not save thumbnail.');
+      return null;
+    } finally {
+      setUploadingThumb(false);
+    }
+  };
+
+  const handleRegenerateThumbnail = async () => {
+    const file = await generateThumbFromForm(form);
+    if (file && isEdit) await persistThumbFile(id, file);
+  };
+
+  const handleSaveThumbnail = async () => {
+    let file = pendingThumbRef.current;
+    if (!file) file = await generateThumbFromForm(form);
+    if (!file) return;
+    if (!isEdit) {
+      showToast('Thumbnail will upload when you create the event.');
+      return;
+    }
+    await persistThumbFile(id, file);
+  };
+
+  const handleDownloadThumbnail = () => {
+    const src = thumbPreview || form.shareThumbnail;
+    if (!src) return;
+    const a = document.createElement('a');
+    a.href = src.startsWith('data:') || src.startsWith('blob:') ? src : resolveMediaUrl(src);
+    a.download = 'youtube-thumbnail.jpg';
+    a.rel = 'noopener';
+    a.click();
+  };
+
   const handleLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -344,16 +469,24 @@ export default function EventForm() {
   const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    coverSourceRef.current = file;
     if (!isEdit) {
       pendingCoverRef.current = file;
-      setForm((f) => ({ ...f, coverImage: URL.createObjectURL(file) }));
+      setForm((f) => {
+        const next = { ...f, coverImage: URL.createObjectURL(file) };
+        generateThumbFromForm(next);
+        return next;
+      });
       return;
     }
     setUploadingCover(true);
     setError('');
     try {
       const { coverImage } = await eventService.uploadCover(id, file);
+      const nextForm = { ...form, coverImage };
       setForm((f) => ({ ...f, coverImage }));
+      const thumbFile = await generateThumbFromForm({ ...nextForm, coverImage });
+      if (thumbFile) await persistThumbFile(id, thumbFile);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -408,7 +541,7 @@ export default function EventForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (saveInFlightRef.current || submitting || uploadingLogo || uploadingCover || uploadingTemplateImg) return;
+    if (saveInFlightRef.current || submitting || uploadingLogo || uploadingCover || uploadingThumb || uploadingTemplateImg) return;
 
     setError('');
     const studioForm = normalizeStudioForm(form);
@@ -599,11 +732,13 @@ export default function EventForm() {
     if (form.theme) payload.theme = form.theme;
 
     const pendingCover = pendingCoverRef.current;
+    const pendingThumb = pendingThumbRef.current;
     const pendingLogo = pendingLogoRef.current;
     const pendingHero = pendingHeroRef.current;
     const pendingBride = pendingBridePhotoRef.current;
     const pendingGroom = pendingGroomPhotoRef.current;
     pendingCoverRef.current = null;
+    pendingThumbRef.current = null;
     pendingLogoRef.current = null;
     pendingHeroRef.current = null;
     pendingBridePhotoRef.current = null;
@@ -629,11 +764,19 @@ export default function EventForm() {
       if (!isEdit && saved?.id) {
         const uploads = [];
         if (pendingCover) uploads.push(eventService.uploadCover(saved.id, pendingCover));
+        if (pendingThumb) uploads.push(eventService.uploadShareThumbnail(saved.id, pendingThumb));
         if (pendingLogo) uploads.push(eventService.uploadLogo(saved.id, pendingLogo));
         if (pendingHero) uploads.push(eventService.uploadTemplateImage(saved.id, 'hero', pendingHero));
         if (pendingBride) uploads.push(eventService.uploadTemplateImage(saved.id, 'bride', pendingBride));
         if (pendingGroom) uploads.push(eventService.uploadTemplateImage(saved.id, 'groom', pendingGroom));
-        if (uploads.length) await Promise.all(uploads);
+        if (uploads.length) {
+          const results = await Promise.all(uploads);
+          const thumbResult = results.find((r) => r && r.shareThumbnail);
+          if (thumbResult?.shareThumbnail) {
+            setForm((f) => ({ ...f, shareThumbnail: thumbResult.shareThumbnail }));
+            setThumbDirty(false);
+          }
+        }
         if (usesServerIngest) {
           try {
             const keyInfo = await streamService.getKey(saved.id);
@@ -648,9 +791,14 @@ export default function EventForm() {
         }
       }
 
+      if (isEdit && pendingThumb && saved?.id) {
+        await persistThumbFile(saved.id, pendingThumb);
+      }
+
       if (!isAdmin) await refreshUser().catch(() => {});
     } catch (err) {
       pendingCoverRef.current = pendingCover;
+      pendingThumbRef.current = pendingThumb;
       pendingLogoRef.current = pendingLogo;
       pendingHeroRef.current = pendingHero;
       pendingBridePhotoRef.current = pendingBride;
@@ -882,6 +1030,19 @@ export default function EventForm() {
                 </p>
               </div>
             </div>
+            <YoutubeThumbnailPreview
+              coverSrc={form.coverImage}
+              previewSrc={thumbPreview || form.shareThumbnail}
+              generating={generatingThumb}
+              saving={uploadingThumb}
+              dirty={thumbDirty}
+              hasCover={Boolean(form.coverImage || coverSourceRef.current || pendingCoverRef.current)}
+              stored={Boolean(form.shareThumbnail)}
+              error={thumbError}
+              onRegenerate={handleRegenerateThumbnail}
+              onSave={handleSaveThumbnail}
+              onDownload={handleDownloadThumbnail}
+            />
           </div>
         </Section>
 
@@ -1479,7 +1640,7 @@ export default function EventForm() {
           <button
             type="submit"
             className="btn-primary w-full sm:w-auto"
-            disabled={submitting || uploadingLogo || uploadingCover || uploadingTemplateImg || insufficient}
+            disabled={submitting || uploadingLogo || uploadingCover || uploadingThumb || uploadingTemplateImg || insufficient}
           >
             {submitting
               ? 'Saving…'

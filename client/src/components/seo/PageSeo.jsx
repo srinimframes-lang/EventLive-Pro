@@ -30,6 +30,8 @@ export default function PageSeo({
       <meta property="og:description" content={description} />
       {canonical && <meta property="og:url" content={canonical} />}
       {image && <meta property="og:image" content={image} />}
+      {image && <meta property="og:image:width" content="1280" />}
+      {image && <meta property="og:image:height" content="720" />}
 
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:title" content={title} />

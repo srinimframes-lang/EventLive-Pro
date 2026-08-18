@@ -221,6 +221,7 @@ export function buildDistrictDescription(district) {
 
 export function resolveOgImage(event, settings, apiOrigin) {
   const candidates = [
+    event?.shareThumbnail,
     event?.coverImage,
     event?.themeSnapshot?.backgroundImage,
     event?.gallery?.[0]?.url,
@@ -404,6 +405,8 @@ export function buildOgHtml({
     <meta property="og:description" content="${escapeHtml(description)}" />
     <meta property="og:url" content="${escapeHtml(url)}" />
     <meta property="og:image" content="${escapeHtml(image)}" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />

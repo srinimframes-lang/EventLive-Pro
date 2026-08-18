@@ -45,6 +45,7 @@ import {
   playGalleryImage,
   uploadLogo,
   uploadCover,
+  uploadShareThumbnail,
   uploadTemplateImage,
 } from '../controllers/media.controller.js';
 import { protect, optionalAuth, authorize, authorizePlatformAdmin } from '../middleware/auth.middleware.js';
@@ -109,6 +110,7 @@ router.get('/:id/gallery/:photoId/image', playGalleryImage);
 router.delete('/:id/gallery/:photoId', protect, deleteGalleryPhoto);
 router.post('/:id/logo', protect, upload.single('logo'), uploadLogo);
 router.post('/:id/cover', protect, upload.single('cover'), uploadCover);
+router.post('/:id/share-thumbnail', protect, upload.single('thumbnail'), uploadShareThumbnail);
 router.post('/:id/media/:kind', protect, upload.single('image'), uploadTemplateImage);
 router.post('/:id/qr/sync', protect, syncEventQr);
 

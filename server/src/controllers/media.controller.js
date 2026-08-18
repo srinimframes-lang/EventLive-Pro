@@ -374,6 +374,29 @@ export const uploadCover = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: { coverImage: event.coverImage } });
 });
 
+/**
+ * @route POST /api/events/:id/share-thumbnail
+ * @desc  Upload / replace the generated 1280x720 YouTube-style share thumbnail
+ * @access Private (owner/admin)
+ */
+export const uploadShareThumbnail = asyncHandler(async (req, res) => {
+  const event = await findEventOr404(req.params.id, res);
+  assertCanManageEvent(event, req.user, res);
+
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No thumbnail image was uploaded');
+  }
+
+  if (event.shareThumbnail && event.shareThumbnail !== event.coverImage) {
+    await removeUpload(event.shareThumbnail);
+  }
+  event.shareThumbnail = await persistUpload(req.file);
+  await event.save();
+
+  res.status(201).json({ success: true, data: { shareThumbnail: event.shareThumbnail } });
+});
+
 const TEMPLATE_IMAGE_FIELDS = {
   hero: 'heroBackgroundImage',
   bride: 'bridePhoto',
