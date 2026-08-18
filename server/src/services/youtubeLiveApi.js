@@ -314,6 +314,19 @@ export function eventYoutubeLookupId(event) {
   );
 }
 
+/** createdBy first, then organizer — YouTube OAuth may live on either user. */
+export function youtubeOauthUserIds(event) {
+  const ids = [];
+  const push = (value) => {
+    if (value == null || value === '') return;
+    const id = String(value._id || value.id || value).trim();
+    if (id && id !== 'undefined' && id !== 'null' && !ids.includes(id)) ids.push(id);
+  };
+  push(event?.createdBy);
+  push(event?.organizer);
+  return ids;
+}
+
 /**
  * If the event's own broadcast is already live, keep it. Otherwise pick the
  * connected account's currently active live (OBS "Stream now" / Studio live)

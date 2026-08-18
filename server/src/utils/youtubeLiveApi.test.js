@@ -19,6 +19,7 @@ const {
   getBroadcastPlaybackInfo,
   eventYoutubeLookupId,
   selectLiveYoutubePlayback,
+  youtubeOauthUserIds,
 } = await import('../services/youtubeLiveApi.js');
 
 test('shouldAutoCreateYoutubeLive skips when a URL was pasted', () => {
@@ -238,5 +239,22 @@ test('selectLiveYoutubePlayback does not steal another event live when ended', (
     }
   );
   assert.equal(picked.videoId, 'gusTClw3GbI');
+});
+
+test('youtubeOauthUserIds tries createdBy then organizer', () => {
+  assert.deepEqual(
+    youtubeOauthUserIds({
+      createdBy: { _id: 'adminOwner1' },
+      organizer: { _id: 'ytChannel2' },
+    }),
+    ['adminOwner1', 'ytChannel2']
+  );
+  assert.deepEqual(
+    youtubeOauthUserIds({
+      createdBy: 'sameUser123',
+      organizer: 'sameUser123',
+    }),
+    ['sameUser123']
+  );
 });
 
