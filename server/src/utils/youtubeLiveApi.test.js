@@ -29,6 +29,19 @@ test('shouldAutoCreateYoutubeLive skips when a URL was pasted', () => {
   );
 });
 
+test('shouldAutoCreateYoutubeLive skips when a broadcast already exists', () => {
+  assert.equal(
+    shouldAutoCreateYoutubeLive({
+      streamType: 'youtube',
+      isOnline: true,
+      youtubeVideoId: '',
+      streamUrl: '',
+      youtubeBroadcastId: 'bcastLive1',
+    }),
+    false
+  );
+});
+
 test('shouldAutoCreateYoutubeLive is true for YouTube dest without URL', () => {
   assert.equal(
     shouldAutoCreateYoutubeLive({
@@ -72,6 +85,17 @@ test('insertBindYoutubeLive creates, binds, and returns ingest (no tokens)', asy
         assert.equal(params.id, 'bcastLive1');
         assert.equal(params.streamId, 'streamLive1');
         return { data: { id: 'bcastLive1' } };
+      },
+      update: async (params) => {
+        assert.equal(params.requestBody.id, 'bcastLive1');
+        assert.equal(params.requestBody.contentDetails.enableAutoStart, true);
+        assert.equal(params.requestBody.contentDetails.monitorStream.enableMonitorStream, false);
+        return {
+          data: {
+            id: 'bcastLive1',
+            status: { lifeCycleStatus: 'ready', privacyStatus: 'unlisted' },
+          },
+        };
       },
     },
     liveStreams: {

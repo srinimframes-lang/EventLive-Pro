@@ -87,8 +87,10 @@ export function shouldAutoCreateYoutubeLive({
   youtubeVideoId,
   streamUrl,
   youtubeStreamKey,
+  youtubeBroadcastId,
 } = {}) {
   if (isOnline === false) return false;
+  if (String(youtubeBroadcastId || '').trim()) return false;
   const hasManualVideo = Boolean(extractYouTubeId(youtubeVideoId) || extractYouTubeId(streamUrl));
   if (hasManualVideo) return false;
   if (streamType === 'youtube' || streamType === 'youtube_server') return true;
@@ -201,6 +203,28 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
     id: broadcastId,
     streamId,
   });
+
+  // Bind puts the broadcast in `ready`. Re-apply auto-start after bind so OBS
+  // can push RTMP without finishing setup in YouTube Studio.
+  if (typeof youtube.liveBroadcasts.update === 'function') {
+    await youtube.liveBroadcasts.update({
+      part: ['id', 'contentDetails', 'status'],
+      requestBody: {
+        id: broadcastId,
+        status: {
+          privacyStatus: 'unlisted',
+          selfDeclaredMadeForKids: false,
+        },
+        contentDetails: {
+          enableAutoStart: true,
+          enableAutoStop: true,
+          enableDvr: true,
+          recordFromStart: true,
+          monitorStream: { enableMonitorStream: false },
+        },
+      },
+    });
+  }
 
   const ingest = stream.cdn?.ingestionInfo || {};
   const streamKey = String(ingest.streamName || '').trim();
