@@ -132,12 +132,21 @@ async function findEventOr404(id, res, { withKey = false } = {}) {
   return event;
 }
 
+function resolvePublicYoutubeVideoId(event) {
+  return (
+    extractYouTubeId(event?.youtubeVideoId) ||
+    extractYouTubeId(event?.streamUrl) ||
+    extractYouTubeId(event?.youtubeWatchUrl) ||
+    extractYouTubeId(event?.youtubeBroadcastId) ||
+    ''
+  );
+}
+
 /**
  * Public-safe view of an event's streaming configuration (no secret key).
  */
 function publicStreamConfig(event, { isPublishing = null } = {}) {
-  const youtubeVideoId =
-    extractYouTubeId(event.youtubeVideoId) || extractYouTubeId(event.streamUrl) || '';
+  const youtubeVideoId = resolvePublicYoutubeVideoId(event);
   const destination = String(event.streamingDestination || '')
     .toLowerCase()
     .replace(/-/g, '_');
@@ -195,7 +204,9 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
           ? 'youtube'
           : undefined,
     youtubeVideoId,
-    streamUrl: event.streamUrl || '',
+    youtubeBroadcastId: event.youtubeBroadcastId || '',
+    youtubeWatchUrl: event.youtubeWatchUrl || '',
+    streamUrl: event.streamUrl || event.youtubeWatchUrl || '',
     // Never expose live HLS to the public player for YouTube + Server.
     hlsUrl: youtubePlusServer ? '' : isServer ? playbackUrl : event.hlsUrl,
     playbackUrl: youtubePlusServer ? '' : playbackUrl,

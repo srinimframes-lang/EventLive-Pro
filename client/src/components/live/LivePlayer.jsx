@@ -242,7 +242,9 @@ function YouTubePlayer({ videoId }) {
 function resolveYoutubeVideoId(config) {
   return (
     extractYouTubeId(config?.youtubeVideoId || '') ||
-    extractYouTubeId(config?.streamUrl || '')
+    extractYouTubeId(config?.streamUrl || '') ||
+    extractYouTubeId(config?.youtubeWatchUrl || '') ||
+    extractYouTubeId(config?.youtubeBroadcastId || '')
   );
 }
 

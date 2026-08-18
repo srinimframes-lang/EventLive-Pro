@@ -80,7 +80,11 @@ test('youtubeWatchUrl builds a public watch URL from the broadcast id', () => {
 test('insertBindYoutubeLive creates, binds, and returns ingest (no tokens)', async () => {
   const youtube = {
     liveBroadcasts: {
-      insert: async () => ({ data: { id: 'bcastLive1' } }),
+      insert: async (params) => {
+        assert.equal(params.requestBody.contentDetails.enableAutoStart, true);
+        assert.equal(params.requestBody.contentDetails.enableAutoStop, false);
+        return { data: { id: 'bcastLive1' } };
+      },
       bind: async (params) => {
         assert.equal(params.id, 'bcastLive1');
         assert.equal(params.streamId, 'streamLive1');
@@ -89,6 +93,7 @@ test('insertBindYoutubeLive creates, binds, and returns ingest (no tokens)', asy
       update: async (params) => {
         assert.equal(params.requestBody.id, 'bcastLive1');
         assert.equal(params.requestBody.contentDetails.enableAutoStart, true);
+        assert.equal(params.requestBody.contentDetails.enableAutoStop, false);
         assert.equal(params.requestBody.contentDetails.monitorStream.enableMonitorStream, false);
         return {
           data: {

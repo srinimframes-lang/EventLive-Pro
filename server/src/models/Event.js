@@ -508,7 +508,12 @@ eventSchema.pre('save', function ensureServerStreamFields() {
 
 // Keep YouTube fields in sync when only streamUrl was saved.
 eventSchema.pre('save', function syncYoutubeFromStreamUrl() {
-  const id = extractYouTubeId(this.youtubeVideoId) || extractYouTubeId(this.streamUrl) || '';
+  const id =
+    extractYouTubeId(this.youtubeVideoId) ||
+    extractYouTubeId(this.streamUrl) ||
+    extractYouTubeId(this.youtubeWatchUrl) ||
+    extractYouTubeId(this.youtubeBroadcastId) ||
+    '';
   if (!id) return;
   this.youtubeVideoId = id;
   if (!this.streamProvider || this.streamProvider === 'none') {

@@ -164,7 +164,8 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
       },
       contentDetails: {
         enableAutoStart: true,
-        enableAutoStop: true,
+        enableAutoStop: false,
+        enableEmbed: true,
         enableDvr: true,
         recordFromStart: true,
         monitorStream: { enableMonitorStream: false },
@@ -217,7 +218,8 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
         },
         contentDetails: {
           enableAutoStart: true,
-          enableAutoStop: true,
+          enableAutoStop: false,
+          enableEmbed: true,
           enableDvr: true,
           recordFromStart: true,
           monitorStream: { enableMonitorStream: false },
