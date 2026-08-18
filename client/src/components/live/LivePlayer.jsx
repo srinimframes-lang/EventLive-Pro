@@ -226,12 +226,14 @@ function YouTubePlayer({ videoId }) {
     );
   }
 
+  const embedSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0`;
   return (
     <Frame>
       <iframe
         className="absolute inset-0 h-full w-full"
-        src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`}
+        src={embedSrc}
         title="Live stream"
+        referrerPolicy="strict-origin-when-cross-origin"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
       />
@@ -1642,6 +1644,27 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
  */
 export default function LivePlayer({ config, onLiveUiChange }) {
   const [hlsLiveResume, setHlsLiveResume] = useState(false);
+
+  useEffect(() => {
+    if (!config) return;
+    const videoId =
+      extractYouTubeId(config.youtubeVideoId || '') ||
+      extractYouTubeId(config.streamUrl || '') ||
+      extractYouTubeId(config.youtubeWatchUrl || '') ||
+      extractYouTubeId(config.youtubeBroadcastId || '');
+    // eslint-disable-next-line no-console
+    console.info('[LivePlayer] stream config', {
+      provider: config.provider,
+      streamingDestination: config.streamingDestination,
+      youtubeVideoId: config.youtubeVideoId,
+      youtubeBroadcastId: config.youtubeBroadcastId,
+      youtubeWatchUrl: config.youtubeWatchUrl,
+      streamUrl: config.streamUrl,
+      isLive: config.isLive,
+      playbackMode: config.playbackMode,
+      embedUrl: videoId ? `https://www.youtube.com/embed/${videoId}` : '',
+    });
+  }, [config]);
 
   useEffect(() => {
     if (!config) {

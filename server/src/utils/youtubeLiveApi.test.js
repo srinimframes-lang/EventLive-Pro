@@ -16,6 +16,7 @@ const {
   insertBindYoutubeLive,
   applyYoutubeLiveFields,
   publicYoutubeIngest,
+  getBroadcastPlaybackInfo,
 } = await import('../services/youtubeLiveApi.js');
 
 test('shouldAutoCreateYoutubeLive skips when a URL was pasted', () => {
@@ -142,4 +143,8 @@ test('applyYoutubeLiveFields stores watch URL and ids on the event payload', () 
   assert.equal(payload.youtubeLiveStreamId, 'streamLive1');
   assert.equal(payload.streamUrl, 'https://www.youtube.com/watch?v=bcastLive1');
   assert.equal(payload.youtubeStreamKey, 'aaaa-bbbb-cccc-dddd');
+});
+
+test('getBroadcastPlaybackInfo returns null without an id', async () => {
+  assert.equal(await getBroadcastPlaybackInfo('user1', ''), null);
 });

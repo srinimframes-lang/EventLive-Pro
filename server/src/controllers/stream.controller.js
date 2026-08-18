@@ -55,6 +55,10 @@ import {
   DEFAULT_YOUTUBE_RTMP,
 } from '../utils/youtubeForward.js';
 import {
+  ensureBroadcastEmbeddable,
+  getBroadcastPlaybackInfo,
+} from '../services/youtubeLiveApi.js';
+import {
   DEFAULT_FACEBOOK_RTMP,
   listEnabledForwardTargets,
   buildForwardTarget,
@@ -145,8 +149,9 @@ function resolvePublicYoutubeVideoId(event) {
 /**
  * Public-safe view of an event's streaming configuration (no secret key).
  */
-function publicStreamConfig(event, { isPublishing = null } = {}) {
-  const youtubeVideoId = resolvePublicYoutubeVideoId(event);
+function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null } = {}) {
+  const youtubeVideoId =
+    youtubePlayback?.videoId || resolvePublicYoutubeVideoId(event);
   const destination = String(event.streamingDestination || '')
     .toLowerCase()
     .replace(/-/g, '_');
@@ -173,14 +178,26 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
   const liveFromProbe = isPublishing === true;
   const offlineFromProbe = isPublishing === false;
   const reconnecting = isWithinReconnectGrace(event);
-  // Keep viewers on live during short OBS drops even if MediaMTX probe is briefly false.
-  const isLive = liveFromProbe
-    ? true
-    : reconnecting
+  const youtubeViewer = Boolean(
+    youtubeVideoId && (youtubePlusServer || provider === 'youtube')
+  );
+  // YouTube-only events never publish to MediaMTX, so a missing HLS probe must
+  // not mark the public page offline while the YouTube broadcast is live.
+  let isLive;
+  if (youtubeViewer) {
+    const ended = event.status === 'ended' || event.status === 'cancelled';
+    if (ended) isLive = Boolean(event.isLive);
+    else if (youtubePlayback?.isLive === true) isLive = true;
+    else isLive = event.status === 'live' || Boolean(event.isLive);
+  } else {
+    isLive = liveFromProbe
       ? true
-      : offlineFromProbe
-        ? false
-        : Boolean(event.isLive);
+      : reconnecting
+        ? true
+        : offlineFromProbe
+          ? false
+          : Boolean(event.isLive);
+  }
   const rec = getRecordingState(event);
   const recordingUrl = isLive ? '' : buildPublicRecordingUrl(event);
   const playbackMode = isLive
@@ -204,9 +221,14 @@ function publicStreamConfig(event, { isPublishing = null } = {}) {
           ? 'youtube'
           : undefined,
     youtubeVideoId,
-    youtubeBroadcastId: event.youtubeBroadcastId || '',
-    youtubeWatchUrl: event.youtubeWatchUrl || '',
-    streamUrl: event.streamUrl || event.youtubeWatchUrl || '',
+    youtubeBroadcastId: event.youtubeBroadcastId || youtubePlayback?.broadcastId || '',
+    youtubeWatchUrl:
+      youtubePlayback?.watchUrl || event.youtubeWatchUrl || event.streamUrl || '',
+    streamUrl:
+      event.streamUrl ||
+      youtubePlayback?.watchUrl ||
+      event.youtubeWatchUrl ||
+      '',
     // Never expose live HLS to the public player for YouTube + Server.
     hlsUrl: youtubePlusServer ? '' : isServer ? playbackUrl : event.hlsUrl,
     playbackUrl: youtubePlusServer ? '' : playbackUrl,
@@ -352,14 +374,77 @@ function mediaSecretOk(req) {
  * @desc  Public streaming configuration for the player
  * @access Public
  */
+async function resolveYoutubePlaybackForPublicEvent(event) {
+  const storedId =
+    extractYouTubeId(event.youtubeVideoId) ||
+    extractYouTubeId(event.youtubeBroadcastId) ||
+    extractYouTubeId(event.youtubeWatchUrl) ||
+    extractYouTubeId(event.streamUrl) ||
+    String(event.youtubeBroadcastId || event.youtubeVideoId || '').trim();
+  const ownerId = event.createdBy || event.organizer?._id || event.organizer;
+  if (!storedId || !ownerId) return null;
+  try {
+    let info = await getBroadcastPlaybackInfo(ownerId, storedId);
+    if (!info) return null;
+    try {
+      info = (await ensureBroadcastEmbeddable(ownerId, info)) || info;
+    } catch (err) {
+      console.info('[youtube-embed] enableEmbed update skipped', err?.message || err);
+    }
+    if (info.videoId && info.videoId !== event.youtubeVideoId) {
+      event.youtubeVideoId = info.videoId;
+      event.youtubeWatchUrl = info.watchUrl || event.youtubeWatchUrl;
+      if (!event.youtubeBroadcastId) event.youtubeBroadcastId = info.broadcastId;
+      try {
+        if (typeof event.save === 'function') {
+          await event.save();
+        } else {
+          await Event.updateOne(
+            { _id: event._id || event.id },
+            {
+              $set: {
+                youtubeVideoId: event.youtubeVideoId,
+                youtubeWatchUrl: event.youtubeWatchUrl,
+                youtubeBroadcastId: event.youtubeBroadcastId,
+              },
+            }
+          );
+        }
+      } catch (err) {
+        console.info('[youtube-embed] persist video id skipped', err?.message || err);
+      }
+    }
+    return info;
+  } catch (err) {
+    console.info('[youtube-embed] broadcast lookup skipped', err?.message || err);
+    return null;
+  }
+}
+
 export const getStreamConfig = asyncHandler(async (req, res) => {
   let event = await findEventOr404(req.params.id, res);
   const io = req.app.get('io');
   event = (await resolveExpiredReconnect(event, io)) || event;
+  const youtubePlayback = await resolveYoutubePlaybackForPublicEvent(event);
   const isPublishing = await publishingStatusForEvent(event);
+  const data = publicStreamConfig(event, { isPublishing, youtubePlayback });
+  console.info('[youtube-embed] public stream config', {
+    eventId: event.id,
+    youtubeBroadcastId: data.youtubeBroadcastId,
+    youtubeVideoId: data.youtubeVideoId,
+    youtubeWatchUrl: data.youtubeWatchUrl,
+    streamUrl: data.streamUrl,
+    youtubeLifeCycleStatus: youtubePlayback?.lifeCycleStatus || '',
+    youtubePrivacyStatus: youtubePlayback?.privacyStatus || '',
+    youtubeEnableEmbed: youtubePlayback?.enableEmbed,
+    youtubeIsLive: youtubePlayback?.isLive,
+    isLive: data.isLive,
+    playbackMode: data.playbackMode,
+    provider: data.provider,
+  });
   res.status(200).json({
     success: true,
-    data: publicStreamConfig(event, { isPublishing }),
+    data,
   });
 });
 

@@ -278,3 +278,62 @@ export async function provisionYoutubeLiveIfNeeded(user, payload, streamType) {
     throw safe;
   }
 }
+
+/**
+ * Read the live broadcast's actual video id + lifecycle. Does NOT transition
+ * or stop the broadcast.
+ */
+export async function getBroadcastPlaybackInfo(userId, broadcastOrVideoId) {
+  const id = String(broadcastOrVideoId || '').trim();
+  if (!userId || !id) return null;
+  const { youtube } = await authorizedClientForUser(userId);
+  const res = await youtube.liveBroadcasts.list({
+    part: ['id', 'snippet', 'status', 'contentDetails'],
+    id: [id],
+    maxResults: 1,
+  });
+  const item = apiData(res)?.items?.[0];
+  if (!item?.id) return null;
+  const lifeCycleStatus = String(item.status?.lifeCycleStatus || '').toLowerCase();
+  const privacyStatus = String(item.status?.privacyStatus || '').toLowerCase();
+  const enableEmbed = item.contentDetails?.enableEmbed !== false;
+  return {
+    videoId: item.id,
+    broadcastId: item.id,
+    watchUrl: youtubeWatchUrl(item.id),
+    lifeCycleStatus,
+    privacyStatus,
+    enableEmbed,
+    isLive: lifeCycleStatus === 'live' || lifeCycleStatus === 'testing',
+  };
+}
+
+/** Turn on embed for older auto-created broadcasts. Never transitions/stops. */
+export async function ensureBroadcastEmbeddable(userId, info) {
+  if (!userId || !info?.broadcastId) return info;
+  if (info.enableEmbed && info.privacyStatus !== 'private') return info;
+  const { youtube } = await authorizedClientForUser(userId);
+  await youtube.liveBroadcasts.update({
+    part: ['id', 'contentDetails', 'status'],
+    requestBody: {
+      id: info.broadcastId,
+      status: {
+        privacyStatus: info.privacyStatus === 'private' ? 'unlisted' : info.privacyStatus || 'unlisted',
+        selfDeclaredMadeForKids: false,
+      },
+      contentDetails: {
+        enableAutoStart: true,
+        enableAutoStop: false,
+        enableEmbed: true,
+        enableDvr: true,
+        recordFromStart: true,
+        monitorStream: { enableMonitorStream: false },
+      },
+    },
+  });
+  return {
+    ...info,
+    enableEmbed: true,
+    privacyStatus: info.privacyStatus === 'private' ? 'unlisted' : info.privacyStatus,
+  };
+}
