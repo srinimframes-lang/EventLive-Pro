@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import '../styles/watch-theme.css';
 import {
   eventService,
@@ -17,6 +17,7 @@ import YoutubeThumbnailPreview from '../components/admin/YoutubeThumbnailPreview
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
 import { streamService } from '../services/stream.service.js';
+import { youtubeService } from '../services/youtube.service.js';
 import { generateYoutubeThumbnail } from '../utils/generateYoutubeThumbnail.js';
 import BackupStreamSettings, {
   validateBackupStreamFields,
@@ -94,7 +95,7 @@ export default function EventForm() {
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, isAdmin, isSuperAdmin, refreshUser } = useAuth();
+  const { user, isAdmin, isSuperAdmin, isSubAdmin, refreshUser } = useAuth();
   const { settings } = useSettings();
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
@@ -137,11 +138,15 @@ export default function EventForm() {
     ) || 'server';
   const balance = user?.creditBalance ?? 0;
   const cost = LINK_COSTS[streamType] || 1;
-  const showCreditCosts = !isAdmin && !isEdit;
+  const isStaffEditor = isAdmin || isSubAdmin;
+  const isServerDest = streamType !== 'youtube';
+  const showCreditCosts = !isAdmin && !isEdit && isServerDest;
   const insufficient = showCreditCosts && balance < cost;
 
   const [serverStream, setServerStream] = useState(null);
   const [serverStreamLoading, setServerStreamLoading] = useState(false);
+  const [youtubeConnected, setYoutubeConnected] = useState(false);
+  const [youtubeIngest, setYoutubeIngest] = useState(null);
 
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(isEdit);
@@ -312,6 +317,46 @@ export default function EventForm() {
       active = false;
     };
   }, [isEdit, id, streamType, form.isOnline]);
+
+  useEffect(() => {
+    let active = true;
+    youtubeService
+      .status()
+      .then((data) => active && setYoutubeConnected(Boolean(data?.connected)))
+      .catch(() => active && setYoutubeConnected(false));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isEdit || !id || !destYoutube) {
+      if (!isEdit) setYoutubeIngest(null);
+      return undefined;
+    }
+    let active = true;
+    eventService
+      .getYoutubeIngest(id)
+      .then((data) => {
+        if (!active) return;
+        setYoutubeIngest(data);
+        if (data?.watchUrl || data?.broadcastId) {
+          setForm((f) => ({
+            ...f,
+            youtubeUrl:
+              f.youtubeUrl ||
+              data.watchUrl ||
+              (data.broadcastId ? `https://youtu.be/${data.broadcastId}` : ''),
+            youtubeRtmpUrl: data.rtmpUrl || f.youtubeRtmpUrl,
+            youtubeStreamKeySet: Boolean(data.streamKey) || f.youtubeStreamKeySet,
+          }));
+        }
+      })
+      .catch(() => active && setYoutubeIngest(null));
+    return () => {
+      active = false;
+    };
+  }, [isEdit, id, destYoutube]);
 
   useEffect(() => {
     let active = true;
@@ -560,7 +605,13 @@ export default function EventForm() {
         ? extractYouTubeId(form.youtubeUrl)
         : '';
 
-    if (form.isOnline && (streamType === 'youtube' || streamType === 'youtube_server') && !youtubeVideoId) {
+    const canAutoCreateYoutube = youtubeConnected && destYoutube;
+    if (
+      form.isOnline &&
+      (streamType === 'youtube' || streamType === 'youtube_server') &&
+      !youtubeVideoId &&
+      !canAutoCreateYoutube
+    ) {
       setError(
         streamType === 'youtube_server'
           ? 'A valid YouTube Live / embed URL is required for YouTube + Server.'
@@ -571,7 +622,7 @@ export default function EventForm() {
       return;
     }
 
-    if (form.isOnline && needsYoutubeForward) {
+    if (form.isOnline && needsYoutubeForward && !canAutoCreateYoutube) {
       if (!form.youtubeRtmpUrl?.trim()) {
         setError('YouTube Server URL is required for this destination.');
         saveInFlightRef.current = false;
@@ -750,6 +801,8 @@ export default function EventForm() {
         ? await eventService.update(id, payload)
         : await eventService.create(payload);
 
+      if (saved?.youtubeIngest) setYoutubeIngest(saved.youtubeIngest);
+
       if (saved) {
         setForm((f) => ({
           ...f,
@@ -826,6 +879,10 @@ export default function EventForm() {
       });
     }
   };
+
+  if (!isStaffEditor) {
+    return <Navigate to={isEdit ? `/live-links/${id}/edit` : '/live-links/new'} replace />;
+  }
 
   if (loading) return <p className="py-20 text-center text-slate-500">Loading…</p>;
 
@@ -1145,17 +1202,23 @@ export default function EventForm() {
                   label={streamType === 'youtube_server' ? 'YouTube Video / Embed URL' : 'YouTube Live URL'}
                   htmlFor="youtubeUrl"
                   hint={
-                    streamType === 'youtube_server'
-                      ? 'Used on the public watch page (YouTube embed). Server HLS is hidden while live.'
-                      : 'Paste the YouTube Live URL or video ID. It will be embedded on the watch page.'
+                    youtubeConnected
+                      ? 'Optional. Leave blank to auto-create a YouTube live from your connected channel. Paste a URL only to reuse an existing live.'
+                      : streamType === 'youtube_server'
+                        ? 'Used on the public watch page (YouTube embed). Server HLS is hidden while live.'
+                        : 'Paste the YouTube Live URL or video ID. It will be embedded on the watch page.'
                   }
                 >
                   <input
                     id="youtubeUrl"
                     name="youtubeUrl"
                     type="text"
-                    required
-                    placeholder="https://youtube.com/live/…  or  https://youtu.be/…"
+                    required={!youtubeConnected}
+                    placeholder={
+                      youtubeConnected
+                        ? 'Leave blank to auto-create, or paste https://youtube.com/live/…'
+                        : 'https://youtube.com/live/…  or  https://youtu.be/…'
+                    }
                     className="input"
                     value={form.youtubeUrl}
                     onChange={handleChange}
@@ -1193,7 +1256,7 @@ export default function EventForm() {
                       placeholder="rtmp://a.rtmp.youtube.com/live2"
                       value={form.youtubeRtmpUrl}
                       onChange={handleChange}
-                      required={needsYoutubeForward}
+                      required={needsYoutubeForward && !youtubeConnected}
                     />
                   </Field>
                   <Field
@@ -1214,7 +1277,7 @@ export default function EventForm() {
                       placeholder={form.youtubeStreamKeySet ? '•••••••• (saved)' : 'YouTube stream key'}
                       value={form.youtubeStreamKey}
                       onChange={handleChange}
-                      required={needsYoutubeForward && !form.youtubeStreamKeySet}
+                      required={needsYoutubeForward && !form.youtubeStreamKeySet && !youtubeConnected}
                     />
                   </Field>
                   {needsYoutubeForward && (
@@ -1228,6 +1291,56 @@ export default function EventForm() {
                       Enable YouTube forwarding for this event
                     </label>
                   )}
+                </div>
+              )}
+
+              {destYoutube && youtubeConnected && !form.youtubeUrl && !isEdit && (
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  YouTube is connected. A live broadcast will be created automatically when you save
+                  this event.
+                </p>
+              )}
+
+              {destYoutube && (youtubeIngest?.watchUrl || youtubeIngest?.streamKey) && (
+                <div className="space-y-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+                  <p className="text-sm font-semibold text-emerald-900">YouTube Live (generated)</p>
+                  <p className="text-xs text-slate-600">
+                    Use these credentials in OBS to publish to YouTube. The watch page embeds this
+                    live URL.
+                  </p>
+                  {youtubeIngest.watchUrl ? (
+                    <Field label="YouTube Live URL" htmlFor="generatedYoutubeWatchUrl">
+                      <input
+                        id="generatedYoutubeWatchUrl"
+                        readOnly
+                        className="input font-mono text-xs"
+                        value={youtubeIngest.watchUrl}
+                      />
+                    </Field>
+                  ) : null}
+                  {youtubeIngest.broadcastId ? (
+                    <p className="text-xs text-slate-500">Broadcast ID: {youtubeIngest.broadcastId}</p>
+                  ) : null}
+                  {youtubeIngest.rtmpUrl ? (
+                    <Field label="YouTube RTMP URL (OBS Server)" htmlFor="generatedYoutubeRtmp">
+                      <input
+                        id="generatedYoutubeRtmp"
+                        readOnly
+                        className="input font-mono text-xs"
+                        value={youtubeIngest.rtmpUrl}
+                      />
+                    </Field>
+                  ) : null}
+                  {youtubeIngest.streamKey ? (
+                    <Field label="YouTube Stream Key" htmlFor="generatedYoutubeKey">
+                      <input
+                        id="generatedYoutubeKey"
+                        readOnly
+                        className="input font-mono text-xs"
+                        value={youtubeIngest.streamKey}
+                      />
+                    </Field>
+                  ) : null}
                 </div>
               )}
 

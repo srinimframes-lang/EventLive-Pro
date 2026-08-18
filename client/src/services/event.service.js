@@ -12,9 +12,13 @@ export const eventService = {
     const { data } = await api.get(`/api/events/${idOrSlug}`);
     return data.data;
   },
+  async getYoutubeIngest(id) {
+    const { data } = await api.get(`/api/events/${id}/youtube-ingest`);
+    return data.data;
+  },
   async create(payload) {
     const { data } = await api.post('/api/events', payload);
-    return data.data;
+    return { ...data.data, youtubeIngest: data.youtubeIngest || null };
   },
   async update(id, payload) {
     const { data } = await api.patch(`/api/events/${id}`, payload);
@@ -99,7 +103,27 @@ export const eventService = {
 };
 
 export const EVENT_CATEGORIES = [
+  'wedding',
+  'engagement',
+  'reception',
+  'sangeet',
+  'haldi',
+  'mehendi',
+  'birthday',
+  'housewarming',
   'other',
+];
+
+export const LIVE_LINK_EVENT_TYPES = [
+  { id: 'wedding', label: 'Wedding' },
+  { id: 'engagement', label: 'Engagement' },
+  { id: 'reception', label: 'Reception' },
+  { id: 'sangeet', label: 'Sangeet' },
+  { id: 'haldi', label: 'Haldi' },
+  { id: 'mehendi', label: 'Mehendi' },
+  { id: 'birthday', label: 'Birthday' },
+  { id: 'housewarming', label: 'Housewarming' },
+  { id: 'other', label: 'Other' },
 ];
 
 export const EVENT_STATUSES = ['draft', 'published', 'live', 'ended', 'cancelled'];

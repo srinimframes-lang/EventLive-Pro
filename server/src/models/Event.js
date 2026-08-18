@@ -3,6 +3,7 @@ import { extractYouTubeId } from '../utils/youtube.js';
 import { streamKeyFromEventId, syncServerStreamFields } from '../utils/mediaStream.js';
 import {
   buildCoupleWatchSlug,
+  buildLivePageSlug,
   RESERVED_PUBLIC_ROOTS,
   slugifyName,
 } from '../utils/seo.js';
@@ -11,6 +12,21 @@ const { Schema, model } = mongoose;
 
 export const EVENT_STATUSES = ['draft', 'published', 'live', 'ended', 'cancelled'];
 export const EVENT_CATEGORIES = [
+  'wedding',
+  'engagement',
+  'reception',
+  'sangeet',
+  'haldi',
+  'mehendi',
+  'birthday',
+  'housewarming',
+  'upanayanam',
+  'half_saree',
+  'baby_shower',
+  'house_warming',
+  'corporate',
+  'temple',
+  'memorial',
   'conference',
   'workshop',
   'webinar',
@@ -62,6 +78,14 @@ const eventSchema = new Schema(
       unique: true,
       index: true,
     },
+    // How the public URL is built. New live-link events use /live/{slug}.
+    // Missing/legacy values keep existing /{shortCode} or /{bride}-weds-{groom} URLs.
+    publicUrlStyle: {
+      type: String,
+      enum: ['live', 'couple', 'short'],
+      default: undefined,
+      index: true,
+    },
     // Short, shareable public code used in /<shortCode> URLs (e.g. "AP24X9").
     shortCode: {
       type: String,
@@ -73,8 +97,8 @@ const eventSchema = new Schema(
     },
     description: {
       type: String,
-      required: [true, 'Description is required'],
       trim: true,
+      default: '',
       maxlength: [5000, 'Description must be at most 5000 characters'],
     },
     organizer: {
@@ -205,6 +229,9 @@ const eventSchema = new Schema(
       default: 'none',
     },
     youtubeVideoId: { type: String, trim: true, default: '' },
+    youtubeBroadcastId: { type: String, trim: true, default: '' },
+    youtubeLiveStreamId: { type: String, trim: true, default: '' },
+    youtubeWatchUrl: { type: String, trim: true, default: '' },
     hlsUrl: { type: String, trim: true, default: '' },
     webrtcUrl: { type: String, trim: true, default: '' },
     // Whether the live chat panel is shown on the public watch page.
@@ -431,13 +458,14 @@ eventSchema.statics.generateUniqueShortCode = async function generateUniqueShort
 };
 
 /**
- * Unique public slug for NEW events (bride-weds-groom). Existing documents
- * keep their stored slug so production /AM5DJS (and old title slugs) stay put.
+ * Unique public slug for NEW events (ravi-priya-wedding). Existing documents
+ * keep their stored slug so production /AM5DJS and /bride-weds-groom stay put.
  */
 eventSchema.statics.generateUniquePublicSlug = async function generateUniquePublicSlug(doc) {
+  const live = buildLivePageSlug(doc);
   const couple = buildCoupleWatchSlug(doc);
   const titleSlug = slugifyName(doc.title) || 'event';
-  let base = couple || titleSlug || 'event';
+  let base = live || couple || titleSlug || 'event';
   if (RESERVED_PUBLIC_ROOTS.has(base)) base = `${base}-live`;
 
   const taken = async (candidate) =>
@@ -461,6 +489,10 @@ eventSchema.statics.generateUniquePublicSlug = async function generateUniquePubl
 eventSchema.pre('validate', async function ensureSlugAndShortCode() {
   if (!this.slug) {
     this.slug = await this.constructor.generateUniquePublicSlug(this);
+  }
+  // New documents get /live/{slug}. Never rewrite style on later edits.
+  if (this.isNew && !this.publicUrlStyle) {
+    this.publicUrlStyle = 'live';
   }
 
   if (!this.shortCode) {

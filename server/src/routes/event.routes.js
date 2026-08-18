@@ -6,6 +6,7 @@ import {
   updateEvent,
   deleteEvent,
   syncEventQr,
+  getYoutubeIngest,
 } from '../controllers/event.controller.js';
 import {
   getStreamConfig,
@@ -79,6 +80,7 @@ router.post('/stream/recording-ready', recordingReady);
 router.get('/:id/stream', getStreamConfig);
 router.patch('/:id/stream', protect, updateStreamConfig);
 router.get('/:id/stream/key', protect, getStreamKey);
+router.get('/:id/youtube-ingest', protect, getYoutubeIngest);
 router.post('/:id/stream/key/regenerate', protect, regenerateStreamKey);
 router.post('/:id/stream/live', protect, setLiveStatus);
 router.post('/:id/stream/disable', protect, setStreamDisabled);

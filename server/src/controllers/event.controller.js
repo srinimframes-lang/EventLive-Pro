@@ -17,6 +17,7 @@ import {
   resolveStreamType,
   validateOnlineStreamPayload,
   streamTypeFromEvent,
+  usesServerIngest,
 } from '../utils/streamType.js';
 import { applyYoutubeForwardFields, sanitizeStreamingSecrets } from '../utils/youtubeForward.js';
 import { applyFacebookForwardFields } from '../utils/streamForward.js';
@@ -24,6 +25,7 @@ import { freshServerStreamUrls } from '../utils/mediaStream.js';
 import { adminEventListFilter, canManageEvent, resolveEventCreateOwners } from '../utils/ownership.js';
 import { isAdminPanelUser } from '../utils/tenantScope.js';
 import { cacheGet, cacheSet } from '../utils/apiCache.js';
+import { provisionYoutubeLiveIfNeeded } from '../services/youtubeLiveApi.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -215,7 +217,12 @@ export const listEvents = asyncHandler(async (req, res) => {
     filter.category = req.query.category;
   }
   if (req.query.organizer && mongoose.isValidObjectId(req.query.organizer)) {
-    filter.organizer = req.query.organizer;
+    const requestedOrganizer = String(req.query.organizer);
+    const canFilterOrganizer =
+      !req.user ||
+      isAdminPanelUser(req.user) ||
+      requestedOrganizer === String(req.user._id);
+    if (canFilterOrganizer) filter.organizer = req.query.organizer;
   }
   // `mine=true` scopes results to the authenticated organizer.
   if (req.query.mine === 'true' && req.user) {
@@ -257,6 +264,9 @@ export const listEvents = asyncHandler(async (req, res) => {
     'organizer',
     'streamProvider',
     'creditType',
+    'streamDisabled',
+    'publicUrlStyle',
+    'youtubeVideoId',
     'themeSnapshot.name',
     'themeSnapshot.category',
     'themeSnapshot.region',
@@ -415,14 +425,31 @@ export const createEvent = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
   normalizeStudioFields(payload);
+  if (payload.description === undefined || payload.description === null) {
+    payload.description = '';
+  }
   if (payload.youtubeVideoId !== undefined) {
     payload.youtubeVideoId = extractYouTubeId(payload.youtubeVideoId) || String(payload.youtubeVideoId || '').trim();
+  }
+  if (!payload.endTime && payload.startTime) {
+    payload.endTime = new Date(new Date(payload.startTime).getTime() + 24 * 60 * 60 * 1000);
   }
   payload.createdByRole = role;
   const themeId = req.body.theme ?? payload.theme;
   await applyThemeSelection(payload, themeId, res);
 
   const streamType = resolveStreamType(req.body, payload);
+  let youtubeIngest = null;
+  try {
+    youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, payload, streamType);
+  } catch (err) {
+    res.status(err.statusCode || 502);
+    throw err;
+  }
+  if (youtubeIngest) {
+    req.body.youtubeRtmpUrl = youtubeIngest.rtmpUrl;
+    req.body.youtubeStreamKey = youtubeIngest.streamKey;
+  }
   const streamError = validateOnlineStreamPayload(payload, streamType);
   if (streamError) {
     res.status(400);
@@ -434,6 +461,15 @@ export const createEvent = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(forwardErr);
   }
+  if (youtubeIngest) {
+    payload.youtubeRtmpUrl = youtubeIngest.rtmpUrl || payload.youtubeRtmpUrl;
+    payload.youtubeStreamKey = youtubeIngest.streamKey || payload.youtubeStreamKey;
+    payload.youtubeVideoId = youtubeIngest.broadcastId || payload.youtubeVideoId;
+    payload.streamUrl = youtubeIngest.watchUrl || payload.streamUrl;
+    payload.youtubeWatchUrl = youtubeIngest.watchUrl || payload.youtubeWatchUrl;
+    payload.youtubeBroadcastId = youtubeIngest.broadcastId || payload.youtubeBroadcastId;
+    payload.youtubeLiveStreamId = youtubeIngest.streamId || payload.youtubeLiveStreamId;
+  }
   const fbForwardErr = applyFacebookForwardFields(payload, req.body, { isCreate: true });
   if (fbForwardErr) {
     res.status(400);
@@ -441,6 +477,11 @@ export const createEvent = asyncHandler(async (req, res) => {
   }
   applyAdaptiveStreamingField(payload, req.body, req.user, { isCreate: true });
   applyBackupStreamFields(payload, req.body, res);
+
+  // Customer live links are public immediately. Admins may still create drafts.
+  if (!payload.status) {
+    payload.status = streamType === 'youtube' || !usesServerIngest(streamType) ? 'published' : 'draft';
+  }
 
   try {
     const owners = resolveEventCreateOwners(req.user, req.body);
@@ -454,17 +495,30 @@ export const createEvent = asyncHandler(async (req, res) => {
       scheduleEventQrSync(event._id);
       // eslint-disable-next-line no-console
       console.info(`[events] created admin user=${userId} id=${event._id} shortCode=${event.shortCode}`);
-      return res.status(201).json({ success: true, data: populated });
+      return res.status(201).json({ success: true, data: populated, youtubeIngest });
     }
 
-    // ── Everyone else: pay with credits (YouTube = 1, Server / Simultaneous = 5) ────────
+    payload.organizer = owners.organizer;
+    payload.createdBy = owners.createdBy;
+
     const linkType = streamType || (req.body.linkType === 'server' ? 'server' : 'youtube');
+    const chargeCredits = usesServerIngest(linkType);
+
+    // YouTube Live Link Generator: payment is optional and must not block creation.
+    if (!chargeCredits) {
+      payload.creditType = 'none';
+      const event = await Event.create(payload);
+      const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
+      scheduleEventQrSync(event._id);
+      // eslint-disable-next-line no-console
+      console.info(`[events] created youtube-link user=${userId} id=${event._id} slug=${event.slug}`);
+      return res.status(201).json({ success: true, data: populated, youtubeIngest });
+    }
+
+    // Server / simultaneous destinations still consume credits (existing reseller product).
     const cost = linkCost(
       linkType === 'server_youtube' || linkType === 'youtube_server' ? linkType : linkType
     );
-    payload.organizer = owners.organizer;
-    // Tenant owner is the admin who created this customer/subadmin (if any).
-    payload.createdBy = owners.createdBy;
     payload.creditType =
       linkType === 'server_youtube' || linkType === 'youtube_server' ? 'server' : linkType;
 
@@ -504,6 +558,7 @@ export const createEvent = asyncHandler(async (req, res) => {
       success: true,
       data: populated,
       creditBalance: updated.creditBalance,
+      youtubeIngest,
     });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -538,6 +593,13 @@ export const updateEvent = asyncHandler(async (req, res) => {
   }
 
   const streamType = resolveStreamType(req.body, event);
+  let youtubeIngest = null;
+  try {
+    youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, event, streamType);
+  } catch (err) {
+    res.status(err.statusCode || 502);
+    throw err;
+  }
   const streamError = validateOnlineStreamPayload(
     { isOnline: event.isOnline, youtubeVideoId: event.youtubeVideoId, streamUrl: event.streamUrl },
     streamType
@@ -568,12 +630,42 @@ export const updateEvent = asyncHandler(async (req, res) => {
     scheduleEventQrSync(event._id);
     // eslint-disable-next-line no-console
     console.info(`[events] updated user=${req.user._id} id=${event._id}`);
-    res.status(200).json({ success: true, data: populated });
+    res.status(200).json({ success: true, data: populated, youtubeIngest });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`[events] update failed id=${req.params.id} user=${req.user._id}:`, err.message);
     throw err;
   }
+});
+
+/**
+ * @route GET /api/events/:id/youtube-ingest
+ * @desc  Owner/admin YouTube RTMP + watch URL (never public, never OAuth tokens)
+ * @access Private
+ */
+export const getYoutubeIngest = asyncHandler(async (req, res) => {
+  const event = await Event.findById(req.params.id).select('+youtubeStreamKey');
+  if (!event) {
+    res.status(404);
+    throw new Error('Event not found');
+  }
+  assertCanModify(event, req.user, res);
+
+  const broadcastId = event.youtubeBroadcastId || event.youtubeVideoId || '';
+  const watchUrl =
+    event.youtubeWatchUrl ||
+    (broadcastId ? `https://www.youtube.com/watch?v=${broadcastId}` : event.streamUrl || '');
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      watchUrl,
+      broadcastId,
+      streamId: event.youtubeLiveStreamId || '',
+      rtmpUrl: event.youtubeRtmpUrl || '',
+      streamKey: event.youtubeStreamKey || '',
+    },
+  });
 });
 
 /**

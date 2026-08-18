@@ -1,14 +1,16 @@
 /**
  * Reusable YouTube Data / Live Streaming API helpers.
- * OAuth connect does NOT create broadcasts — call these later from live-link code.
+ * OAuth connect does NOT create broadcasts by itself — event create calls
+ * createBoundYoutubeLive() when YouTube is selected and no manual URL was pasted.
  */
 import { env } from '../config/env.js';
+import { extractYouTubeId } from '../utils/youtube.js';
 import {
   loadUserCredential,
   applyRefreshedTokens,
-} from './youtubeOauth.js';
-import { decryptYoutubeToken } from './youtubeTokenCrypto.js';
-import { getYoutubeGoogleAdapter } from './youtubeGoogle.js';
+} from '../utils/youtubeOauth.js';
+import { decryptYoutubeToken } from '../utils/youtubeTokenCrypto.js';
+import { getYoutubeGoogleAdapter } from '../utils/youtubeGoogle.js';
 
 async function authorizedClientForUser(userId) {
   const cred = await loadUserCredential(userId, { withSecrets: true });
@@ -35,6 +37,65 @@ async function authorizedClientForUser(userId) {
     });
   }
   return { client, youtube: g.youtubeClient(client), credential: cred };
+}
+
+function apiData(res) {
+  return res?.data || res || {};
+}
+
+export function youtubeWatchUrl(broadcastId) {
+  const id = String(broadcastId || '').trim();
+  return id ? `https://www.youtube.com/watch?v=${id}` : '';
+}
+
+export function scheduledStartIso(startTime) {
+  const parsed = startTime ? new Date(startTime) : new Date();
+  const t = Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
+  return new Date(Math.max(t, Date.now() + 60_000)).toISOString();
+}
+
+export function publicYoutubeIngest(live) {
+  if (!live) return null;
+  return {
+    watchUrl: live.watchUrl || '',
+    broadcastId: live.broadcastId || '',
+    streamId: live.streamId || '',
+    rtmpUrl: live.rtmpUrl || '',
+    streamKey: live.streamKey || '',
+  };
+}
+
+export function applyYoutubeLiveFields(target, live) {
+  if (!target || !live) return target;
+  target.youtubeVideoId = live.broadcastId || target.youtubeVideoId;
+  target.streamUrl = live.watchUrl || target.streamUrl;
+  target.youtubeWatchUrl = live.watchUrl || '';
+  target.youtubeBroadcastId = live.broadcastId || '';
+  target.youtubeLiveStreamId = live.streamId || '';
+  if (live.rtmpUrl) target.youtubeRtmpUrl = live.rtmpUrl;
+  if (live.streamKey) target.youtubeStreamKey = live.streamKey;
+  return target;
+}
+
+/**
+ * True when we should call YouTube Live API instead of requiring a pasted URL.
+ * Manual URL / existing video ID always wins (fallback).
+ */
+export function shouldAutoCreateYoutubeLive({
+  streamType,
+  isOnline,
+  youtubeVideoId,
+  streamUrl,
+  youtubeStreamKey,
+} = {}) {
+  if (isOnline === false) return false;
+  const hasManualVideo = Boolean(extractYouTubeId(youtubeVideoId) || extractYouTubeId(streamUrl));
+  if (hasManualVideo) return false;
+  if (streamType === 'youtube' || streamType === 'youtube_server') return true;
+  if (streamType === 'server_youtube') {
+    return !String(youtubeStreamKey || '').trim();
+  }
+  return false;
 }
 
 export async function getYoutubeApiForUser(userId) {
@@ -82,4 +143,112 @@ export async function liveStreamsList(userId, params = {}) {
 export async function liveBroadcastsTransition(userId, params) {
   const { youtube } = await authorizedClientForUser(userId);
   return youtube.liveBroadcasts.transition(params);
+}
+
+/** Insert broadcast + stream, bind them, return ingest details. Does not log tokens. */
+export async function insertBindYoutubeLive(youtube, { title, description, startTime } = {}) {
+  const snippetTitle = String(title || 'EventLivePro Live').slice(0, 100);
+  const broadcastRes = await youtube.liveBroadcasts.insert({
+    part: ['id', 'snippet', 'contentDetails', 'status'],
+    requestBody: {
+      snippet: {
+        title: snippetTitle,
+        description: String(description || '').slice(0, 5000),
+        scheduledStartTime: scheduledStartIso(startTime),
+      },
+      status: {
+        privacyStatus: 'unlisted',
+        selfDeclaredMadeForKids: false,
+      },
+      contentDetails: {
+        enableAutoStart: true,
+        enableAutoStop: true,
+        enableDvr: true,
+        recordFromStart: true,
+        monitorStream: { enableMonitorStream: false },
+      },
+    },
+  });
+  const broadcast = apiData(broadcastRes);
+  const broadcastId = broadcast.id;
+  if (!broadcastId) {
+    const err = new Error('youtube_broadcast_missing_id');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  const streamRes = await youtube.liveStreams.insert({
+    part: ['id', 'snippet', 'cdn', 'status'],
+    requestBody: {
+      snippet: { title: `${snippetTitle} stream`.slice(0, 100) },
+      cdn: {
+        frameRate: 'variable',
+        ingestionType: 'rtmp',
+        resolution: 'variable',
+      },
+    },
+  });
+  const stream = apiData(streamRes);
+  const streamId = stream.id;
+  if (!streamId) {
+    const err = new Error('youtube_stream_missing_id');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  await youtube.liveBroadcasts.bind({
+    part: ['id', 'snippet', 'contentDetails', 'status'],
+    id: broadcastId,
+    streamId,
+  });
+
+  const ingest = stream.cdn?.ingestionInfo || {};
+  const streamKey = String(ingest.streamName || '').trim();
+  if (!streamKey) {
+    const err = new Error('youtube_stream_missing_key');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  return {
+    broadcastId,
+    streamId,
+    watchUrl: youtubeWatchUrl(broadcastId),
+    rtmpUrl:
+      ingest.ingestionAddress || ingest.rtmpsIngestionAddress || 'rtmp://a.rtmp.youtube.com/live2',
+    streamKey,
+  };
+}
+
+export async function createBoundYoutubeLive(userId, meta) {
+  const { youtube } = await authorizedClientForUser(userId);
+  return insertBindYoutubeLive(youtube, meta);
+}
+
+/**
+ * If the event needs a YouTube live and no URL was pasted, create one with the
+ * authenticated user's existing OAuth credentials. Returns ingest for the admin
+ * response, or null when a manual URL should be used / YouTube is not connected.
+ */
+export async function provisionYoutubeLiveIfNeeded(user, payload, streamType) {
+  if (!shouldAutoCreateYoutubeLive({ ...payload, streamType })) return null;
+  const cred = await loadUserCredential(user?._id);
+  if (!cred?.connected) return null;
+
+  try {
+    const live = await createBoundYoutubeLive(user._id, {
+      title: payload.title,
+      description: payload.description,
+      startTime: payload.startTime,
+    });
+    applyYoutubeLiveFields(payload, live);
+    return publicYoutubeIngest(live);
+  } catch (err) {
+    if (err.code === 'youtube_not_connected') return null;
+    const safe = new Error(
+      'Could not create the YouTube live broadcast. Paste a YouTube Live URL or reconnect YouTube.'
+    );
+    safe.statusCode = err.statusCode && err.statusCode >= 400 ? err.statusCode : 502;
+    throw safe;
+  }
 }
