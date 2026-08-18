@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import AdminOverview from '../components/admin/AdminOverview.jsx';
+import YoutubeConnectCard from '../components/YoutubeConnectCard.jsx';
 import AdminCustomers from '../components/admin/AdminCustomers.jsx';
 import AdminPayments from '../components/admin/AdminPayments.jsx';
 import AdminEvents from '../components/admin/AdminEvents.jsx';
@@ -65,7 +66,12 @@ export default function Admin() {
       </div>
 
       <div className="mt-6">
-        {activeTab === 'dashboard' && <AdminOverview />}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-8">
+            <YoutubeConnectCard returnTo="/admin" title="YouTube Integration" />
+            <AdminOverview />
+          </div>
+        )}
         {activeTab === 'customers' && <AdminCustomers />}
         {activeTab === 'payments' && <AdminPayments />}
         {activeTab === 'events' && <AdminEvents />}
