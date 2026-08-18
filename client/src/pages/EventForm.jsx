@@ -600,12 +600,23 @@ export default function EventForm() {
       return;
     }
 
+    let ytConnected = Boolean(youtubeConnected);
+    try {
+      const ytStatus = await youtubeService.status();
+      ytConnected = Boolean(ytStatus?.connected ?? ytStatus?.data?.connected);
+      setYoutubeConnected(ytConnected);
+    } catch {
+      /* keep last known ytConnected */
+    }
+
     const youtubeVideoId =
       form.isOnline && (streamType === 'youtube' || streamType === 'youtube_server')
         ? extractYouTubeId(form.youtubeUrl)
         : '';
 
-    const canAutoCreateYoutube = youtubeConnected && destYoutube;
+    const canAutoCreateYoutube =
+      ytConnected &&
+      (streamType === 'youtube' || streamType === 'youtube_server' || destYoutube);
     if (
       form.isOnline &&
       (streamType === 'youtube' || streamType === 'youtube_server') &&
@@ -1213,7 +1224,6 @@ export default function EventForm() {
                     id="youtubeUrl"
                     name="youtubeUrl"
                     type="text"
-                    required={!youtubeConnected}
                     placeholder={
                       youtubeConnected
                         ? 'Leave blank to auto-create, or paste https://youtube.com/live/…'

@@ -26,6 +26,7 @@ import { adminEventListFilter, canManageEvent, resolveEventCreateOwners } from '
 import { isAdminPanelUser } from '../utils/tenantScope.js';
 import { cacheGet, cacheSet } from '../utils/apiCache.js';
 import { provisionYoutubeLiveIfNeeded } from '../services/youtubeLiveApi.js';
+import { loadUserCredential } from '../utils/youtubeOauth.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -450,7 +451,10 @@ export const createEvent = asyncHandler(async (req, res) => {
     req.body.youtubeRtmpUrl = youtubeIngest.rtmpUrl;
     req.body.youtubeStreamKey = youtubeIngest.streamKey;
   }
-  const streamError = validateOnlineStreamPayload(payload, streamType);
+  const youtubeOauth = await loadUserCredential(req.user._id);
+  const streamError = validateOnlineStreamPayload(payload, streamType, {
+    allowMissingYoutubeUrl: Boolean(youtubeIngest || youtubeOauth?.connected),
+  });
   if (streamError) {
     res.status(400);
     throw new Error(streamError);
@@ -600,9 +604,11 @@ export const updateEvent = asyncHandler(async (req, res) => {
     res.status(err.statusCode || 502);
     throw err;
   }
+  const youtubeOauth = await loadUserCredential(req.user._id);
   const streamError = validateOnlineStreamPayload(
     { isOnline: event.isOnline, youtubeVideoId: event.youtubeVideoId, streamUrl: event.streamUrl },
-    streamType
+    streamType,
+    { allowMissingYoutubeUrl: Boolean(youtubeIngest || youtubeOauth?.connected) }
   );
   if (streamType) {
     if (streamError) {

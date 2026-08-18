@@ -15,7 +15,7 @@ export const youtubeService = {
   },
   async status() {
     const { data } = await api.get(youtubeUrl('/oauth/status'));
-    return data.data;
+    return data?.data || data;
   },
   async disconnect() {
     const { data } = await api.post(youtubeUrl('/oauth/disconnect'));

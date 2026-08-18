@@ -104,14 +104,14 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
   }
 }
 
-export function validateOnlineStreamPayload(payload, streamType) {
+export function validateOnlineStreamPayload(payload, streamType, options = {}) {
   if (payload.isOnline === false) return null;
   const resolved = streamType || inferStreamTypeFromPayload(payload);
   if (!resolved) return 'Stream type is required for online events.';
   if (resolved === 'youtube' || resolved === 'youtube_server') {
     const yid =
       extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
-    if (!yid) {
+    if (!yid && !options.allowMissingYoutubeUrl) {
       return resolved === 'youtube_server'
         ? 'A valid YouTube Live / embed URL is required for YouTube + Server events.'
         : 'A valid YouTube Live URL is required for YouTube Live events.';

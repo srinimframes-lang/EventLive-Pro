@@ -47,6 +47,18 @@ test('youtube_server requires embed URL and keeps rtmp provider', () => {
   assert.equal(ok.youtubeVideoId, 'dQw4w9WgXcQ');
 });
 
+test('youtube URL is not required when OAuth auto-create is allowed', () => {
+  const payload = { isOnline: true, youtubeVideoId: '', streamUrl: '' };
+  assert.equal(
+    validateOnlineStreamPayload(payload, 'youtube', { allowMissingYoutubeUrl: true }),
+    null
+  );
+  assert.match(
+    validateOnlineStreamPayload(payload, 'youtube'),
+    /YouTube Live URL is required/i
+  );
+});
+
 test('existing modes unchanged', () => {
   const server = {};
   applyStreamTypeSelection(server, 'server', { isCreate: true });
