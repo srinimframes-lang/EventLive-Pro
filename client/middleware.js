@@ -1,5 +1,11 @@
 const BOT_UA =
-  /facebookexternalhit|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Pinterest|Embedly/i;
+  /facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Pinterest|Embedly/i;
+
+/** WhatsApp preview crawler is not a full browser. In-app WhatsApp still has Mozilla/. */
+function isShareCrawler(ua) {
+  if (BOT_UA.test(ua)) return true;
+  return /WhatsApp/i.test(ua) && !/Mozilla\//i.test(ua);
+}
 
 const API_ORIGIN = process.env.VITE_API_URL?.replace(/\/+$/, '').replace(/\/api$/i, '') ||
   'https://eventlive-pro.onrender.com';
@@ -44,7 +50,7 @@ function isSeoPath(pathname) {
 
 export default async function middleware(request) {
   const ua = request.headers.get('user-agent') || '';
-  if (!BOT_UA.test(ua)) return;
+  if (!isShareCrawler(ua)) return;
 
   const { pathname } = new URL(request.url);
   if (!isSeoPath(pathname)) return;

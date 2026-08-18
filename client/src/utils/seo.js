@@ -19,6 +19,40 @@ export function coupleTitle(event) {
   return event.brideName || event.groomName || '';
 }
 
+const GENERIC_SHARE_TITLE = 'EventLive Pro — Premium Wedding Live Streaming';
+const SHARE_DESCRIPTION = 'Wedding Live Streaming';
+
+function trimField(value) {
+  return String(value || '').trim();
+}
+
+/**
+ * WhatsApp / Facebook / Twitter link-preview title.
+ * Prefers "Bride ❤️ Groom", or the event title when it already names the couple.
+ */
+export function buildShareEventTitle(event, settings) {
+  const bride = trimField(event?.brideName);
+  const groom = trimField(event?.groomName);
+  const eventTitle = trimField(event?.title);
+
+  if (eventTitle && bride && groom) {
+    const lower = eventTitle.toLowerCase();
+    if (lower.includes(bride.toLowerCase()) && lower.includes(groom.toLowerCase())) {
+      return eventTitle;
+    }
+  }
+  if (bride && groom) return `${bride} ❤️ ${groom}`;
+  if (bride || groom) return bride || groom;
+  if (eventTitle) return eventTitle;
+  const site = trimField(settings?.companyName);
+  if (site && site !== 'EventLive Pro') return `${site} — Premium Wedding Live Streaming`;
+  return GENERIC_SHARE_TITLE;
+}
+
+export function buildShareEventDescription() {
+  return SHARE_DESCRIPTION;
+}
+
 export function eventDetailPath(event) {
   if (!event?.slug) return '';
   return `/events/${event.slug}`;

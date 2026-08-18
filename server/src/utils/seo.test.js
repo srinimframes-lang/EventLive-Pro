@@ -1,10 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildCoupleWatchSlug,
   buildEventDescription,
   buildEventTitle,
+  buildOgHtml,
+  buildShareEventDescription,
+  buildShareEventTitle,
   buildSitemapXml,
   coupleTitle,
+  parsePublicEventCodeFromPath,
+  slugifyName,
   truncate,
   watchPath,
 } from './seo.js';
@@ -13,13 +19,93 @@ test('coupleTitle joins bride and groom', () => {
   assert.equal(coupleTitle({ brideName: 'Priya', groomName: 'Aarav' }), 'Aarav & Priya');
 });
 
-test('watchPath uses short code and couple slug', () => {
+test('watchPath uses short code when slug is not a couple slug', () => {
   const path = watchPath({
     shortCode: 'AP24X9',
+    slug: 'wedding',
     brideName: 'Priya',
     groomName: 'Aarav',
   });
-  assert.equal(path, '/live/AP24X9/aarav-weds-priya');
+  assert.equal(path, '/AP24X9');
+});
+
+test('watchPath prefers couple slug for new public URLs', () => {
+  assert.equal(
+    watchPath({
+      shortCode: 'AM5DJS',
+      slug: 'deekha-reddy-weds-tarun-reddy',
+    }),
+    '/deekha-reddy-weds-tarun-reddy'
+  );
+});
+
+test('watchPath falls back to slug when short code missing', () => {
+  assert.equal(watchPath({ slug: 'aarav-weds-priya' }), '/aarav-weds-priya');
+});
+
+test('buildCoupleWatchSlug is bride-weds-groom', () => {
+  assert.equal(
+    buildCoupleWatchSlug({
+      brideName: 'Deekha Reddy',
+      groomName: 'Tarun Reddy',
+      title: 'Wedding',
+    }),
+    'deekha-reddy-weds-tarun-reddy'
+  );
+});
+
+test('buildCoupleWatchSlug does not duplicate weds from title', () => {
+  assert.equal(
+    buildCoupleWatchSlug({
+      brideName: 'Deekha Reddy',
+      groomName: 'Tarun Reddy',
+      title: 'Deekha Reddy Weds Tarun Reddy Wedding Live',
+    }),
+    'deekha-reddy-weds-tarun-reddy'
+  );
+});
+
+test('buildCoupleWatchSlug strips special characters', () => {
+  assert.equal(
+    buildCoupleWatchSlug({
+      brideName: 'Deekha (Reddy)',
+      groomName: "Tarun Reddy!",
+      title: 'Wedding',
+    }),
+    'deekha-reddy-weds-tarun-reddy'
+  );
+});
+
+test('buildCoupleWatchSlug is empty for Telugu-only names', () => {
+  assert.equal(
+    buildCoupleWatchSlug({
+      brideName: 'దీక్ష',
+      groomName: 'తరుణ్',
+      title: 'వివాహం',
+    }),
+    ''
+  );
+  assert.equal(slugifyName('దీక్ష'), '');
+});
+
+test('parsePublicEventCodeFromPath supports couple slugs', () => {
+  assert.equal(
+    parsePublicEventCodeFromPath('/deekha-reddy-weds-tarun-reddy'),
+    'deekha-reddy-weds-tarun-reddy'
+  );
+});
+
+test('parsePublicEventCodeFromPath supports short and legacy URLs', () => {
+  assert.equal(parsePublicEventCodeFromPath('/AP24X9'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/AP24X9/aarav-weds-priya'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/live/AP24X9'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/live/AP24X9/aarav-weds-priya'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/watch/AP24X9'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/events/AP24X9/live'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/events/old-slug'), 'old-slug');
+  assert.equal(parsePublicEventCodeFromPath('/login'), null);
+  assert.equal(parsePublicEventCodeFromPath('/districts/telangana'), null);
+  assert.equal(parsePublicEventCodeFromPath('/'), null);
 });
 
 test('buildEventTitle includes live status', () => {
@@ -47,6 +133,51 @@ test('buildEventDescription is unique per event', () => {
   assert.match(desc, /Priya/);
   assert.match(desc, /Taj Krishna/);
   assert.match(desc, /Telangana/);
+});
+
+test('buildShareEventTitle uses bride heart groom', () => {
+  assert.equal(
+    buildShareEventTitle({ brideName: 'Deekha Reddy', groomName: 'Tarun Reddy', title: 'Wedding' }),
+    'Deekha Reddy ❤️ Tarun Reddy'
+  );
+});
+
+test('buildShareEventTitle keeps event title when it already names the couple', () => {
+  assert.equal(
+    buildShareEventTitle({
+      brideName: 'Deekha Reddy',
+      groomName: 'Tarun Reddy',
+      title: 'Deekha Reddy Weds Tarun Reddy',
+    }),
+    'Deekha Reddy Weds Tarun Reddy'
+  );
+});
+
+test('buildShareEventTitle falls back to generic platform title', () => {
+  assert.equal(
+    buildShareEventTitle({ title: '', brideName: '', groomName: '' }),
+    'EventLive Pro — Premium Wedding Live Streaming'
+  );
+});
+
+test('buildShareEventDescription is Wedding Live Streaming', () => {
+  assert.equal(buildShareEventDescription(), 'Wedding Live Streaming');
+});
+
+test('buildOgHtml emits og/twitter tags without bouncing crawlers to the SPA', () => {
+  const html = buildOgHtml({
+    title: 'Deekha Reddy ❤️ Tarun Reddy',
+    description: 'Wedding Live Streaming',
+    url: 'https://eventlivepro.com/AM5DJS',
+    image: 'https://example.com/og.jpg',
+    siteName: 'EventLive Pro',
+  });
+  assert.match(html, /property="og:title" content="Deekha Reddy ❤️ Tarun Reddy"/);
+  assert.match(html, /property="og:description" content="Wedding Live Streaming"/);
+  assert.match(html, /name="twitter:title" content="Deekha Reddy ❤️ Tarun Reddy"/);
+  assert.match(html, /name="twitter:description" content="Wedding Live Streaming"/);
+  assert.match(html, /property="og:url" content="https:\/\/eventlivepro.com\/AM5DJS"/);
+  assert.equal(html.includes('http-equiv="refresh"'), false);
 });
 
 test('truncate respects max length', () => {

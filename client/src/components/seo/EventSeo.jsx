@@ -5,9 +5,9 @@ import {
   absoluteUrl,
   buildBreadcrumbJsonLd,
   buildEventCanonical,
-  buildEventDescription,
   buildEventJsonLd,
-  buildEventTitle,
+  buildShareEventDescription,
+  buildShareEventTitle,
   buildLocalBusinessJsonLd,
   buildOrganizationJsonLd,
   buildWebsiteJsonLd,
@@ -25,8 +25,8 @@ export default function EventSeo({ event, pageType = 'watch' }) {
   const seo = useMemo(() => {
     if (!event) return null;
     const siteUrl = getSiteOrigin(settings);
-    const title = buildEventTitle(event, settings);
-    const description = buildEventDescription(event, settings);
+    const title = buildShareEventTitle(event, settings);
+    const description = buildShareEventDescription();
     const canonical = buildEventCanonical(event, settings);
     const image = resolveEventOgImage(event, settings);
     const couple =

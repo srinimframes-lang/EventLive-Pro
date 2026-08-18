@@ -56,7 +56,7 @@ function buildHlsConfig() {
     nudgeMaxRetry: 8,
     liveSyncDurationCount: 3,
     liveMaxLatencyDurationCount: 10,
-    maxLiveSyncPlaybackRate: 1.1,
+    maxLiveSyncPlaybackRate: 1,
     startFragPrefetch: true,
     startLevel: -1, // Auto ABR
     abrEwmaDefaultEstimate: 500_000,

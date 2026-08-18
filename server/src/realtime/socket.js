@@ -210,8 +210,16 @@ export function initSocket(httpServer) {
       const body = clean(answer, 2000);
       if (!eventId || !questionId) return;
       try {
-        const event = await Event.findById(eventId).select('_id organizer');
-        if (!event || !socket.user || !canManageEvent(event, { _id: socket.user.id, role: socket.user.role })) {
+        const event = await Event.findById(eventId).select('_id organizer createdBy');
+        if (
+          !event ||
+          !socket.user ||
+          !canManageEvent(event, {
+            _id: socket.user.id,
+            role: socket.user.role,
+            createdBy: socket.user.createdBy,
+          })
+        ) {
           if (typeof ack === 'function') ack({ ok: false, error: 'Not authorized' });
           return;
         }

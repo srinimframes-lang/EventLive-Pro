@@ -21,8 +21,8 @@ import {
 import { applyYoutubeForwardFields, sanitizeStreamingSecrets } from '../utils/youtubeForward.js';
 import { applyFacebookForwardFields } from '../utils/streamForward.js';
 import { freshServerStreamUrls } from '../utils/mediaStream.js';
-import { canManageEvent } from '../utils/ownership.js';
-import { createdByFilter, isAdminPanelUser } from '../utils/tenantScope.js';
+import { adminEventListFilter, canManageEvent, resolveEventCreateOwners } from '../utils/ownership.js';
+import { isAdminPanelUser } from '../utils/tenantScope.js';
 import { cacheGet, cacheSet } from '../utils/apiCache.js';
 
 const EDITABLE_FIELDS = [
@@ -220,10 +220,10 @@ export const listEvents = asyncHandler(async (req, res) => {
   if (req.query.mine === 'true' && req.user) {
     filter.organizer = req.user._id;
   }
-  // Tenant isolation for admin dashboards ONLY (explicit adminScope).
-  // Never apply createdBy filters on public catalogs or playback lookups.
-  if (req.query.adminScope === 'true' && req.user && isAdminPanelUser(req.user)) {
-    Object.assign(filter, createdByFilter(req.user));
+  // Tenant isolation for admin-panel users is always server-enforced.
+  // Do not trust ?adminScope=true. Public / unauthenticated catalogs stay open.
+  if (req.user && isAdminPanelUser(req.user)) {
+    Object.assign(filter, adminEventListFilter(req.user));
   }
   if (req.query.public === 'true') {
     filter.status = { $in: ['published', 'live', 'ended'] };
@@ -322,7 +322,8 @@ export const listEvents = asyncHandler(async (req, res) => {
 export const getEvent = asyncHandler(async (req, res) => {
   const { idOrSlug } = req.params;
   const raw = String(idOrSlug || '');
-  // Resolve by Mongo id, short code (case-insensitive), or legacy slug.
+  // Resolve by Mongo id, shortCode (legacy /AM5DJS), or public slug
+  // (/deekha-reddy-weds-tarun-reddy). Both stay valid.
   const query = mongoose.isValidObjectId(raw)
     ? { _id: raw }
     : { $or: [{ shortCode: raw.toUpperCase() }, { slug: raw.toLowerCase() }, { slug: raw }] };
@@ -440,10 +441,11 @@ export const createEvent = asyncHandler(async (req, res) => {
   applyBackupStreamFields(payload, req.body, res);
 
   try {
+    const owners = resolveEventCreateOwners(req.user, req.body);
     // ── Admin / Super Admin: unlimited, no credits consumed ─────────────
     if (isAdminPanelUser(req.user)) {
-      payload.organizer = req.body.organizer || req.user._id;
-      payload.createdBy = req.user._id;
+      payload.organizer = owners.organizer;
+      payload.createdBy = owners.createdBy;
       payload.creditType = 'none';
       const event = await Event.create(payload);
       const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
@@ -458,9 +460,9 @@ export const createEvent = asyncHandler(async (req, res) => {
     const cost = linkCost(
       linkType === 'server_youtube' || linkType === 'youtube_server' ? linkType : linkType
     );
-    payload.organizer = req.user._id;
+    payload.organizer = owners.organizer;
     // Tenant owner is the admin who created this customer/subadmin (if any).
-    payload.createdBy = req.user.createdBy || null;
+    payload.createdBy = owners.createdBy;
     payload.creditType =
       linkType === 'server_youtube' || linkType === 'youtube_server' ? 'server' : linkType;
 

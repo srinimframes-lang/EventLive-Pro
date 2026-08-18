@@ -9,9 +9,9 @@ import {
   buildDistrictDescription,
   buildDistrictJsonLd,
   buildDistrictTitle,
-  buildEventDescription,
   buildEventJsonLd,
-  buildEventTitle,
+  buildShareEventDescription,
+  buildShareEventTitle,
   buildLocalBusinessJsonLd,
   buildOgHtml,
   buildOrganizationJsonLd,
@@ -25,6 +25,7 @@ import {
   shouldNoIndexEvent,
   staticSitemapPaths,
   watchPath,
+  parsePublicEventCodeFromPath,
 } from '../utils/seo.js';
 
 const API_ORIGIN = 'https://eventlive-pro.onrender.com';
@@ -33,12 +34,13 @@ async function loadSettings() {
   return Settings.getSingleton();
 }
 
+/**
+ * Resolve an event from a public pathname.
+ * Supports short /EVENTCODE URLs, couple-slug URLs, and legacy /live|/watch shapes.
+ */
 async function findEventByPath(pathname) {
-  const parts = pathname.split('/').filter(Boolean);
-  if (parts.length < 2) return null;
-
-  const [section, idOrSlug] = parts;
-  if (!['live', 'events', 'watch'].includes(section)) return null;
+  const idOrSlug = parsePublicEventCodeFromPath(pathname);
+  if (!idOrSlug) return null;
 
   const raw = String(idOrSlug || '');
   const query = mongoose.isValidObjectId(raw)
@@ -109,7 +111,7 @@ Sitemap: ${siteUrl}/sitemap.xml
 });
 
 /**
- * @route GET /api/seo/preview?path=/live/...
+ * @route GET /api/seo/preview?path=/AP24X9 or /live/...
  * Returns minimal HTML with OG tags for social crawlers.
  */
 export const getSeoPreview = asyncHandler(async (req, res) => {
@@ -162,8 +164,8 @@ export const getSeoPreview = asyncHandler(async (req, res) => {
 
   const canonicalPath = watchPath(event);
   const url = absoluteUrl(siteUrl, canonicalPath);
-  const title = buildEventTitle(event, settings);
-  const description = buildEventDescription(event, settings);
+  const title = buildShareEventTitle(event, settings);
+  const description = buildShareEventDescription();
   const image = resolveOgImage(event, settings, API_ORIGIN);
   const robots = shouldNoIndexEvent(event) ? 'noindex,nofollow' : 'index,follow';
   const jsonLd = [
@@ -179,6 +181,7 @@ export const getSeoPreview = asyncHandler(async (req, res) => {
   ];
 
   res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', 'public, max-age=300');
   res.status(200).send(
     buildOgHtml({
       title,
@@ -278,8 +281,8 @@ export const getEventSeoMeta = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      title: buildEventTitle(event, settings),
-      description: buildEventDescription(event, settings),
+      title: buildShareEventTitle(event, settings),
+      description: buildShareEventDescription(),
       canonical: url,
       image: resolveOgImage(event, settings, API_ORIGIN),
       noindex: shouldNoIndexEvent(event),

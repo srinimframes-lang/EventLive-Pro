@@ -4,12 +4,14 @@ const PUBLIC_STATUSES = ['published', 'live', 'ended'];
 const DEFAULT_SITE = 'https://livestreamhub.in';
 const DEFAULT_OG = 'https://images.unsplash.com/photo-1519741497674-05eec4c9a3e0?auto=format&fit=crop&w=1200&q=80';
 
-function slugify(text) {
+/** URL-safe ascii slug. Telugu/other Unicode without latin letters becomes ''. */
+export function slugifyName(text) {
   return String(text || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
@@ -25,17 +27,81 @@ export function coupleTitle(event) {
   return event.brideName || event.groomName || '';
 }
 
-export function coupleSlug(event) {
-  if (!event) return '';
-  const groom = slugify(event.groomName);
-  const bride = slugify(event.brideName);
-  if (groom && bride) return `${groom}-weds-${bride}`;
-  return groom || bride || '';
+const GENERIC_SHARE_TITLE = 'EventLive Pro — Premium Wedding Live Streaming';
+const SHARE_DESCRIPTION = 'Wedding Live Streaming';
+
+function trimField(value) {
+  return String(value || '').trim();
 }
 
+/**
+ * WhatsApp / Facebook / Twitter link-preview title.
+ * Prefers "Bride ❤️ Groom", or the event title when it already names the couple.
+ */
+export function buildShareEventTitle(event, settings) {
+  const bride = trimField(event?.brideName);
+  const groom = trimField(event?.groomName);
+  const eventTitle = trimField(event?.title);
+
+  if (eventTitle && bride && groom) {
+    const lower = eventTitle.toLowerCase();
+    if (lower.includes(bride.toLowerCase()) && lower.includes(groom.toLowerCase())) {
+      return eventTitle;
+    }
+  }
+  if (bride && groom) return `${bride} ❤️ ${groom}`;
+  if (bride || groom) return bride || groom;
+  if (eventTitle) return eventTitle;
+  const site = trimField(settings?.companyName);
+  if (site && site !== 'EventLive Pro') return `${site} — Premium Wedding Live Streaming`;
+  return GENERIC_SHARE_TITLE;
+}
+
+export function buildShareEventDescription() {
+  return SHARE_DESCRIPTION;
+}
+
+const WEDDING_NOISE_TOKEN = /(?:^|-)(wedding|weddings|live|stream|streaming|ceremony)(?=-|$)/g;
+
+export function isCoupleWatchSlug(slug) {
+  return /(?:^|-)weds(?:-|$)/.test(String(slug || '').toLowerCase());
+}
+
+/**
+ * Public path slug for NEW events: bride-weds-groom.
+ * If the event title already names the couple and includes "weds"/"wedding",
+ * reuse that slug and strip duplicate wedding/live suffixes.
+ */
+export function buildCoupleWatchSlug(event) {
+  if (!event) return '';
+  const bride = slugifyName(event.brideName);
+  const groom = slugifyName(event.groomName);
+  let title = slugifyName(event.title).replace(WEDDING_NOISE_TOKEN, '');
+  title = title.replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+  if (bride && groom) {
+    if (title.includes(bride) && title.includes(groom) && isCoupleWatchSlug(title)) {
+      return title;
+    }
+    return `${bride}-weds-${groom}`;
+  }
+  return bride || groom || '';
+}
+
+export function coupleSlug(event) {
+  return buildCoupleWatchSlug(event);
+}
+
+/**
+ * Canonical public watch path.
+ * New couple-slug events → /deekha-reddy-weds-tarun-reddy
+ * Existing shortCode events (no -weds- slug) → /AM5DJS
+ */
 export function watchPath(event) {
   if (!event) return '';
-  const code = event.shortCode || event.slug || event.id || event._id;
+  const slug = event.slug || '';
+  if (isCoupleWatchSlug(slug)) return `/${slug}`;
+  const code = event.shortCode || slug || event.id || event._id;
   return code ? `/${code}` : '';
 }
 
@@ -344,7 +410,6 @@ export function buildOgHtml({
     <meta name="twitter:image" content="${escapeHtml(image)}" />
     ${gscMeta}
     ${scripts}
-    <meta http-equiv="refresh" content="0;url=${escapeHtml(url)}" />
   </head>
   <body>
     <p><a href="${escapeHtml(url)}">${escapeHtml(title)}</a></p>

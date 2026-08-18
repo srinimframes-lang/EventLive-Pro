@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 import { extractYouTubeId } from '../utils/youtube.js';
 import { streamKeyFromEventId, syncServerStreamFields } from '../utils/mediaStream.js';
+import {
+  buildCoupleWatchSlug,
+  RESERVED_PUBLIC_ROOTS,
+  slugifyName,
+} from '../utils/seo.js';
 
 const { Schema, model } = mongoose;
 
@@ -14,19 +19,6 @@ export const EVENT_CATEGORIES = [
   'sports',
   'other',
 ];
-
-/**
- * Generates a URL-friendly slug from a title.
- */
-function slugify(text) {
-  return text
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-}
 
 // Unambiguous alphabet for short codes (no I/O/0/1 to avoid confusion).
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -417,7 +409,7 @@ eventSchema.index({ isLive: 1, status: 1 });
 
 /**
  * Generates a unique short code for an event: an initials prefix plus a random
- * segment (widening on repeated collisions). Used for /<shortCode> URLs.
+ * segment (widening on repeated collisions). Kept in Mongo for lookup + embed.
  */
 eventSchema.statics.generateUniqueShortCode = async function generateUniqueShortCode(doc) {
   const prefix = codePrefix(doc);
@@ -431,20 +423,37 @@ eventSchema.statics.generateUniqueShortCode = async function generateUniqueShort
   return `${prefix}${randomSegment(10)}`;
 };
 
-// Assign a unique slug (from the title) and a stable short code before
-// validation. Implemented as a single async hook (no `next()`), since mixing
-// `next()` with async hooks can cause later hooks to be skipped.
-eventSchema.pre('validate', async function ensureSlugAndShortCode() {
-  if (this.isModified('title') || !this.slug) {
-    const base = slugify(this.title || '') || 'event';
-    let candidate = base;
-    let counter = 1;
+/**
+ * Unique public slug for NEW events (bride-weds-groom). Existing documents
+ * keep their stored slug so production /AM5DJS (and old title slugs) stay put.
+ */
+eventSchema.statics.generateUniquePublicSlug = async function generateUniquePublicSlug(doc) {
+  const couple = buildCoupleWatchSlug(doc);
+  const titleSlug = slugifyName(doc.title) || 'event';
+  let base = couple || titleSlug || 'event';
+  if (RESERVED_PUBLIC_ROOTS.has(base)) base = `${base}-live`;
+
+  const taken = async (candidate) =>
+    this.exists({
+      _id: { $ne: doc._id },
+      $or: [{ slug: candidate }, { shortCode: candidate.toUpperCase() }],
+    });
+
+  let candidate = base;
+  if (!(await taken(candidate))) return candidate;
+  for (let n = 2; n <= 50; n += 1) {
+    candidate = `${base}-${n}`;
     // eslint-disable-next-line no-await-in-loop
-    while (await this.constructor.exists({ slug: candidate, _id: { $ne: this._id } })) {
-      candidate = `${base}-${counter}`;
-      counter += 1;
-    }
-    this.slug = candidate;
+    if (!(await taken(candidate))) return candidate;
+  }
+  return `${base}-${randomSegment(4).toLowerCase()}`;
+};
+
+// Assign a unique slug and a stable short code before validation.
+// Do not rewrite slug on later title edits — that would change public URLs.
+eventSchema.pre('validate', async function ensureSlugAndShortCode() {
+  if (!this.slug) {
+    this.slug = await this.constructor.generateUniquePublicSlug(this);
   }
 
   if (!this.shortCode) {

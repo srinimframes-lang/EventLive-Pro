@@ -92,38 +92,56 @@ export function extractYouTubeId(input) {
 
 /**
  * Slugifies free text for use in a URL (lowercase, hyphenated, ascii-only).
+ * Telugu / other scripts without latin letters become ''.
  */
-function slugifyText(text) {
+export function slugifyText(text) {
   return String(text || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
 
-/**
- * A readable couple slug for the live URL, e.g. "aarav-weds-priya".
- * Returns '' when no couple names are set.
- */
-export function coupleSlug(event) {
-  if (!event) return '';
-  const groom = slugifyText(event.groomName);
-  const bride = slugifyText(event.brideName);
-  if (groom && bride) return `${groom}-weds-${bride}`;
-  return groom || bride || '';
+const WEDDING_NOISE_TOKEN = /(?:^|-)(wedding|weddings|live|stream|streaming|ceremony)(?=-|$)/g;
+
+export function isCoupleWatchSlug(slug) {
+  return /(?:^|-)weds(?:-|$)/.test(String(slug || '').toLowerCase());
 }
 
 /**
- * The canonical public watch path for an event, e.g. "/AP24X9".
- * Event code is the unique identifier; couple slug is optional/decorative and
- * is not part of the primary URL. Falls back to slug/id for older data that
- * has no short code yet.
+ * Public path slug: bride-weds-groom.
+ * If the event title already names the couple and includes "weds", reuse it
+ * without stacking extra wedding/live words.
+ */
+export function coupleSlug(event) {
+  if (!event) return '';
+  const bride = slugifyText(event.brideName);
+  const groom = slugifyText(event.groomName);
+  let title = slugifyText(event.title).replace(WEDDING_NOISE_TOKEN, '');
+  title = title.replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+  if (bride && groom) {
+    if (title.includes(bride) && title.includes(groom) && isCoupleWatchSlug(title)) {
+      return title;
+    }
+    return `${bride}-weds-${groom}`;
+  }
+  return bride || groom || '';
+}
+
+/**
+ * Canonical public watch path.
+ * Couple-slug events → /deekha-reddy-weds-tarun-reddy
+ * Legacy shortCode events → /AM5DJS
  */
 export function watchPath(event) {
   if (!event) return '';
-  const code = event.shortCode || event.slug || event.id;
+  const slug = event.slug || '';
+  if (isCoupleWatchSlug(slug)) return `/${slug}`;
+  const code = event.shortCode || slug || event.id;
   return code ? `/${code}` : '';
 }
 
