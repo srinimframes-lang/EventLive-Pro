@@ -150,5 +150,17 @@ export const env = {
       return Boolean(this.token && this.projectId);
     },
   },
+  // YouTube OAuth (optional until Render env is set). Never expose to the client.
+  youtube: {
+    clientId: String(process.env.YOUTUBE_CLIENT_ID || '').trim(),
+    clientSecret: String(process.env.YOUTUBE_CLIENT_SECRET || '').trim(),
+    redirectUri: trimUrl(
+      process.env.YOUTUBE_OAUTH_REDIRECT_URI ||
+        (isProd
+          ? 'https://eventlive-pro.onrender.com/api/youtube/oauth/callback'
+          : 'http://localhost:5000/api/youtube/oauth/callback')
+    ),
+    tokenEncryptionKey: String(process.env.YOUTUBE_TOKEN_ENCRYPTION_KEY || '').trim(),
+  },
   isProd,
 };

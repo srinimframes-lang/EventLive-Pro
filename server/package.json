@@ -12,7 +12,7 @@
     "dev": "nodemon src/index.js",
     "dev:memdb": "node scripts/dev-memory-db.js",
     "start": "node src/index.js",
-    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js src/utils/dnsRecords.test.js src/utils/dnsVerify.test.js src/utils/streamFailover.test.js src/utils/streamReconnect.test.js src/utils/youtubeForward.test.js src/utils/streamType.test.js src/utils/streamForward.test.js src/utils/mediaStream.abr.test.js src/utils/systemHealth.test.js src/utils/backup.test.js src/utils/recordingR2Sync.test.js src/utils/ownership.test.js src/utils/shareThumbnail.test.js"
+    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js src/utils/dnsRecords.test.js src/utils/dnsVerify.test.js src/utils/streamFailover.test.js src/utils/streamReconnect.test.js src/utils/youtubeForward.test.js src/utils/streamType.test.js src/utils/streamForward.test.js src/utils/mediaStream.abr.test.js src/utils/systemHealth.test.js src/utils/backup.test.js src/utils/recordingR2Sync.test.js src/utils/ownership.test.js src/utils/shareThumbnail.test.js src/utils/youtubeTokenCrypto.test.js src/utils/youtubeOauth.test.js src/youtubeOauth.integration.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1089.0",
@@ -25,7 +25,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
-    "express-rate-limit": "^7.4.1",
+    "express-rate-limit": "^7.5.1",
+    "googleapis": "^148.0.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",

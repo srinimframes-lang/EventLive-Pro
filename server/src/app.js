@@ -73,7 +73,11 @@ app.use(
 );
 
 if (!env.isProd) {
-  app.use(morgan('dev'));
+  app.use(
+    morgan('dev', {
+      skip: (req) => String(req.originalUrl || '').includes('/youtube/oauth/callback'),
+    })
+  );
 }
 
 // Rate limits tuned for venue Wi‑Fi (many guests, one public IP).

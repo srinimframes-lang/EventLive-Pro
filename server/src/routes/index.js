@@ -11,6 +11,7 @@ import tenantRoutes from './tenant.routes.js';
 import themeRoutes from './theme.routes.js';
 import seoRoutes from './seo.routes.js';
 import bannerRoutes from './banner.routes.js';
+import youtubeRoutes from './youtube.routes.js';
 
 const router = Router();
 
@@ -44,5 +45,6 @@ router.use('/tenant', tenantRoutes);
 router.use('/themes', themeRoutes);
 router.use('/seo', seoRoutes);
 router.use('/banners', bannerRoutes);
+router.use('/youtube', youtubeRoutes);
 
 export default router;
