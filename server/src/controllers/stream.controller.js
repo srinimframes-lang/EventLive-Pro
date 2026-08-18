@@ -56,7 +56,10 @@ import {
 } from '../utils/youtubeForward.js';
 import {
   ensureBroadcastEmbeddable,
+  eventYoutubeLookupId,
   getBroadcastPlaybackInfo,
+  listActiveBroadcastPlayback,
+  selectLiveYoutubePlayback,
 } from '../services/youtubeLiveApi.js';
 import {
   DEFAULT_FACEBOOK_RTMP,
@@ -225,10 +228,12 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     youtubeWatchUrl:
       youtubePlayback?.watchUrl || event.youtubeWatchUrl || event.streamUrl || '',
     streamUrl:
-      event.streamUrl ||
       youtubePlayback?.watchUrl ||
       event.youtubeWatchUrl ||
+      event.streamUrl ||
       '',
+    youtubeLifeCycleStatus: youtubePlayback?.lifeCycleStatus || '',
+    youtubeIsLive: youtubePlayback?.isLive === true,
     // Never expose live HLS to the public player for YouTube + Server.
     hlsUrl: youtubePlusServer ? '' : isServer ? playbackUrl : event.hlsUrl,
     playbackUrl: youtubePlusServer ? '' : playbackUrl,
@@ -375,45 +380,33 @@ function mediaSecretOk(req) {
  * @access Public
  */
 async function resolveYoutubePlaybackForPublicEvent(event) {
-  const storedId =
-    extractYouTubeId(event.youtubeVideoId) ||
-    extractYouTubeId(event.youtubeBroadcastId) ||
-    extractYouTubeId(event.youtubeWatchUrl) ||
-    extractYouTubeId(event.streamUrl) ||
-    String(event.youtubeBroadcastId || event.youtubeVideoId || '').trim();
+  const storedId = eventYoutubeLookupId(event);
   const ownerId = event.createdBy || event.organizer?._id || event.organizer;
-  if (!storedId || !ownerId) return null;
+  if (!ownerId) return null;
+  const ended = event.status === 'ended' || event.status === 'cancelled';
   try {
-    let info = await getBroadcastPlaybackInfo(ownerId, storedId);
+    let storedInfo = storedId ? await getBroadcastPlaybackInfo(ownerId, storedId) : null;
+    let activeInfos = [];
+    if (!ended && !storedInfo?.isLive) {
+      try {
+        activeInfos = await listActiveBroadcastPlayback(ownerId);
+      } catch (err) {
+        console.info('[youtube-embed] active live list skipped', err?.message || err);
+      }
+    }
+    let info = selectLiveYoutubePlayback(storedInfo, activeInfos, {
+      eventBroadcastId: extractYouTubeId(event.youtubeBroadcastId) || storedId,
+      eventTitle: event.title,
+      allowActiveFallback: !ended,
+    });
     if (!info) return null;
     try {
       info = (await ensureBroadcastEmbeddable(ownerId, info)) || info;
     } catch (err) {
       console.info('[youtube-embed] enableEmbed update skipped', err?.message || err);
     }
-    if (info.videoId && info.videoId !== event.youtubeVideoId) {
-      event.youtubeVideoId = info.videoId;
-      event.youtubeWatchUrl = info.watchUrl || event.youtubeWatchUrl;
-      if (!event.youtubeBroadcastId) event.youtubeBroadcastId = info.broadcastId;
-      try {
-        if (typeof event.save === 'function') {
-          await event.save();
-        } else {
-          await Event.updateOne(
-            { _id: event._id || event.id },
-            {
-              $set: {
-                youtubeVideoId: event.youtubeVideoId,
-                youtubeWatchUrl: event.youtubeWatchUrl,
-                youtubeBroadcastId: event.youtubeBroadcastId,
-              },
-            }
-          );
-        }
-      } catch (err) {
-        console.info('[youtube-embed] persist video id skipped', err?.message || err);
-      }
-    }
+    // Fresh YouTube API playback for this request — do not persist a different
+    // video id onto the Event (that previously overwrote SMSTAQ with a foreign /live/ id).
     return info;
   } catch (err) {
     console.info('[youtube-embed] broadcast lookup skipped', err?.message || err);
@@ -437,8 +430,8 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
     youtubeLifeCycleStatus: youtubePlayback?.lifeCycleStatus || '',
     youtubePrivacyStatus: youtubePlayback?.privacyStatus || '',
     youtubeEnableEmbed: youtubePlayback?.enableEmbed,
-    youtubeIsLive: youtubePlayback?.isLive,
-    isLive: data.isLive,
+    youtubeIsLive: youtubePlayback?.isLive === true,
+    eventIsLive: data.isLive,
     playbackMode: data.playbackMode,
     provider: data.provider,
   });

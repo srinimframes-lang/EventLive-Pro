@@ -89,7 +89,8 @@ export default function Watch() {
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
     const isYoutubePlusServer =
       String(streamDestination || '').toLowerCase().replace(/-/g, '_') === 'youtube_server';
-    if (!isServer && !isYoutubePlusServer) return undefined;
+    const isYoutubeOnly = streamProvider === 'youtube';
+    if (!isServer && !isYoutubePlusServer && !isYoutubeOnly) return undefined;
     const intervalMs = livePollIntervalMs(
       {
         isLive: pollIsLive,

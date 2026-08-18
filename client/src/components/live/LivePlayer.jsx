@@ -244,9 +244,9 @@ function YouTubePlayer({ videoId }) {
 function resolveYoutubeVideoId(config) {
   return (
     extractYouTubeId(config?.youtubeVideoId || '') ||
-    extractYouTubeId(config?.streamUrl || '') ||
     extractYouTubeId(config?.youtubeWatchUrl || '') ||
-    extractYouTubeId(config?.youtubeBroadcastId || '')
+    extractYouTubeId(config?.youtubeBroadcastId || '') ||
+    extractYouTubeId(config?.streamUrl || '')
   );
 }
 
@@ -1647,22 +1647,37 @@ export default function LivePlayer({ config, onLiveUiChange }) {
 
   useEffect(() => {
     if (!config) return;
-    const videoId =
-      extractYouTubeId(config.youtubeVideoId || '') ||
-      extractYouTubeId(config.streamUrl || '') ||
-      extractYouTubeId(config.youtubeWatchUrl || '') ||
-      extractYouTubeId(config.youtubeBroadcastId || '');
+    const videoId = resolveYoutubeVideoId(config);
+    const isServerProvider =
+      config.provider === 'rtmp' || config.provider === 'hls' || config.provider === 'webrtc';
+    const youtubePlusServer = isYoutubePlusServerDestination(config);
+    const isYoutube = !isServerProvider && (config.provider === 'youtube' || Boolean(videoId));
+    const hasValidYoutubeVideoId = Boolean(videoId);
+    // YouTube iframe is gated ONLY on a valid video ID — never EventLivePro isLive.
+    const renderYoutubeIframe =
+      hasValidYoutubeVideoId && (isYoutube || (youtubePlusServer && hasValidYoutubeVideoId));
+    const waitingReason = renderYoutubeIframe
+      ? null
+      : !hasValidYoutubeVideoId
+        ? 'no-valid-youtube-video-id'
+        : 'not-youtube-playback-branch';
     // eslint-disable-next-line no-console
-    console.info('[LivePlayer] stream config', {
-      provider: config.provider,
-      streamingDestination: config.streamingDestination,
+    console.info('[LivePlayer] public stream config', config);
+    // eslint-disable-next-line no-console
+    console.info('[LivePlayer] render decision', {
       youtubeVideoId: config.youtubeVideoId,
       youtubeBroadcastId: config.youtubeBroadcastId,
       youtubeWatchUrl: config.youtubeWatchUrl,
       streamUrl: config.streamUrl,
-      isLive: config.isLive,
-      playbackMode: config.playbackMode,
-      embedUrl: videoId ? `https://www.youtube.com/embed/${videoId}` : '',
+      youtubeLifeCycleStatus: config.youtubeLifeCycleStatus,
+      youtubeIsLive: config.youtubeIsLive,
+      backendIsLive: config.isLive,
+      resolvedVideoId: videoId,
+      hasValidYoutubeVideoId,
+      renderYoutubeIframe,
+      waitingReason,
+      condition:
+        'render iframe if Boolean(resolvedVideoId); EventLivePro isLive is NOT used for YouTube',
     });
   }, [config]);
 
@@ -1773,6 +1788,10 @@ export default function LivePlayer({ config, onLiveUiChange }) {
   // Live / waiting: YouTube embed ONLY (never Server HLS).
   // Offline with recordings: server Mp4 replay (unchanged recording pipeline).
   if (youtubePlusServer) {
+    // Valid YouTube id always embeds — do not wait on EventLivePro isLive.
+    if (videoId) {
+      return <YouTubePlayer videoId={videoId} />;
+    }
     if (!live && hasServerReplay) {
       return (
         <Mp4Player
@@ -1784,9 +1803,6 @@ export default function LivePlayer({ config, onLiveUiChange }) {
         />
       );
     }
-    if (videoId) {
-      return <YouTubePlayer videoId={videoId} />;
-    }
     return (
       <Offline message="YouTube embed URL is missing for this YouTube + Server event." />
     );
@@ -1794,8 +1810,13 @@ export default function LivePlayer({ config, onLiveUiChange }) {
 
   const isYoutube = !isServerProvider && (config.provider === 'youtube' || Boolean(videoId));
 
+  // YouTube is the source of truth: a valid video ID always embeds, even when
+  // EventLivePro `isLive` is false. Waiting UI only when there is no video ID.
   if (isYoutube) {
-    return <YouTubePlayer videoId={videoId} />;
+    if (videoId) return <YouTubePlayer videoId={videoId} />;
+    return (
+      <Offline message="No YouTube video configured" />
+    );
   }
 
   if (isMediaMtx && live) {

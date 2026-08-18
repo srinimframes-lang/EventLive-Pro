@@ -17,6 +17,8 @@ const {
   applyYoutubeLiveFields,
   publicYoutubeIngest,
   getBroadcastPlaybackInfo,
+  eventYoutubeLookupId,
+  selectLiveYoutubePlayback,
 } = await import('../services/youtubeLiveApi.js');
 
 test('shouldAutoCreateYoutubeLive skips when a URL was pasted', () => {
@@ -148,3 +150,93 @@ test('applyYoutubeLiveFields stores watch URL and ids on the event payload', () 
 test('getBroadcastPlaybackInfo returns null without an id', async () => {
   assert.equal(await getBroadcastPlaybackInfo('user1', ''), null);
 });
+
+test('eventYoutubeLookupId prefers the event broadcast over a foreign /live/ URL', () => {
+  assert.equal(
+    eventYoutubeLookupId({
+      youtubeBroadcastId: 'gusTClw3GbI',
+      youtubeWatchUrl: 'https://www.youtube.com/watch?v=gusTClw3GbI',
+      youtubeVideoId: '5Hn8f8QwUvE',
+      streamUrl: 'https://www.youtube.com/live/5Hn8f8QwUvE',
+    }),
+    'gusTClw3GbI'
+  );
+  assert.equal(
+    eventYoutubeLookupId({
+      youtubeBroadcastId: '',
+      youtubeVideoId: '',
+      streamUrl: 'https://youtu.be/dQw4w9WgXcQ',
+    }),
+    'dQw4w9WgXcQ'
+  );
+});
+
+test('selectLiveYoutubePlayback keeps the event broadcast when it is already live', () => {
+  const stored = {
+    videoId: 'gusTClw3GbI',
+    broadcastId: 'gusTClw3GbI',
+    title: 'Mounika weds srinivas',
+    isLive: true,
+  };
+  const picked = selectLiveYoutubePlayback(
+    stored,
+    [{ videoId: 'otherLive123', broadcastId: 'otherLive123', title: 'Other', isLive: true }],
+    { eventBroadcastId: 'gusTClw3GbI', eventTitle: 'Mounika weds srinivas' }
+  );
+  assert.equal(picked.videoId, 'gusTClw3GbI');
+});
+
+test('selectLiveYoutubePlayback uses the account active live when the stored broadcast is waiting', () => {
+  const stored = {
+    videoId: 'gusTClw3GbI',
+    broadcastId: 'gusTClw3GbI',
+    title: 'Mounika weds srinivas',
+    lifeCycleStatus: 'ready',
+    isLive: false,
+  };
+  const active = {
+    videoId: 'nowLiveAbcd1',
+    broadcastId: 'nowLiveAbcd1',
+    title: 'Mounika weds srinivas',
+    lifeCycleStatus: 'live',
+    isLive: true,
+  };
+  const picked = selectLiveYoutubePlayback(stored, [active], {
+    eventBroadcastId: 'gusTClw3GbI',
+    eventTitle: 'Mounika weds srinivas',
+  });
+  assert.equal(picked.videoId, 'nowLiveAbcd1');
+});
+
+test('selectLiveYoutubePlayback uses the only active live when the stored broadcast is not live', () => {
+  const stored = {
+    videoId: 'gusTClw3GbI',
+    broadcastId: 'gusTClw3GbI',
+    isLive: false,
+  };
+  const picked = selectLiveYoutubePlayback(
+    stored,
+    [{ videoId: 'studioNow123', broadcastId: 'studioNow123', title: 'Live', isLive: true }],
+    { eventBroadcastId: 'gusTClw3GbI', eventTitle: 'Mounika weds srinivas' }
+  );
+  assert.equal(picked.videoId, 'studioNow123');
+});
+
+test('selectLiveYoutubePlayback does not steal another event live when ended', () => {
+  const stored = {
+    videoId: 'gusTClw3GbI',
+    broadcastId: 'gusTClw3GbI',
+    isLive: false,
+  };
+  const picked = selectLiveYoutubePlayback(
+    stored,
+    [{ videoId: 'otherLive123', broadcastId: 'otherLive123', isLive: true }],
+    {
+      eventBroadcastId: 'gusTClw3GbI',
+      eventTitle: 'Mounika weds srinivas',
+      allowActiveFallback: false,
+    }
+  );
+  assert.equal(picked.videoId, 'gusTClw3GbI');
+});
+

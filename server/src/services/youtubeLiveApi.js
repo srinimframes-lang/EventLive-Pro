@@ -283,6 +283,64 @@ export async function provisionYoutubeLiveIfNeeded(user, payload, streamType) {
  * Read the live broadcast's actual video id + lifecycle. Does NOT transition
  * or stop the broadcast.
  */
+function playbackInfoFromBroadcastItem(item) {
+  if (!item?.id) return null;
+  const lifeCycleStatus = String(item.status?.lifeCycleStatus || '').toLowerCase();
+  const privacyStatus = String(item.status?.privacyStatus || '').toLowerCase();
+  const enableEmbed = item.contentDetails?.enableEmbed !== false;
+  return {
+    videoId: item.id,
+    broadcastId: item.id,
+    title: String(item.snippet?.title || ''),
+    watchUrl: youtubeWatchUrl(item.id),
+    lifeCycleStatus,
+    privacyStatus,
+    enableEmbed,
+    isLive: lifeCycleStatus === 'live' || lifeCycleStatus === 'testing',
+  };
+}
+
+/**
+ * Event-owned YouTube id for API lookup. Prefer the auto-created broadcast,
+ * never a polluted /live/ URL from a different video.
+ */
+export function eventYoutubeLookupId(event) {
+  return (
+    extractYouTubeId(event?.youtubeBroadcastId) ||
+    extractYouTubeId(event?.youtubeWatchUrl) ||
+    extractYouTubeId(event?.youtubeVideoId) ||
+    extractYouTubeId(event?.streamUrl) ||
+    String(event?.youtubeBroadcastId || event?.youtubeVideoId || '').trim()
+  );
+}
+
+/**
+ * If the event's own broadcast is already live, keep it. Otherwise pick the
+ * connected account's currently active live (OBS "Stream now" / Studio live)
+ * instead of embedding a still-scheduled waiting broadcast.
+ */
+export function selectLiveYoutubePlayback(
+  storedInfo,
+  activeInfos = [],
+  { eventBroadcastId = '', eventTitle = '', allowActiveFallback = true } = {}
+) {
+  if (storedInfo?.isLive) return storedInfo;
+  if (!allowActiveFallback) return storedInfo || null;
+  const actives = Array.isArray(activeInfos) ? activeInfos.filter((item) => item?.videoId) : [];
+  const own = String(eventBroadcastId || storedInfo?.broadcastId || '').trim();
+  const ownLive = actives.find((item) => item.videoId === own || item.broadcastId === own);
+  if (ownLive) return ownLive;
+  const title = String(eventTitle || '').trim().toLowerCase();
+  if (title) {
+    const titled = actives.find(
+      (item) => String(item.title || '').trim().toLowerCase() === title
+    );
+    if (titled) return titled;
+  }
+  if (actives.length === 1) return actives[0];
+  return storedInfo || null;
+}
+
 export async function getBroadcastPlaybackInfo(userId, broadcastOrVideoId) {
   const id = String(broadcastOrVideoId || '').trim();
   if (!userId || !id) return null;
@@ -292,20 +350,22 @@ export async function getBroadcastPlaybackInfo(userId, broadcastOrVideoId) {
     id: [id],
     maxResults: 1,
   });
-  const item = apiData(res)?.items?.[0];
-  if (!item?.id) return null;
-  const lifeCycleStatus = String(item.status?.lifeCycleStatus || '').toLowerCase();
-  const privacyStatus = String(item.status?.privacyStatus || '').toLowerCase();
-  const enableEmbed = item.contentDetails?.enableEmbed !== false;
-  return {
-    videoId: item.id,
-    broadcastId: item.id,
-    watchUrl: youtubeWatchUrl(item.id),
-    lifeCycleStatus,
-    privacyStatus,
-    enableEmbed,
-    isLive: lifeCycleStatus === 'live' || lifeCycleStatus === 'testing',
-  };
+  return playbackInfoFromBroadcastItem(apiData(res)?.items?.[0]);
+}
+
+/** Currently live/testing broadcasts on the connected YouTube account. */
+export async function listActiveBroadcastPlayback(userId) {
+  if (!userId) return [];
+  const { youtube } = await authorizedClientForUser(userId);
+  const res = await youtube.liveBroadcasts.list({
+    part: ['id', 'snippet', 'status', 'contentDetails'],
+    mine: true,
+    broadcastStatus: 'active',
+    maxResults: 25,
+  });
+  return (apiData(res)?.items || [])
+    .map(playbackInfoFromBroadcastItem)
+    .filter(Boolean);
 }
 
 /** Turn on embed for older auto-created broadcasts. Never transitions/stops. */
