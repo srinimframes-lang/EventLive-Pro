@@ -5,6 +5,7 @@ import { resolveEventCreateOwners, assertCanManageEvent } from '../utils/ownersh
 import { recognizeWeddingCardImage } from '../utils/weddingCardOcr.js';
 import {
   buildWedsTitle,
+  isProvisionableCouplePair,
   isValidWeddingPersonName,
   normalizeWeddingPersonName,
   parseWeddingCardText,
@@ -106,7 +107,7 @@ export const confirmWeddingCard = asyncHandler(async (req, res) => {
   const weddingTime = field(req.body, 'weddingTime');
   const title = buildWedsTitle(groomName, brideName);
 
-  if (!isValidWeddingPersonName(groomName) || !isValidWeddingPersonName(brideName) || !title) {
+  if (!isProvisionableCouplePair(groomName, brideName) || !title) {
     removeTempUpload(req.file);
     res.status(400);
     throw new Error('Please review the wedding details before creating the live link.');

@@ -82,7 +82,9 @@ function normalize(raw) {
     .replace(/\b(a)\s+(m)\b/gi, '$1.m.')
     .replace(/\b(p)\s+(m)\b/gi, '$1.m.')
     .replace(/chi\s*\.\s*la\s*\.\s*sow\s*\.?/gi, 'Chi.La.Sow.')
+    .replace(/chi\s*\.\s*sow\s*\.?/gi, 'Chi.Sow.')
     .replace(/kum(?:ari)?\s*\.\s*la\s*\.\s*sow\s*\.?/gi, 'Kum.La.Sow.')
+    .replace(/\bw[il1]th\b/gi, 'with')
     .replace(/[ \t]+/g, ' ')
     .trim();
 }
@@ -118,7 +120,7 @@ function toIsoDate(year, month, day) {
  */
 export function stripHonorifics(value) {
   let name = collapseSpaces(value);
-  name = name.replace(/^(chi\.?la\.?sow|kum\.?la\.?sow|chilasow|kumlasow)\.?\s*/i, '');
+  name = name.replace(/^(chi\.sow|chi\.la\.sow|kum\.la\.sow|chilasow|kumlasow)\.?\s*/i, '');
   let prev = '';
   while (name !== prev) {
     prev = name;
@@ -126,6 +128,7 @@ export function stripHonorifics(value) {
       /^(chi\.?\s*la\.?\s*sow|kum(?:ari)?\.?\s*la\.?\s*sow|chi\.?\s*sow|kum\.?\s*sow|chiranjeevi|sowbhagyavath[iy])\.?\s+/i,
       ''
     );
+    name = name.replace(/^(chi\.sow|chi\.la\.sow)\.?(?=[A-Za-z])/i, '');
     name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.(?=[A-Za-z])/i, '');
     name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.?\s+/i, '');
   }
@@ -161,10 +164,31 @@ const BLESSING_WORDS = new Set([
   'swagatam',
 ]);
 
+const FAMILY_LINE_RE =
+  /grand\s*daughters?|granddaughters?|grand\s*sons?|grandsons?|daughters?\s+of|sons?\s+of|elder\s+sons?|younger\s+sons?|\bdaughter\b|\bson\b|\blate\b|\bparents?\b|\bfather\b|\bmother\b|\bfamily\b|invited\s+by|compliments|near\s*&\s*dear|with\s+best\s+compliments|\bsri\.|\bsmt\.|\bshri\./i;
+
+const FAMILY_SPLIT_RE =
+  /(?=\b(?:grand(?:\s+daughters?|\s+sons?|daughters?|sons?)|daughters?\s+of|sons?\s+of|elder\s+sons?|younger\s+sons?|late\b|invited\s+by|compliments|smt\.|sri\.|shri\.))/i;
+
 /**
  * Normalize a captured person name: honorifics, invitation keywords,
  * extra spaces, and duplicated words. Never invents a name.
  */
+function toNameCase(name) {
+  return String(name || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) =>
+      word
+        .split('-')
+        .map((part) =>
+          part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part
+        )
+        .join('-')
+    )
+    .join(' ');
+}
+
 export function normalizeWeddingPersonName(value) {
   let name = stripHonorifics(value);
   name = name
@@ -181,7 +205,7 @@ export function normalizeWeddingPersonName(value) {
     if (prev && prev.toLowerCase() === word.toLowerCase()) continue;
     deduped.push(word);
   }
-  return deduped.join(' ').slice(0, 80).trim();
+  return toNameCase(deduped.join(' ').slice(0, 80).trim());
 }
 
 export function isValidWeddingPersonName(value) {
@@ -189,8 +213,9 @@ export function isValidWeddingPersonName(value) {
   if ([...BLESSING_WORDS].some((word) => new RegExp(`\\b${word}\\b`, 'i').test(raw))) {
     return false;
   }
+  if (FAMILY_LINE_RE.test(raw)) return false;
   const name = normalizeWeddingPersonName(value);
-  if (!name || name.length < 3) return false;
+  if (!name || name.length < 1) return false;
   const words = name.split(/\s+/).filter(Boolean);
   if (!words.length || words.length > 6) return false;
   if (words.some((word) => BLESSING_WORDS.has(word.toLowerCase()))) return false;
@@ -208,12 +233,29 @@ export function buildWedsTitle(groomName, brideName) {
   return `${groom} Weds ${bride}`.slice(0, 120);
 }
 
+export function isLikelyFamilyOrGarbageName(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return true;
+  if (FAMILY_LINE_RE.test(raw) || TITLE_NOISE.test(raw) || BOILERPLATE_LINE.test(raw)) return true;
+  if ([...BLESSING_WORDS].some((word) => new RegExp(`\\b${word}\\b`, 'i').test(raw))) return true;
+  if (/^(sri|smt|shri|late|mr|mrs)$/i.test(normalizeWeddingPersonName(raw))) return true;
+  return !isValidWeddingPersonName(raw);
+}
+
+/** Block YouTube provisioning when the pair looks like parents/OCR garbage. */
+export function isProvisionableCouplePair(groomName, brideName) {
+  if (isLikelyFamilyOrGarbageName(groomName) || isLikelyFamilyOrGarbageName(brideName)) {
+    return false;
+  }
+  return Boolean(buildWedsTitle(groomName, brideName));
+}
+
 function cleanPersonName(value) {
   let name = stripHonorifics(value);
   name = name.split(/\s+(?:s\/o|d\/o|c\/o|son of|daughter of|w\/o)\b/i)[0];
   name = name.replace(/[,.:;]+\s*$/g, '').replace(/\s+/g, ' ').trim();
   if (name.length > 80) name = name.slice(0, 80).trim();
-  if (name.length < 2) return '';
+  if (name.length < 1) return '';
   if (
     /^(and|&|weds|with|the|venue|date|time|on|at|reception|invitation|wedding|onwards|from)$/i.test(
       name
@@ -225,8 +267,19 @@ function cleanPersonName(value) {
   return name;
 }
 
+function isConnectorKind(line) {
+  const token = String(line || '')
+    .trim()
+    .replace(/[^A-Za-z&]/g, '');
+  if (!token) return '';
+  if (/^w[il1]th$/i.test(token)) return 'with';
+  if (/^(weds|marries)$/i.test(token)) return 'weds';
+  if (/^(and)$/i.test(token) || token === '&') return 'and';
+  return '';
+}
+
 function isConnectorLine(line) {
-  return /^(with|weds|and|&|marries)$/i.test(String(line || '').trim());
+  return Boolean(isConnectorKind(line));
 }
 
 function isStopperLine(line) {
@@ -239,98 +292,209 @@ function looksLikeTimeToken(value) {
   return /\b\d{1,2}(?:[:.]\d{2})?\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)\b/i.test(value);
 }
 
+const BRIDE_HONORIFIC_RE =
+  /chi\.?\s*la\.?\s*sow|chi\.?la\.?sow|chi\.?\s*sow|chi\.sow|kum(?:ari)?\.?\s*(?:la\.?\s*)?sow|chilasow|sowbhagyavath/i;
+
 function honorificRole(line) {
   const raw = String(line || '').trim();
-  if (/chi\.?\s*la\.?\s*sow|kum(?:ari)?\.?\s*la\.?\s*sow|chilasow|kumlasow/i.test(raw)) {
-    return 'bride';
-  }
+  if (BRIDE_HONORIFIC_RE.test(raw)) return 'bride';
   if (/^(sow|kumari)\b/i.test(raw)) return 'bride';
-  if (/^(chi|chiranjeevi)\b/i.test(raw)) return 'groom';
+  if (/\bchiranjeevi\b/i.test(raw)) return 'groom';
+  if (/\bchi\b(?!\s*\.?\s*sow)/i.test(raw)) return 'groom';
   return '';
 }
 
+function isFamilyLine(line) {
+  const raw = String(line || '').trim();
+  if (!raw) return false;
+  if (FAMILY_LINE_RE.test(raw)) return true;
+  if (
+    /^(late\s+)?(sri|smt|shri)\.?\s+/i.test(raw) &&
+    !BRIDE_HONORIFIC_RE.test(raw) &&
+    !/\bchi\b(?!\s*\.?\s*sow)/i.test(raw)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function looksLikePersonName(line) {
+  if (isFamilyLine(line)) return false;
   const cleaned = cleanPersonName(line);
   if (!cleaned) return false;
   if (/\d/.test(cleaned)) return false;
   if (isConnectorLine(cleaned) || isStopperLine(cleaned)) return false;
-  if (/^(venue|reception|date|time|on|at)\b/i.test(cleaned)) return false;
+  if (/^(venue|reception|date|time|on|at)$/i.test(cleaned)) return false;
   if (new RegExp(`^(${WEEKDAY_ALT}|${MONTH_ALT})$`, 'i').test(cleaned)) return false;
   const words = cleaned.split(/\s+/).filter(Boolean);
   if (words.length < 1 || words.length > 6) return false;
-  if (words.some((word) => /^(of|the|for|on|at|and|with|invitation|wedding)$/i.test(word))) {
+  if (words.some((word) => /^(of|the|for|on|at|and|with|invitation|wedding|late)$/i.test(word))) {
     return false;
   }
   return /^[A-Za-z][A-Za-z .'\-]*$/.test(cleaned);
 }
 
+function isCoupleCandidateLine(line) {
+  if (!line || isFamilyLine(line) || isConnectorLine(line) || isStopperLine(line)) return false;
+  if (TITLE_NOISE.test(line) || BOILERPLATE_LINE.test(line)) return false;
+  if (/^(venue|reception|date|time|on)\b/i.test(line)) return false;
+  if (looksLikeTimeToken(line) || extractDateFromChunk(line)) return false;
+  if (honorificRole(line)) return looksLikePersonName(line) || Boolean(cleanPersonName(line));
+  return looksLikePersonName(line);
+}
+
+function nearestCoupleLine(lines, start, step) {
+  for (let i = start + step; i >= 0 && i < lines.length; i += step) {
+    if (isConnectorLine(lines[i])) continue;
+    if (isFamilyLine(lines[i])) continue;
+    const fromChunk = coupleNameFromChunk(lines[i]);
+    if (fromChunk) return fromChunk;
+    if (isCoupleCandidateLine(lines[i])) return lines[i];
+  }
+  return '';
+}
+
+function firstHonorificName(raw) {
+  const source = String(raw || '');
+  const re =
+    /((?:chi\.?\s*la\.?\s*sow|chi\.?\s*sow|chiranjeevi|chi)\.?\s*[A-Za-z][A-Za-z.'\-]*(?:\s+[A-Za-z][A-Za-z.'\-]*){0,2})/gi;
+  let match = re.exec(source);
+  while (match) {
+    const piece = match[1].trim();
+    const next = source.slice(match.index + match[0].length, match.index + match[0].length + 12);
+    if (/\s+(?:son|daughter|elder|younger|late)\b/i.test(` ${piece} ${next}`)) {
+      const clipped = piece.replace(/\s+(?:son|daughter|elder|younger|late)\b.*/i, '').trim();
+      if (clipped && (isCoupleCandidateLine(clipped) || looksLikePersonName(clipped))) return clipped;
+    }
+    if (!isFamilyLine(piece) && (isCoupleCandidateLine(piece) || looksLikePersonName(piece))) {
+      return piece;
+    }
+    match = re.exec(source);
+  }
+  return '';
+}
+
+function coupleNameFromChunk(chunk) {
+  const raw = String(chunk || '').trim();
+  if (!raw) return '';
+  const honorific = firstHonorificName(raw);
+  if (honorific) return honorific;
+  const pieces = raw
+    .split(/\n+/)
+    .flatMap((part) => part.split(FAMILY_SPLIT_RE))
+    .map((part) => part.replace(/^[\s,.;:]+|[\s,.;:]+$/g, '').trim())
+    .filter(Boolean);
+  let fallback = '';
+  for (const piece of pieces) {
+    if (isFamilyLine(piece) || isConnectorLine(piece) || isStopperLine(piece)) continue;
+    if (!isCoupleCandidateLine(piece) && !looksLikePersonName(piece)) continue;
+    if (honorificRole(piece)) return piece;
+    if (!fallback) fallback = piece;
+  }
+  if (fallback) return fallback;
+  if (!isFamilyLine(raw) && isCoupleCandidateLine(raw)) return raw;
+  return '';
+}
+
+function assignCoupleRoles(leftRaw, rightRaw) {
+  const leftLine = coupleNameFromChunk(leftRaw);
+  const rightLine = coupleNameFromChunk(rightRaw);
+  if (!leftLine || !rightLine) return null;
+  const leftName = normalizeWeddingPersonName(leftLine);
+  const rightName = normalizeWeddingPersonName(rightLine);
+  if (!isValidWeddingPersonName(leftName) || !isValidWeddingPersonName(rightName)) return null;
+  if (isLikelyFamilyOrGarbageName(leftName) || isLikelyFamilyOrGarbageName(rightName)) return null;
+  const leftRole = honorificRole(leftLine);
+  const rightRole = honorificRole(rightLine);
+  if (leftRole === 'bride' && rightRole !== 'bride') {
+    return { brideName: leftName, groomName: rightName };
+  }
+  if (leftRole === 'groom' && rightRole !== 'groom') {
+    return { groomName: leftName, brideName: rightName };
+  }
+  if (rightRole === 'bride' && leftRole !== 'bride') {
+    return { brideName: rightName, groomName: leftName };
+  }
+  if (rightRole === 'groom' && leftRole !== 'groom') {
+    return { groomName: rightName, brideName: leftName };
+  }
+  return { groomName: leftName, brideName: rightName };
+}
+
+function splitConnectorParts(raw, kind) {
+  if (kind === 'with') return String(raw).split(/\b(?:with|wlth|w1th)\b/i);
+  if (kind === 'weds') return String(raw).split(/\b(?:weds|marries)\b/i);
+  return String(raw).split(/\s+(?:&|and)\s+/i);
+}
+
+function connectorKindInText(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (TITLE_NOISE.test(raw) || BOILERPLATE_LINE.test(raw)) return '';
+  if (/\b(blessings|cordially|families|request the)\b/i.test(raw) && !honorificRole(raw)) {
+    return '';
+  }
+  if (isFamilyLine(raw) && !isConnectorKind(raw)) return '';
+  if (/\b(?:with|wlth|w1th)\b/i.test(raw)) return 'with';
+  if (/\b(?:weds|marries)\b/i.test(raw)) return 'weds';
+  if (/\s+&\s+/.test(raw) || /\s+and\s+/i.test(raw)) return 'and';
+  return isConnectorKind(raw);
+}
+
+function pairFromConnectorLine(lines, index, kind) {
+  const line = lines[index];
+  const tokenOnly = Boolean(isConnectorKind(line));
+  if (tokenOnly) {
+    return assignCoupleRoles(nearestCoupleLine(lines, index, -1), nearestCoupleLine(lines, index, 1));
+  }
+  const parts = splitConnectorParts(line, kind);
+  const leftChunk = (parts[0] || '').trim();
+  const rightChunk = (parts[1] || '').trim();
+  const left = coupleNameFromChunk(leftChunk) || nearestCoupleLine(lines, index, -1);
+  const right = coupleNameFromChunk(rightChunk) || nearestCoupleLine(lines, index, 1);
+  return assignCoupleRoles(left, right);
+}
+
 function extractLabeledName(text, labels) {
   const re = new RegExp(`(?:${labels})\\s*[:\\-–]\\s*${PERSON}`, 'i');
   for (const line of linesOf(text)) {
+    if (isFamilyLine(line)) continue;
     const match = line.match(re);
     if (match) return cleanPersonName(match[1]);
   }
   return '';
 }
 
-function extractConnectorPair(source) {
-  const re = new RegExp(`\\b${PERSON}\\s+${CONNECTOR}\\s+\\b${PERSON}`, 'i');
-  const match = String(source || '').match(re);
-  if (!match) return null;
-  const left = cleanPersonName(match[1]);
-  const right = cleanPersonName(match[2]);
-  if (!left || !right) return null;
-  return { groomName: left, brideName: right };
+function extractScoredPair(lines, text) {
+  let wedsPair = null;
+  let andPair = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const kind = connectorKindInText(lines[i]);
+    if (!kind) continue;
+    const pair = pairFromConnectorLine(lines, i, kind);
+    if (!pair) continue;
+    if (kind === 'with') return pair;
+    if (kind === 'weds' && !wedsPair) wedsPair = pair;
+    if (kind === 'and' && !andPair) andPair = pair;
+  }
+
+  const collapsed = String(text || '').replace(/\n/g, ' ');
+  const withSplit = collapsed.split(/\b(?:with|wlth|w1th)\b/i);
+  if (withSplit.length === 2) {
+    const withPair = assignCoupleRoles(withSplit[0], withSplit[1]);
+    if (withPair) return withPair;
+  }
+
+  return wedsPair || andPair || null;
 }
 
 function extractNames(text, lines) {
-  let groomName = extractLabeledName(text, 'groom(?:\\s*name)?');
-  let brideName = extractLabeledName(text, 'bride(?:\\s*name)?');
+  const scored = extractScoredPair(lines, text);
+  if (scored) return scored;
 
-  const assign = (groom, bride) => {
-    if (groom && !groomName) groomName = groom;
-    if (bride && !brideName) brideName = bride;
-  };
-
-  if (!groomName || !brideName) {
-    const pair = extractConnectorPair(text.replace(/\n/g, ' '));
-    if (pair) assign(pair.groomName, pair.brideName);
-  }
-
-  if (!groomName || !brideName) {
-    for (let i = 0; i < lines.length; i += 1) {
-      if (!isConnectorLine(lines[i])) continue;
-      const prev = lines[i - 1];
-      const next = lines[i + 1];
-      if (!looksLikePersonName(prev) || !looksLikePersonName(next)) continue;
-      const left = cleanPersonName(prev);
-      const right = cleanPersonName(next);
-      const prevRole = honorificRole(prev);
-      const nextRole = honorificRole(next);
-      if (prevRole === 'bride' && nextRole === 'groom') assign(right, left);
-      else assign(left, right);
-      break;
-    }
-  }
-
-  if (!groomName || !brideName) {
-    const pending = [];
-    for (const line of lines) {
-      if (BOILERPLATE_LINE.test(line) || TITLE_NOISE.test(line)) continue;
-      if (isConnectorLine(line) || isStopperLine(line)) continue;
-      if (/^(venue|reception|date|time|on)\b/i.test(line)) continue;
-      if (looksLikeTimeToken(line) || extractDateFromChunk(line)) continue;
-      if (!looksLikePersonName(line)) continue;
-      const role = honorificRole(line);
-      const cleaned = cleanPersonName(line);
-      if (role === 'groom') assign(cleaned, '');
-      else if (role === 'bride') assign('', cleaned);
-      else pending.push(cleaned);
-    }
-    if (!groomName && pending[0]) groomName = pending[0];
-    if (!brideName && pending[1]) brideName = pending[1];
-  }
-
+  const groomName = extractLabeledName(text, 'groom(?:\\s*name)?');
+  const brideName = extractLabeledName(text, 'bride(?:\\s*name)?');
   return { brideName, groomName };
 }
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildWeddingEventTitle,
   buildWedsTitle,
+  isProvisionableCouplePair,
   normalizeWeddingPersonName,
   parseWeddingCardText,
   stripHonorifics,
@@ -215,4 +216,138 @@ test('buildWeddingEventTitle ignores OCR eventTitle and uses Weds form', () => {
     'Sai Kumar Reddy Weds Pranathi Reddy'
   );
   assert.equal(buildWeddingEventTitle({}), '');
+});
+
+test('stripHonorifics removes CHI.SOW. and CHI. prefixes', () => {
+  assert.equal(stripHonorifics('CHI.SOW. NIRUPAMA'), 'NIRUPAMA');
+  assert.equal(stripHonorifics('CHI. RAHUL RAJ'), 'RAHUL RAJ');
+  assert.equal(stripHonorifics('Chi.Sow. A'), 'A');
+  assert.equal(stripHonorifics('Chi. B'), 'B');
+});
+
+test('Chi.Sow bride WITH Chi groom prefers names beside WITH', () => {
+  const fields = parseWeddingCardText(`
+    CHI.SOW. A
+    WITH
+    CHI. B
+  `);
+  assert.equal(fields.brideName, 'A');
+  assert.equal(fields.groomName, 'B');
+  assert.equal(fields.eventTitle, 'B Weds A');
+});
+
+test('Chi groom WITH Chi.Sow bride prefers names beside WITH', () => {
+  const fields = parseWeddingCardText(`
+    CHI. A
+    WITH
+    CHI.SOW. B
+  `);
+  assert.equal(fields.groomName, 'A');
+  assert.equal(fields.brideName, 'B');
+  assert.equal(fields.eventTitle, 'A Weds B');
+});
+
+test('groom weds bride without honorifics keeps left as groom', () => {
+  const fields = parseWeddingCardText('Aarav Sharma weds Priya Patel');
+  assert.equal(fields.groomName, 'Aarav Sharma');
+  assert.equal(fields.brideName, 'Priya Patel');
+  assert.equal(fields.eventTitle, 'Aarav Sharma Weds Priya Patel');
+});
+
+test('Chi.Sow bride weds Chi groom uses honorifics for direction', () => {
+  const fields = parseWeddingCardText('Chi.Sow. Priya Patel weds Chi. Aarav Sharma');
+  assert.equal(fields.brideName, 'Priya Patel');
+  assert.equal(fields.groomName, 'Aarav Sharma');
+  assert.equal(fields.eventTitle, 'Aarav Sharma Weds Priya Patel');
+});
+
+test('groom & bride without honorifics keeps left as groom', () => {
+  const fields = parseWeddingCardText('Aarav Sharma & Priya Patel');
+  assert.equal(fields.groomName, 'Aarav Sharma');
+  assert.equal(fields.brideName, 'Priya Patel');
+});
+
+test('Chi.Sow bride & Chi groom uses honorifics for direction', () => {
+  const fields = parseWeddingCardText('Chi.Sow. Priya Patel & Chi. Aarav Sharma');
+  assert.equal(fields.brideName, 'Priya Patel');
+  assert.equal(fields.groomName, 'Aarav Sharma');
+  assert.equal(fields.eventTitle, 'Aarav Sharma Weds Priya Patel');
+});
+
+test('WITH pair ignores surrounding parent and family names', () => {
+  const fields = parseWeddingCardText(`
+    CHI.SOW. NIRUPAMA
+    Grand Daughter of Late Sri. Valluru Subba Rao
+    Smt. Lakshmi Devi
+    WITH
+    CHI. RAHUL RAJ
+    Elder son of Sri. Modupalli Venu Gopal Naidu
+    Smt. Veena
+  `);
+  assert.equal(fields.brideName, 'Nirupama');
+  assert.equal(fields.groomName, 'Rahul Raj');
+  assert.equal(fields.eventTitle, 'Rahul Raj Weds Nirupama');
+  const dumped = `${fields.brideName} ${fields.groomName} ${fields.eventTitle}`;
+  for (const forbidden of [
+    'Valluru Rukmangada Rao',
+    'Valluru Subba Rao',
+    'Lakshmi Devi',
+    'Modupalli Venu Gopal Naidu',
+    'Veena',
+    'Kasturiba',
+  ]) {
+    assert.doesNotMatch(dumped, new RegExp(forbidden, 'i'));
+  }
+});
+
+test('daughter of / son of / grand daughter of / elder son of are not couple names', () => {
+  const fields = parseWeddingCardText(`
+    Wedding Invitation
+    CHI.SOW. Ananya
+    daughter of Sri. Ramesh
+    WITH
+    CHI. Karthik
+    son of Sri. Naresh
+    grand daughter of Late Sri. Valluru Subba Rao
+    elder son of Sri. Modupalli Venu Gopal Naidu
+  `);
+  assert.equal(fields.brideName, 'Ananya');
+  assert.equal(fields.groomName, 'Karthik');
+  assert.notEqual(fields.groomName, 'Ramesh');
+  assert.notEqual(fields.brideName, 'Ramesh');
+  assert.notEqual(fields.groomName, 'Naresh');
+  assert.notEqual(fields.groomName, 'Valluru Subba Rao');
+  assert.notEqual(fields.groomName, 'Modupalli Venu Gopal Naidu');
+});
+
+test('OCR WlTH is treated as WITH', () => {
+  const fields = parseWeddingCardText(`
+    CHI.SOW. Nirupama
+    WlTH
+    CHI. Rahul Raj
+  `);
+  assert.equal(fields.brideName, 'Nirupama');
+  assert.equal(fields.groomName, 'Rahul Raj');
+});
+
+test('Sri/Smt parent lines are not bride or groom candidates', () => {
+  const fields = parseWeddingCardText(`
+    Smt. Lakshmi Devi
+    Sri. Venkateswara Rao
+    CHI.SOW. Nirupama
+    WITH
+    CHI. Rahul Raj
+  `);
+  assert.equal(fields.brideName, 'Nirupama');
+  assert.equal(fields.groomName, 'Rahul Raj');
+  assert.notEqual(fields.brideName, 'Lakshmi Devi');
+  assert.notEqual(fields.groomName, 'Venkateswara Rao');
+});
+
+test('isProvisionableCouplePair rejects family and OCR garbage names', () => {
+  assert.equal(isProvisionableCouplePair('Rahul Raj', 'Nirupama'), true);
+  assert.equal(isProvisionableCouplePair('Late Sri. Valluru Subba Rao', 'Kasturiba'), false);
+  assert.equal(isProvisionableCouplePair('Smt. Lakshmi Devi', 'Veena'), false);
+  assert.equal(isProvisionableCouplePair('Wedding Invitation', 'Shubhamastu'), false);
+  assert.equal(isProvisionableCouplePair('daughter of Ramesh', 'son of Naresh'), false);
 });
