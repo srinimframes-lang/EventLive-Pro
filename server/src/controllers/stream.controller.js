@@ -54,6 +54,7 @@ import {
   buildYoutubeForwardTarget,
   DEFAULT_YOUTUBE_RTMP,
 } from '../utils/youtubeForward.js';
+import { loadUserCredential } from '../utils/youtubeOauth.js';
 import {
   ensureBroadcastEmbeddable,
   eventYoutubeLookupId,
@@ -219,7 +220,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
           ? 'youtube'
           : undefined,
     youtubeVideoId,
-    youtubeBroadcastId: event.youtubeBroadcastId || youtubePlayback?.broadcastId || '',
+    youtubeBroadcastId: youtubePlayback?.broadcastId || event.youtubeBroadcastId || '',
     youtubeWatchUrl:
       youtubePlayback?.watchUrl || event.youtubeWatchUrl || event.streamUrl || '',
     streamUrl:
@@ -399,17 +400,39 @@ async function resolveYoutubePlaybackForPublicEvent(event) {
   for (const ownerId of ownerIds) {
     try {
       const storedInfo = storedId ? await getBroadcastPlaybackInfo(ownerId, storedId) : null;
-      if (!storedInfo) continue;
       let activeInfos = [];
-      if (!ended && !storedInfo.isLive) {
+      if (!ended) {
         try {
           activeInfos = await listActiveBroadcastPlayback(ownerId);
         } catch (err) {
           console.info('[youtube-embed] active live list skipped', err?.message || err);
         }
       }
+      const cred = await loadUserCredential(ownerId);
       const info = selectLiveYoutubePlayback(storedInfo, activeInfos, selectOpts);
-      const resolved = await finish(ownerId, info);
+      console.info('[youtube-embed] playback trace', {
+        eventId: String(event.id || event._id || ''),
+        slug: event.slug || '',
+        shortCode: event.shortCode || '',
+        eventYoutubeBroadcastId: event.youtubeBroadcastId || '',
+        eventYoutubeVideoId: event.youtubeVideoId || '',
+        eventStreamUrl: event.streamUrl || '',
+        eventYoutubeWatchUrl: event.youtubeWatchUrl || '',
+        channelId: cred?.channelId || '',
+        channelTitle: cred?.channelTitle || '',
+        storedBroadcastId: storedInfo?.broadcastId || '',
+        storedVideoId: storedInfo?.videoId || '',
+        storedLifeCycleStatus: storedInfo?.lifeCycleStatus || '',
+        storedIsLive: storedInfo?.isLive === true,
+        youtubeApiLiveBroadcastIds: activeInfos.map((item) => item.broadcastId),
+        youtubeApiLiveVideoIds: activeInfos.map((item) => item.videoId),
+        youtubeApiLiveTitles: activeInfos.map((item) => item.title),
+        selectedBroadcastId: info?.broadcastId || '',
+        selectedVideoId: info?.videoId || '',
+        selectedIsLive: info?.isLive === true,
+      });
+      if (!storedInfo && !info) continue;
+      const resolved = await finish(ownerId, info || storedInfo);
       if (resolved) return resolved;
     } catch (err) {
       console.info('[youtube-embed] broadcast lookup skipped', err?.message || err);
@@ -441,6 +464,11 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
   const data = publicStreamConfig(event, { isPublishing, youtubePlayback });
   console.info('[youtube-embed] public stream config', {
     eventId: event.id,
+    slug: event.slug || '',
+    shortCode: event.shortCode || '',
+    eventYoutubeBroadcastId: event.youtubeBroadcastId || '',
+    eventYoutubeVideoId: event.youtubeVideoId || '',
+    eventStreamUrl: event.streamUrl || '',
     youtubeBroadcastId: data.youtubeBroadcastId,
     youtubeVideoId: data.youtubeVideoId,
     youtubeWatchUrl: data.youtubeWatchUrl,

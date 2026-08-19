@@ -20,6 +20,7 @@ const {
   eventYoutubeLookupId,
   selectLiveYoutubePlayback,
   youtubeOauthUserIds,
+  activeLiveBroadcastListParams,
 } = await import('../services/youtubeLiveApi.js');
 
 test('shouldAutoCreateYoutubeLive skips when a URL was pasted', () => {
@@ -256,5 +257,55 @@ test('youtubeOauthUserIds tries createdBy then organizer', () => {
     }),
     ['sameUser123']
   );
+});
+
+test('active live list includes persistent Studio Stream now broadcasts', () => {
+  const params = activeLiveBroadcastListParams();
+  assert.equal(params.mine, true);
+  assert.equal(params.broadcastStatus, 'active');
+  assert.equal(params.broadcastType, 'all');
+});
+
+test('selectLiveYoutubePlayback prefers Studio Stream now over a waiting auto-created broadcast', () => {
+  const stored = {
+    videoId: 'NPB8S-cxHg0',
+    broadcastId: 'NPB8S-cxHg0',
+    title: 'Srinivas weds mounika reception',
+    lifeCycleStatus: 'ready',
+    isLive: false,
+  };
+  const studioLive = {
+    videoId: '882LagGGVM4',
+    broadcastId: '882LagGGVM4',
+    title: 'Srinivas weds mounika reception',
+    lifeCycleStatus: 'live',
+    isLive: true,
+  };
+  const picked = selectLiveYoutubePlayback(stored, [studioLive], {
+    eventBroadcastId: 'NPB8S-cxHg0',
+    eventTitle: 'Srinivas weds mounika reception',
+  });
+  assert.equal(picked.videoId, '882LagGGVM4');
+});
+
+test('selectLiveYoutubePlayback uses the account live even when the Studio title differs', () => {
+  const stored = {
+    videoId: 'NPB8S-cxHg0',
+    broadcastId: 'NPB8S-cxHg0',
+    isLive: false,
+  };
+  const picked = selectLiveYoutubePlayback(
+    stored,
+    [
+      {
+        videoId: '882LagGGVM4',
+        broadcastId: '882LagGGVM4',
+        title: 'Live stream',
+        isLive: true,
+      },
+    ],
+    { eventBroadcastId: 'NPB8S-cxHg0', eventTitle: 'Srinivas weds mounika reception' }
+  );
+  assert.equal(picked.videoId, '882LagGGVM4');
 });
 

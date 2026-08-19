@@ -296,7 +296,38 @@ function playbackInfoFromBroadcastItem(item) {
     lifeCycleStatus,
     privacyStatus,
     enableEmbed,
+    actualStartTime: item.snippet?.actualStartTime || item.snippet?.scheduledStartTime || '',
     isLive: lifeCycleStatus === 'live' || lifeCycleStatus === 'testing',
+  };
+}
+
+/** Normalize titles so "Srinivas weds mounika reception" matches Studio copies. */
+export function youtubeTitleKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function titlesMatch(eventTitle, broadcastTitle) {
+  const eventKey = youtubeTitleKey(eventTitle);
+  const liveKey = youtubeTitleKey(broadcastTitle);
+  if (!eventKey || !liveKey) return false;
+  return eventKey === liveKey || eventKey.includes(liveKey) || liveKey.includes(eventKey);
+}
+
+/**
+ * Params for the currently-live broadcasts on the connected channel.
+ * broadcastType MUST be `all`: YouTube defaults to `event`, which hides
+ * Studio "Stream now" / persistent lives (the /live/VIDEO_ID URL).
+ */
+export function activeLiveBroadcastListParams() {
+  return {
+    part: ['id', 'snippet', 'status', 'contentDetails'],
+    mine: true,
+    broadcastStatus: 'active',
+    broadcastType: 'all',
+    maxResults: 50,
   };
 }
 
@@ -331,6 +362,10 @@ export function youtubeOauthUserIds(event) {
  * If the event's own broadcast is already live, keep it. Otherwise pick the
  * connected account's currently active live (OBS "Stream now" / Studio live)
  * instead of embedding a still-scheduled waiting broadcast.
+ *
+ * Auto-created EventLivePro broadcasts stay `ready` until that specific ingest
+ * is used. Studio Go Live creates a different persistent broadcast — that live
+ * ID must win for public playback (do not keep the waiting stored ID).
  */
 export function selectLiveYoutubePlayback(
   storedInfo,
@@ -340,17 +375,21 @@ export function selectLiveYoutubePlayback(
   if (storedInfo?.isLive) return storedInfo;
   if (!allowActiveFallback) return storedInfo || null;
   const actives = Array.isArray(activeInfos) ? activeInfos.filter((item) => item?.videoId) : [];
+  const liveActives = actives.filter((item) => item.isLive === true);
+  const pool = liveActives.length ? liveActives : actives;
   const own = String(eventBroadcastId || storedInfo?.broadcastId || '').trim();
-  const ownLive = actives.find((item) => item.videoId === own || item.broadcastId === own);
+  const ownLive = pool.find((item) => item.videoId === own || item.broadcastId === own);
   if (ownLive) return ownLive;
-  const title = String(eventTitle || '').trim().toLowerCase();
-  if (title) {
-    const titled = actives.find(
-      (item) => String(item.title || '').trim().toLowerCase() === title
-    );
-    if (titled) return titled;
+  const titled = pool.find((item) => titlesMatch(eventTitle, item.title));
+  if (titled) return titled;
+  if (pool.length === 1) return pool[0];
+  if (pool.length > 1) {
+    return [...pool].sort((a, b) => {
+      const ta = Date.parse(a.actualStartTime || '') || 0;
+      const tb = Date.parse(b.actualStartTime || '') || 0;
+      return tb - ta;
+    })[0];
   }
-  if (actives.length === 1) return actives[0];
   return storedInfo || null;
 }
 
@@ -370,12 +409,7 @@ export async function getBroadcastPlaybackInfo(userId, broadcastOrVideoId) {
 export async function listActiveBroadcastPlayback(userId) {
   if (!userId) return [];
   const { youtube } = await authorizedClientForUser(userId);
-  const res = await youtube.liveBroadcasts.list({
-    part: ['id', 'snippet', 'status', 'contentDetails'],
-    mine: true,
-    broadcastStatus: 'active',
-    maxResults: 25,
-  });
+  const res = await youtube.liveBroadcasts.list(activeLiveBroadcastListParams());
   return (apiData(res)?.items || [])
     .map(playbackInfoFromBroadcastItem)
     .filter(Boolean);
