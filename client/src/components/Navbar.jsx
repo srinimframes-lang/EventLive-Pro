@@ -22,6 +22,8 @@ export default function Navbar() {
   const homeLabel = isAdmin ? 'Admin' : isSubAdmin ? 'Reseller' : 'Dashboard';
   const logoUrl = resolveMediaUrl(settings.companyLogo);
 
+  const canUploadWeddingCard = isAuthenticated && !isSubAdmin;
+
   const NavLinks = ({ stacked }) => (
     <>
       <Link to="/book" onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
@@ -32,23 +34,23 @@ export default function Navbar() {
       </Link>
           {isAuthenticated ? (
             <>
+              {canUploadWeddingCard && (
+                <Link
+                  to="/wedding-card"
+                  onClick={close}
+                  className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
+                >
+                  📤 Upload Wedding Card
+                </Link>
+              )}
               {!isAdmin && !isSubAdmin && (
-                <>
-                  <Link
-                    to="/wedding-card"
-                    onClick={close}
-                    className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
-                  >
-                    📤 Upload Wedding Card
-                  </Link>
-                  <Link
-                    to="/live-links/new"
-                    onClick={close}
-                    className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
-                  >
-                    Create Live Link
-                  </Link>
-                </>
+                <Link
+                  to="/live-links/new"
+                  onClick={close}
+                  className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
+                >
+                  Create Live Link
+                </Link>
               )}
               <Link to={homeFor} onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
                 {homeLabel}
