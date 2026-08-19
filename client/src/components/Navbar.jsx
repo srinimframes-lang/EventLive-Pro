@@ -33,13 +33,22 @@ export default function Navbar() {
           {isAuthenticated ? (
             <>
               {!isAdmin && !isSubAdmin && (
-                <Link
-                  to="/live-links/new"
-                  onClick={close}
-                  className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
-                >
-                  Create Live Link
-                </Link>
+                <>
+                  <Link
+                    to="/wedding-card"
+                    onClick={close}
+                    className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
+                  >
+                    📤 Upload Wedding Card
+                  </Link>
+                  <Link
+                    to="/live-links/new"
+                    onClick={close}
+                    className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
+                  >
+                    Create Live Link
+                  </Link>
+                </>
               )}
               <Link to={homeFor} onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
                 {homeLabel}

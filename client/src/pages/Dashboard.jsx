@@ -76,7 +76,7 @@ export default function Dashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/wedding-card" className="btn-outline">
-            Upload Wedding Card
+            📤 Upload Wedding Card
           </Link>
           <Link to="/live-links/new" className="btn-primary">
             Create Live Link
@@ -91,7 +91,7 @@ export default function Dashboard() {
           link automatically after you review the details.
         </p>
         <Link to="/wedding-card" className="btn-primary mt-5 inline-block">
-          Upload Wedding Card
+          📤 Upload Wedding Card
         </Link>
       </div>
 
