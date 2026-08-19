@@ -14,6 +14,10 @@ export async function recognizeWeddingCardImage(image) {
 
   const worker = await createWorker('eng');
   try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: '4',
+      preserve_interword_spaces: '1',
+    });
     const recognized = worker.recognize(image);
     const timedOut = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('OCR timed out')), OCR_TIMEOUT_MS);

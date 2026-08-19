@@ -266,7 +266,7 @@ export default function WeddingCardUpload() {
                   required
                   minLength={3}
                   maxLength={120}
-                  placeholder="Aarav & Priya Wedding"
+                  placeholder="Event title"
                   value={form.eventTitle}
                   onChange={handleChange}
                 />
@@ -279,7 +279,7 @@ export default function WeddingCardUpload() {
                     name="brideName"
                     className="input"
                     maxLength={80}
-                    placeholder="Priya"
+                    placeholder="Bride name"
                     value={form.brideName}
                     onChange={handleChange}
                   />
@@ -290,7 +290,7 @@ export default function WeddingCardUpload() {
                     name="groomName"
                     className="input"
                     maxLength={80}
-                    placeholder="Aarav"
+                    placeholder="Groom name"
                     value={form.groomName}
                     onChange={handleChange}
                   />

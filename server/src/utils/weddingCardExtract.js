@@ -1,6 +1,7 @@
 /**
  * Parse OCR text from a wedding invitation into editable event fields.
  * Never persists — callers must show a confirmation form before saving.
+ * Returns empty strings when a field cannot be read; never invents sample names.
  */
 
 export const EMPTY_WEDDING_FIELDS = {
@@ -40,19 +41,48 @@ const MONTHS = {
 };
 
 const MONTH_ALT = Object.keys(MONTHS).join('|');
+const WEEKDAY_ALT = 'monday|tuesday|wednesday|thursday|friday|saturday|sunday';
+
 const TITLE_NOISE =
-  /^(wedding invitation|invitation|you are (cordially )?invited|save the date|together with their families|with the blessings of)$/i;
-const NAME_PREFIX =
-  /^(mr|mrs|ms|miss|sri|smt|shri|kumari|kumar|dr|sow|chi)\.?\s+/i;
+  /^(wedding invitation|invitation(?:\s+card)?|you are (cordially )?invited|save the date|together with their families|with the blessings of|request the (honou?r|pleasure))$/i;
+
+const CONNECTOR = '(?:weds|with|and|&|marries)';
+
+/** Honorifics that may appear before a person name (Indian invitation style). */
+const HONORIFIC =
+  '(?:chi\\.?\\s*la\\.?\\s*sow\\.?|kum(?:ari)?\\.?\\s*la\\.?\\s*sow\\.?|chi\\.?\\s*sow\\.?|kum\\.?\\s*sow\\.?|chiranjeevi|sowbhagyavath[iy]|kumari|sri|shri|smt|sow|chi|mr|mrs|ms|miss|dr)';
+
+const NAME_STOP =
+  'weds|with|and|marries|on|at|venue|reception|invitation|wedding|bride|groom|date|time|onwards|sunday|monday|tuesday|wednesday|thursday|friday|saturday';
+
+const NAME_WORD = `(?!(?:${NAME_STOP})\\b)[A-Za-z][A-Za-z.'\\-]*`;
+
+const NAME_CORE = `(${NAME_WORD}(?:\\s+${NAME_WORD}){0,5})`;
+
+const PERSON = `(?:${HONORIFIC}\\.?\\s+)?${NAME_CORE}`;
+
+const BOILERPLATE_LINE =
+  /^(wedding invitation|invitation(?:\s+card)?|you are (cordially )?invited|save the date|together with their families|with the blessings|request the (honou?r|pleasure)|rsvp|dinner|lunch|muhurtham|onwards)$/i;
+
+function collapseSpaces(value) {
+  return String(value || '').replace(/[ \t]+/g, ' ').trim();
+}
 
 function normalize(raw) {
   return String(raw || '')
     .replace(/\u00a0/g, ' ')
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
-    .replace(/[|•·]/g, '\n')
+    .replace(/[|•·∙]/g, '\n')
     .replace(/[♥❤💕💞💗💖]/g, ' & ')
     .replace(/\r\n?/g, '\n')
+    .replace(/[，]/g, ',')
+    .replace(/\b(a)\s*\.\s*(m)\s*\.?/gi, '$1.m.')
+    .replace(/\b(p)\s*\.\s*(m)\s*\.?/gi, '$1.m.')
+    .replace(/\b(a)\s+(m)\b/gi, '$1.m.')
+    .replace(/\b(p)\s+(m)\b/gi, '$1.m.')
+    .replace(/chi\s*\.\s*la\s*\.\s*sow\s*\.?/gi, 'Chi.La.Sow.')
+    .replace(/kum(?:ari)?\s*\.\s*la\s*\.\s*sow\s*\.?/gi, 'Kum.La.Sow.')
     .replace(/[ \t]+/g, ' ')
     .trim();
 }
@@ -82,69 +112,159 @@ function toIsoDate(year, month, day) {
   return `${fullYear}-${pad2(m)}-${pad2(d)}`;
 }
 
+/**
+ * Strip Indian / English honorifics from a captured name. Does not treat
+ * "Kumar" as an honorific — it is a common given/middle name.
+ */
+export function stripHonorifics(value) {
+  let name = collapseSpaces(value);
+  name = name.replace(/^(chi\.?la\.?sow|kum\.?la\.?sow|chilasow|kumlasow)\.?\s*/i, '');
+  let prev = '';
+  while (name !== prev) {
+    prev = name;
+    name = name.replace(
+      /^(chi\.?\s*la\.?\s*sow|kum(?:ari)?\.?\s*la\.?\s*sow|chi\.?\s*sow|kum\.?\s*sow|chiranjeevi|sowbhagyavath[iy])\.?\s+/i,
+      ''
+    );
+    name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.?(?=\s|[A-Z])/i, '');
+    name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.?\s+/i, '');
+  }
+  return collapseSpaces(name);
+}
+
 function cleanPersonName(value) {
-  let name = String(value || '').replace(/\s+/g, ' ').trim();
-  name = name.replace(NAME_PREFIX, '').replace(NAME_PREFIX, '');
-  name = name.split(/\s+(?:s\/o|d\/o|son of|daughter of|w\/o)\b/i)[0];
-  name = name.replace(/[,.]+\s*$/g, '').replace(/\s+/g, ' ').trim();
-  if (name.length < 2 || name.length > 80) return name.length > 80 ? name.slice(0, 80).trim() : name;
-  if (/^(and|&|weds|with|the|venue|date|time|on|at)$/i.test(name)) return '';
+  let name = stripHonorifics(value);
+  name = name.split(/\s+(?:s\/o|d\/o|c\/o|son of|daughter of|w\/o)\b/i)[0];
+  name = name.replace(/[,.:;]+\s*$/g, '').replace(/\s+/g, ' ').trim();
+  if (name.length > 80) name = name.slice(0, 80).trim();
+  if (name.length < 2) return '';
+  if (
+    /^(and|&|weds|with|the|venue|date|time|on|at|reception|invitation|wedding|onwards|from)$/i.test(
+      name
+    )
+  ) {
+    return '';
+  }
+  if (TITLE_NOISE.test(name) || BOILERPLATE_LINE.test(name)) return '';
   return name;
 }
 
+function isConnectorLine(line) {
+  return /^(with|weds|and|&|marries)$/i.test(String(line || '').trim());
+}
+
+function isStopperLine(line) {
+  return /^(reception|rsvp|contact|phone|mobile|whatsapp|www\.|http|email|muhurtham)\b/i.test(
+    String(line || '').trim()
+  );
+}
+
+function looksLikeTimeToken(value) {
+  return /\b\d{1,2}(?:[:.]\d{2})?\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)\b/i.test(value);
+}
+
+function honorificRole(line) {
+  const raw = String(line || '').trim();
+  if (/chi\.?\s*la\.?\s*sow|kum(?:ari)?\.?\s*la\.?\s*sow|chilasow|kumlasow/i.test(raw)) {
+    return 'bride';
+  }
+  if (/^(sow|kumari)\b/i.test(raw)) return 'bride';
+  if (/^(chi|chiranjeevi)\b/i.test(raw)) return 'groom';
+  return '';
+}
+
+function looksLikePersonName(line) {
+  const cleaned = cleanPersonName(line);
+  if (!cleaned) return false;
+  if (/\d/.test(cleaned)) return false;
+  if (isConnectorLine(cleaned) || isStopperLine(cleaned)) return false;
+  if (/^(venue|reception|date|time|on|at)\b/i.test(cleaned)) return false;
+  if (new RegExp(`^(${WEEKDAY_ALT}|${MONTH_ALT})$`, 'i').test(cleaned)) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 6) return false;
+  if (words.some((word) => /^(of|the|for|on|at|and|with|invitation|wedding)$/i.test(word))) {
+    return false;
+  }
+  return /^[A-Za-z][A-Za-z .'\-]*$/.test(cleaned);
+}
+
 function extractLabeledName(text, labels) {
-  const re = new RegExp(`(?:${labels})\\s*[:\\-–]\\s*([A-Za-z][A-Za-z .']{1,79})`, 'i');
-  const match = text.match(re);
-  return match ? cleanPersonName(match[1]) : '';
+  const re = new RegExp(`(?:${labels})\\s*[:\\-–]\\s*${PERSON}`, 'i');
+  for (const line of linesOf(text)) {
+    const match = line.match(re);
+    if (match) return cleanPersonName(match[1]);
+  }
+  return '';
+}
+
+function extractConnectorPair(source) {
+  const re = new RegExp(`\\b${PERSON}\\s+${CONNECTOR}\\s+\\b${PERSON}`, 'i');
+  const match = String(source || '').match(re);
+  if (!match) return null;
+  const left = cleanPersonName(match[1]);
+  const right = cleanPersonName(match[2]);
+  if (!left || !right) return null;
+  return { groomName: left, brideName: right };
 }
 
 function extractNames(text, lines) {
   let groomName = extractLabeledName(text, 'groom(?:\\s*name)?');
   let brideName = extractLabeledName(text, 'bride(?:\\s*name)?');
 
+  const assign = (groom, bride) => {
+    if (groom && !groomName) groomName = groom;
+    if (bride && !brideName) brideName = bride;
+  };
+
   if (!groomName || !brideName) {
-    const weds = text.match(
-      /([A-Za-z][A-Za-z .']{1,40})\s+(?:weds|wedding|marries)\s+([A-Za-z][A-Za-z .']{1,40})/i
-    );
-    if (weds) {
-      groomName = groomName || cleanPersonName(weds[1]);
-      brideName = brideName || cleanPersonName(weds[2]);
+    const pair = extractConnectorPair(text.replace(/\n/g, ' '));
+    if (pair) assign(pair.groomName, pair.brideName);
+  }
+
+  if (!groomName || !brideName) {
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!isConnectorLine(lines[i])) continue;
+      const prev = lines[i - 1];
+      const next = lines[i + 1];
+      if (!looksLikePersonName(prev) || !looksLikePersonName(next)) continue;
+      const left = cleanPersonName(prev);
+      const right = cleanPersonName(next);
+      const prevRole = honorificRole(prev);
+      const nextRole = honorificRole(next);
+      if (prevRole === 'bride' && nextRole === 'groom') assign(right, left);
+      else assign(left, right);
+      break;
     }
   }
 
   if (!groomName || !brideName) {
+    const pending = [];
     for (const line of lines) {
-      if (line.length > 80) continue;
-      const pair = line.match(
-        /^([A-Za-z][A-Za-z .']{1,40})\s+(?:&|and)\s+([A-Za-z][A-Za-z .']{1,40})$/i
-      );
-      if (!pair) continue;
-      const left = cleanPersonName(pair[1]);
-      const right = cleanPersonName(pair[2]);
-      if (!left || !right) continue;
-      groomName = groomName || left;
-      brideName = brideName || right;
-      break;
+      if (BOILERPLATE_LINE.test(line) || TITLE_NOISE.test(line)) continue;
+      if (isConnectorLine(line) || isStopperLine(line)) continue;
+      if (/^(venue|reception|date|time|on)\b/i.test(line)) continue;
+      if (looksLikeTimeToken(line) || extractDateFromChunk(line)) continue;
+      if (!looksLikePersonName(line)) continue;
+      const role = honorificRole(line);
+      const cleaned = cleanPersonName(line);
+      if (role === 'groom') assign(cleaned, '');
+      else if (role === 'bride') assign('', cleaned);
+      else pending.push(cleaned);
     }
+    if (!groomName && pending[0]) groomName = pending[0];
+    if (!brideName && pending[1]) brideName = pending[1];
   }
 
   return { brideName, groomName };
 }
 
-function extractDate(text) {
-  const numeric = text.match(/\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b/);
-  if (numeric) {
-    const a = Number(numeric[1]);
-    const b = Number(numeric[2]);
-    const year = numeric[3];
-    // Indian invitations use DD/MM/YYYY. If the first number cannot be a month, it is the day.
-    if (a > 12 && b <= 12) return toIsoDate(year, b, a);
-    return toIsoDate(year, b, a);
-  }
+function extractDateFromChunk(text) {
+  const source = String(text || '');
+  if (!source.trim()) return '';
 
-  const dayMonthYear = text.match(
+  const dayMonthYear = source.match(
     new RegExp(
-      `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_ALT})\\s*,?\\s*(\\d{4})\\b`,
+      `(?:(?:${WEEKDAY_ALT}),?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_ALT}),?\\s*(\\d{4})`,
       'i'
     )
   );
@@ -152,7 +272,7 @@ function extractDate(text) {
     return toIsoDate(dayMonthYear[3], MONTHS[dayMonthYear[2].toLowerCase()], dayMonthYear[1]);
   }
 
-  const monthDayYear = text.match(
+  const monthDayYear = source.match(
     new RegExp(
       `\\b(${MONTH_ALT})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s*,?\\s*(\\d{4})\\b`,
       'i'
@@ -162,58 +282,127 @@ function extractDate(text) {
     return toIsoDate(monthDayYear[3], MONTHS[monthDayYear[1].toLowerCase()], monthDayYear[2]);
   }
 
-  const labeled = text.match(
-    /(?:date|on)\s*[:\-–]\s*([A-Za-z0-9,./\- ]{6,40})/i
-  );
-  if (labeled) return extractDate(labeled[1]);
+  const numeric = source.match(/\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b/);
+  if (numeric) {
+    const a = Number(numeric[1]);
+    const b = Number(numeric[2]);
+    const year = numeric[3];
+    if (a > 12 && b <= 12) return toIsoDate(year, b, a);
+    return toIsoDate(year, b, a);
+  }
 
   return '';
 }
 
-function extractTime(text) {
-  const labeled = text.match(
-    /(?:time|starts?(?:\s*at)?)\s*[:\-–]\s*([0-9:. ]{1,8}\s*(?:a\.?m\.?|p\.?m\.?)?)/i
+function extractTimeFromChunk(text) {
+  const source = String(text || '');
+  const meridem = source.match(
+    /\b(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?)\b/i
   );
-  const source = labeled ? labeled[1] : text;
-
-  const meridem = source.match(/\b(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i);
   if (meridem) {
     let hour = Number(meridem[1]);
     const minute = Number(meridem[2] || 0);
-    const ap = meridem[3].replace(/\./g, '').toLowerCase();
+    const ap = meridem[3].replace(/[.\s]/g, '').toLowerCase();
+    if (hour > 12 || minute > 59) return '';
     if (hour === 12) hour = ap.startsWith('a') ? 0 : 12;
     else if (ap.startsWith('p')) hour += 12;
-    if (hour > 23 || minute > 59) return '';
+    if (hour > 23) return '';
     return `${pad2(hour)}:${pad2(minute)}`;
   }
 
   const twentyFour = source.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:hrs?|hours)?\b/i);
-  if (twentyFour) return `${pad2(twentyFour[1])}:${pad2(twentyFour[2])}`;
+  if (twentyFour && !/\b(?:a\.?\s*m\.?|p\.?\s*m\.?)\b/i.test(source)) {
+    return `${pad2(twentyFour[1])}:${pad2(twentyFour[2])}`;
+  }
 
   return '';
 }
 
+/**
+ * Ceremony / muhurtham text only. Reception blocks often have a different
+ * date and time and must not overwrite the wedding fields.
+ */
+function ceremonySection(text) {
+  const source = String(text || '');
+  const cut = source.search(/\breception\b/i);
+  return cut >= 0 ? source.slice(0, cut) : source;
+}
+
+function extractDate(text) {
+  const ceremony = ceremonySection(text);
+  return extractDateFromChunk(ceremony) || extractDateFromChunk(text);
+}
+
+function extractTime(text) {
+  const ceremony = ceremonySection(text);
+  const labeled = ceremony.match(
+    /(?:time|starts?(?:\s*at)?)\s*[:\-–]\s*([0-9:. ]{1,8}\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)?)/i
+  );
+  if (labeled) {
+    const fromLabel = extractTimeFromChunk(labeled[1]);
+    if (fromLabel) return fromLabel;
+  }
+  return extractTimeFromChunk(ceremony) || extractTimeFromChunk(text);
+}
+
 function looksLikeVenue(line) {
-  return /(venue|hotel|palace|mandap|temple|hall|lawn|resort|banquet|kalyanamandapam|garden|club|church|gurudwara|community)/i.test(
+  return /(venue|hotel|palace|mandap|temple|hall|lawn|resort|banquet|kalyanamandapam|kalyana|garden|club|church|gurudwara|community|convention|function)/i.test(
     line
   );
 }
 
-function extractVenue(text, lines) {
-  const labeled = text.match(/venue\s*[:\-–]\s*([^\n]{3,200})/i);
-  if (labeled) return labeled[1].replace(/\s+/g, ' ').trim().slice(0, 200);
+function isAddressLine(line) {
+  const raw = String(line || '').trim();
+  if (!raw || isStopperLine(raw) || isConnectorLine(raw)) return false;
+  if (/^(venue|reception|date|time|groom|bride)\b/i.test(raw)) return false;
+  if (looksLikeTimeToken(raw) && !looksLikeVenue(raw)) return false;
+  if (extractDateFromChunk(raw) && !looksLikeVenue(raw)) return false;
+  if (honorificRole(raw) && looksLikePersonName(raw)) return false;
+  return (
+    looksLikeVenue(raw) ||
+    /(road|rd\.?|street|st\.?|nagar|colony|dist\.?|district|village|town|city|andhra|pradesh|a\/c)/i.test(
+      raw
+    ) ||
+    (/,/.test(raw) && raw.length >= 8 && raw.length <= 80)
+  );
+}
 
-  const atLine = text.match(/\bat\s*[:\-–]\s*([^\n]{3,200})/i);
+function extractVenue(text, lines) {
+  const ceremonyLines = [];
+  for (const line of lines) {
+    if (/^reception\b/i.test(line)) break;
+    ceremonyLines.push(line);
+  }
+
+  const venueIdx = ceremonyLines.findIndex((line) => /^venue\b/i.test(line));
+  if (venueIdx >= 0) {
+    const head = ceremonyLines[venueIdx].replace(/^venue\s*[:\-–]?\s*/i, '').trim();
+    const parts = [];
+    if (head) parts.push(head.replace(/[,.:;]+$/g, '').trim());
+    for (let i = venueIdx + 1; i < ceremonyLines.length; i += 1) {
+      if (!isAddressLine(ceremonyLines[i]) && !ceremonyLines[i]) break;
+      if (!isAddressLine(ceremonyLines[i])) break;
+      parts.push(ceremonyLines[i].replace(/[,.:;]+$/g, '').trim());
+    }
+    const joined = parts.filter(Boolean).join(', ');
+    if (joined.length >= 3) return joined.slice(0, 200);
+  }
+
+  const labeled = ceremonySection(text).match(/venue\s*[:\-–]?\s*([^\n]{3,200})/i);
+  if (labeled) {
+    return labeled[1].replace(/\s+/g, ' ').replace(/[,.:;]+$/g, '').trim().slice(0, 200);
+  }
+
+  const atLine = ceremonySection(text).match(
+    /\bat\s+(?!\d{1,2}(?:[:.]\d{2})?\s*(?:a\.?\s*m\.?|p\.?\s*m\.?))([^\n]{3,200})/i
+  );
   if (atLine && looksLikeVenue(atLine[1])) {
     return atLine[1].replace(/\s+/g, ' ').trim().slice(0, 200);
   }
 
-  for (const line of lines) {
-    if (/^venue\b/i.test(line) && line.length > 8) {
-      return line.replace(/^venue\s*[:\-–]?\s*/i, '').trim().slice(0, 200);
-    }
+  for (const line of ceremonyLines) {
     if (looksLikeVenue(line) && !/^(date|time|groom|bride)\b/i.test(line)) {
-      return line.replace(/^venue\s*[:\-–]?\s*/i, '').trim().slice(0, 200);
+      return line.replace(/^(?:venue|at)\s*[:\-–]?\s*/i, '').trim().slice(0, 200);
     }
   }
 
@@ -221,20 +410,17 @@ function extractVenue(text, lines) {
 }
 
 function extractTitle(lines, names) {
-  for (const line of lines.slice(0, 8)) {
-    if (TITLE_NOISE.test(line)) continue;
-    if (/wedding/i.test(line) && line.length >= 3 && line.length <= 120) {
-      return line.slice(0, 120);
-    }
-  }
-
   const groom = names.groomName;
   const bride = names.brideName;
   if (groom && bride) return `${groom} & ${bride} Wedding`.slice(0, 120);
   if (groom || bride) return `${groom || bride} Wedding`.slice(0, 120);
 
-  const invitation = lines.find((line) => TITLE_NOISE.test(line));
-  if (invitation) return invitation.slice(0, 120);
+  for (const line of lines.slice(0, 8)) {
+    if (TITLE_NOISE.test(line) || BOILERPLATE_LINE.test(line)) continue;
+    if (/wedding/i.test(line) && line.length >= 3 && line.length <= 120) {
+      if (!/invitation/i.test(line)) return line.slice(0, 120);
+    }
+  }
 
   return '';
 }
@@ -249,7 +435,7 @@ export function parseWeddingCardText(rawText) {
 
   const lines = linesOf(text);
   const names = extractNames(text, lines);
-  const fields = {
+  return {
     brideName: names.brideName,
     groomName: names.groomName,
     weddingDate: extractDate(text),
@@ -257,8 +443,6 @@ export function parseWeddingCardText(rawText) {
     venue: extractVenue(text, lines),
     eventTitle: extractTitle(lines, names),
   };
-
-  return fields;
 }
 
 export function buildWeddingEventTitle(fields) {
