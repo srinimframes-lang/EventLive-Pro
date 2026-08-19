@@ -1,0 +1,414 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap');
+
+body.watch-wedding-template {
+  background: var(--wt-page, #f6efe4);
+}
+
+.wedding-template {
+  --wt-font-display: 'Cinzel', 'Palatino Linotype', Palatino, serif;
+  --wt-font-script: 'Cormorant Garamond', Georgia, serif;
+  --wt-font-body: 'Cormorant Garamond', Georgia, serif;
+  color: var(--wt-ink);
+  background: var(--wt-page);
+  font-family: var(--wt-font-body);
+}
+
+.wedding-template[data-template='wedding-template-1'] {
+  --wt-page: #f4ead8;
+  --wt-paper: #fff8ee;
+  --wt-ink: #3b1d18;
+  --wt-muted: #7a5a48;
+  --wt-gold: #b8860b;
+  --wt-gold-soft: #e8d5a3;
+  --wt-accent: #7a1f2b;
+  --wt-veil: rgba(255, 248, 238, 0.78);
+  --wt-art-1: #f3d9b0;
+  --wt-art-2: #e8cfc0;
+  --wt-art-3: #d4e0d4;
+}
+
+.wedding-template[data-template='wedding-template-2'] {
+  --wt-page: #f7ecec;
+  --wt-paper: #fff7f5;
+  --wt-ink: #3d2140;
+  --wt-muted: #7a5a68;
+  --wt-gold: #c4a35a;
+  --wt-gold-soft: #edd9b0;
+  --wt-accent: #6b2d5b;
+  --wt-veil: rgba(255, 247, 245, 0.8);
+  --wt-art-1: #f3cfd8;
+  --wt-art-2: #ead4e4;
+  --wt-art-3: #cfe4dc;
+}
+
+.wedding-template[data-template='reception-template-1'] {
+  --wt-page: #f7efe6;
+  --wt-paper: #fffaf3;
+  --wt-ink: #3a1f24;
+  --wt-muted: #8a5a5e;
+  --wt-gold: #b08d57;
+  --wt-gold-soft: #e6d3b4;
+  --wt-accent: #7b2433;
+  --wt-veil: rgba(255, 250, 243, 0.8);
+  --wt-art-1: #edd6c4;
+  --wt-art-2: #e4cfc8;
+  --wt-art-3: #d7e0d2;
+}
+
+.wedding-template[data-template='engagement-template-1'] {
+  --wt-page: #f8eef2;
+  --wt-paper: #fff8fb;
+  --wt-ink: #4a2440;
+  --wt-muted: #8a6278;
+  --wt-gold: #c9a36a;
+  --wt-gold-soft: #eedcc0;
+  --wt-accent: #8a3a62;
+  --wt-veil: rgba(255, 248, 251, 0.82);
+  --wt-art-1: #f3d0dc;
+  --wt-art-2: #ead4e8;
+  --wt-art-3: #d7e4dc;
+}
+
+.wedding-template[data-template='sangeet-template-1'] {
+  --wt-page: #1a1424;
+  --wt-paper: #241c32;
+  --wt-ink: #f6ead8;
+  --wt-muted: #d4c0a8;
+  --wt-gold: #e0b85c;
+  --wt-gold-soft: #8a6b38;
+  --wt-accent: #f0d9a8;
+  --wt-veil: rgba(18, 12, 28, 0.72);
+  --wt-art-1: #3a2454;
+  --wt-art-2: #4a2a38;
+  --wt-art-3: #1e3a3a;
+}
+
+.wedding-template[data-template='birthday-template-1'] {
+  --wt-page: #f8efe4;
+  --wt-paper: #fff8f1;
+  --wt-ink: #4a2a22;
+  --wt-muted: #8a6558;
+  --wt-gold: #d0895a;
+  --wt-gold-soft: #f0d2b8;
+  --wt-accent: #c45c48;
+  --wt-veil: rgba(255, 248, 241, 0.8);
+  --wt-art-1: #f3d4b8;
+  --wt-art-2: #f0c8c0;
+  --wt-art-3: #e4dcc8;
+}
+
+.wedding-template[data-template='other-template-1'] {
+  --wt-page: #eef1f4;
+  --wt-paper: #fbfcfe;
+  --wt-ink: #243044;
+  --wt-muted: #66758a;
+  --wt-gold: #a08958;
+  --wt-gold-soft: #ddd4c0;
+  --wt-accent: #2f4a63;
+  --wt-veil: rgba(251, 252, 254, 0.82);
+  --wt-art-1: #d8e0ea;
+  --wt-art-2: #e4dcc8;
+  --wt-art-3: #d0d8d4;
+}
+
+.wedding-template[data-template='sangeet-template-1'] .wt-watch-btn {
+  background: var(--wt-gold);
+  color: #1a1424;
+}
+
+.wt-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(92svh, 820px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 4.5rem 1rem 3rem;
+}
+
+.wt-hero-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.wt-hero-wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 18%, var(--wt-art-1) 0%, transparent 52%),
+    radial-gradient(ellipse at 0% 100%, var(--wt-art-3) 0%, transparent 46%),
+    radial-gradient(ellipse at 100% 0%, var(--wt-art-2) 0%, transparent 42%),
+    linear-gradient(180deg, var(--wt-page) 0%, var(--wt-gold-soft) 100%);
+  opacity: 0.9;
+}
+
+.wt-hero-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+  color: var(--wt-gold);
+}
+
+.wt-hero-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 0%, var(--wt-veil) 38%, var(--wt-veil) 72%, var(--wt-page) 100%);
+}
+
+.wt-hero-inner {
+  position: relative;
+  z-index: 2;
+  width: min(640px, 100%);
+  text-align: center;
+}
+
+.wt-hero-card {
+  background: var(--wt-paper);
+  border: 1px solid var(--wt-gold-soft);
+  box-shadow:
+    0 18px 50px rgba(59, 29, 24, 0.14),
+    inset 0 0 0 6px var(--wt-gold-soft);
+  border-radius: 18px;
+  padding: 1.75rem 1.15rem 1.85rem;
+}
+
+@media (min-width: 640px) {
+  .wt-hero-card {
+    padding: 2.4rem 2.4rem 2.5rem;
+  }
+}
+
+.wt-kicker {
+  margin: 0;
+  font-family: var(--wt-font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.38em;
+  text-transform: uppercase;
+  color: var(--wt-gold);
+}
+
+.wt-ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  margin: 0.85rem 0 1.1rem;
+  color: var(--wt-gold);
+}
+
+.wt-ornament::before,
+.wt-ornament::after {
+  content: '';
+  width: 18%;
+  max-width: 72px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--wt-gold), transparent);
+}
+
+.wt-name {
+  margin: 0;
+  font-family: var(--wt-font-display);
+  font-weight: 700;
+  font-size: clamp(1.65rem, 7.4vw, 3.15rem);
+  line-height: 1.15;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wt-accent);
+  text-shadow: 0 1px 0 var(--wt-paper);
+}
+
+.wt-weds {
+  margin: 0.35rem 0 0.45rem;
+  font-family: var(--wt-font-script);
+  font-style: italic;
+  font-weight: 500;
+  font-size: clamp(1.2rem, 3.6vw, 1.7rem);
+  color: var(--wt-gold);
+  letter-spacing: 0.12em;
+}
+
+.wt-event-type {
+  margin: 0.55rem 0 0;
+  font-family: var(--wt-font-script);
+  font-style: italic;
+  font-weight: 600;
+  font-size: clamp(1.15rem, 3.4vw, 1.55rem);
+  color: var(--wt-gold);
+  letter-spacing: 0.14em;
+}
+
+.wt-meta {
+  margin-top: 1.15rem;
+  display: grid;
+  gap: 0.35rem;
+  color: var(--wt-ink);
+  font-size: clamp(0.98rem, 2.6vw, 1.15rem);
+  font-weight: 600;
+}
+
+.wt-meta-muted {
+  color: var(--wt-muted);
+  font-weight: 500;
+  white-space: pre-line;
+}
+
+.wt-watch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.35rem;
+  padding: 0.7rem 1.25rem;
+  border-radius: 999px;
+  background: var(--wt-accent);
+  color: #fff8ee;
+  font-family: var(--wt-font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.wt-watch-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
+}
+
+.wt-section {
+  width: min(1100px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  padding: 1.75rem 0 0.5rem;
+}
+
+.wt-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.wt-section-title {
+  margin: 0;
+  font-family: var(--wt-font-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wt-accent);
+}
+
+.wt-player-frame {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--wt-gold-soft);
+  background: #0b0b0b;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+
+.wt-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.wt-studio-link {
+  font-size: 0.85rem;
+  color: var(--wt-accent);
+  text-decoration: underline;
+}
+
+.wt-empty {
+  margin: 0;
+  padding: 1.4rem;
+  text-align: center;
+  color: var(--wt-muted);
+  border: 1px dashed var(--wt-gold-soft);
+  border-radius: 12px;
+}
+
+.wt-chat-card {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--wt-gold-soft);
+  background: var(--wt-paper);
+  min-height: 58vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.wt-chat-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--wt-gold-soft);
+}
+
+.wt-chat-tab {
+  flex: 1;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  border: 0;
+  font-family: var(--wt-font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wt-muted);
+}
+
+.wt-chat-tab.is-active {
+  color: var(--wt-accent);
+  box-shadow: inset 0 -2px 0 var(--wt-gold);
+}
+
+.wt-chat-body {
+  min-height: 0;
+  flex: 1;
+}
+
+.wt-footer {
+  margin-top: 2rem;
+  padding: 1.6rem 1rem 2.4rem;
+  text-align: center;
+  color: var(--wt-muted);
+}
+
+.wt-footer-names {
+  margin: 0;
+  font-family: var(--wt-font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wt-accent);
+}
+
+.wt-footer-meta {
+  margin: 0.35rem 0 0;
+}
+
+@media (max-width: 480px) {
+  .wt-hero {
+    min-height: 78svh;
+    padding-top: 3.5rem;
+  }
+  .wt-hero-card {
+    box-shadow:
+      0 12px 32px rgba(59, 29, 24, 0.16),
+      inset 0 0 0 5px var(--wt-gold-soft);
+  }
+  .wt-hero-svg {
+    opacity: 0.38;
+  }
+  .wt-hero-veil {
+    background:
+      linear-gradient(180deg, transparent 0%, var(--wt-veil) 32%, var(--wt-veil) 78%, var(--wt-page) 100%);
+  }
+}

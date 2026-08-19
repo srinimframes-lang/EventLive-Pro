@@ -4,6 +4,7 @@ import { persistUpload } from '../utils/storage.js';
 import { resolveEventCreateOwners, assertCanManageEvent } from '../utils/ownership.js';
 import { recognizeWeddingCardImage } from '../utils/weddingCardOcr.js';
 import {
+  buildBrideWedsGroomTitle,
   buildWedsTitle,
   isProvisionableCouplePair,
   isValidWeddingPersonName,
@@ -22,19 +23,19 @@ import {
   weddingCardFingerprint,
   weddingCardLiveStatus,
 } from '../utils/weddingCardProvision.js';
+import {
+  ceremonyPageTemplate,
+  combineWeddingCardStartTime,
+  isCoupleEventType,
+  normalizeManualWeddingCategory,
+} from '../utils/weddingTemplates.js';
 
 function field(body, key) {
   return String(body?.[key] ?? '').trim();
 }
 
 function combineStartTime(dateStr, timeStr) {
-  const date = String(dateStr || '').trim();
-  const time = String(timeStr || '').trim() || '10:00';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  if (!/^\d{2}:\d{2}$/.test(time)) return null;
-  const start = new Date(`${date}T${time}`);
-  if (Number.isNaN(start.getTime())) return null;
-  return start;
+  return combineWeddingCardStartTime(dateStr, timeStr);
 }
 
 async function publicWeddingCardPayload(event, extra = {}) {
@@ -100,17 +101,58 @@ export const extractWeddingCard = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const confirmWeddingCard = asyncHandler(async (req, res) => {
+  const manual = field(req.body, 'entryMode').toLowerCase() === 'manual';
   const groomName = normalizeWeddingPersonName(field(req.body, 'groomName'));
   const brideName = normalizeWeddingPersonName(field(req.body, 'brideName'));
   const venue = field(req.body, 'venue').slice(0, 200);
   const weddingDate = field(req.body, 'weddingDate');
   const weddingTime = field(req.body, 'weddingTime');
-  const title = buildWedsTitle(groomName, brideName);
+  const category = manual
+    ? normalizeManualWeddingCategory(field(req.body, 'category') || field(req.body, 'type'))
+    : 'wedding';
+  const eventTitleInput = (field(req.body, 'eventTitle') || field(req.body, 'title')).slice(0, 120);
+  const description = manual
+    ? (field(req.body, 'additionalDetails') || field(req.body, 'description')).slice(0, 5000)
+    : '';
 
-  if (!isProvisionableCouplePair(groomName, brideName) || !title) {
+  let title = '';
+  if (!manual) {
+    title = buildWedsTitle(groomName, brideName);
+  } else if (category === 'birthday' || category === 'other') {
+    title = eventTitleInput;
+  } else if (category === 'wedding') {
+    title = buildBrideWedsGroomTitle(brideName, groomName);
+  } else if (isCoupleEventType(category) && isProvisionableCouplePair(groomName, brideName)) {
+    title = `${brideName} & ${groomName}`.slice(0, 120);
+  }
+
+  const needsCouple = !manual || isCoupleEventType(category);
+  if (needsCouple && (!isProvisionableCouplePair(groomName, brideName) || !title)) {
     removeTempUpload(req.file);
     res.status(400);
     throw new Error('Please review the wedding details before creating the live link.');
+  }
+  if (manual && (category === 'birthday' || category === 'other') && title.length < 3) {
+    removeTempUpload(req.file);
+    res.status(400);
+    throw new Error('Please enter the event name.');
+  }
+  if (manual) {
+    if (!category) {
+      removeTempUpload(req.file);
+      res.status(400);
+      throw new Error('Please select a valid event type.');
+    }
+    if (!venue) {
+      removeTempUpload(req.file);
+      res.status(400);
+      throw new Error('Please enter the venue.');
+    }
+    if (!weddingTime) {
+      removeTempUpload(req.file);
+      res.status(400);
+      throw new Error('Please enter the wedding time.');
+    }
   }
   const startTime = combineStartTime(weddingDate, weddingTime);
   if (!startTime) {
@@ -122,7 +164,8 @@ export const confirmWeddingCard = asyncHandler(async (req, res) => {
 
   let coverImage = '';
   try {
-    if (req.file) coverImage = await persistUpload(req.file);
+    if (req.file && !manual) coverImage = await persistUpload(req.file);
+    else removeTempUpload(req.file);
   } catch (err) {
     removeTempUpload(req.file);
     throw err;
@@ -131,8 +174,8 @@ export const confirmWeddingCard = asyncHandler(async (req, res) => {
   const owners = resolveEventCreateOwners(req.user, req.body);
   const fingerprint = weddingCardFingerprint({
     organizerId: owners.organizer,
-    groomName,
-    brideName,
+    groomName: groomName || title,
+    brideName: brideName || category,
     weddingDate,
   });
 
@@ -154,18 +197,20 @@ export const confirmWeddingCard = asyncHandler(async (req, res) => {
     location: venue || 'Online',
     startTime,
     endTime,
-    category: 'wedding',
+    category,
     status: 'published',
     isOnline: true,
     creditType: 'none',
     source: 'wedding-card',
+    weddingEntryMode: manual ? 'manual' : '',
     weddingCardFingerprint: fingerprint,
     youtubeProvisionStatus: 'pending',
-    coverImage: coverImage || event?.coverImage || '',
+    pageTemplate: ceremonyPageTemplate(category, event?.pageTemplate),
+    coverImage: manual ? '' : coverImage || event?.coverImage || '',
     organizer: owners.organizer,
     createdBy: owners.createdBy,
     createdByRole: req.user.role,
-    description: '',
+    description: manual ? description : '',
   };
   applyStreamTypeSelection(payload, 'youtube', { isCreate: !event });
   payload.creditType = 'none';
@@ -178,7 +223,14 @@ export const confirmWeddingCard = asyncHandler(async (req, res) => {
     event.location = venue || event.location || 'Online';
     event.startTime = startTime;
     event.endTime = endTime;
-    if (coverImage) event.coverImage = coverImage;
+    if (manual) {
+      event.category = category;
+      event.description = description;
+      event.weddingEntryMode = 'manual';
+    } else if (coverImage) {
+      event.coverImage = coverImage;
+    }
+    event.pageTemplate = ceremonyPageTemplate(category, event.pageTemplate);
     event.youtubeProvisionStatus = event.youtubeProvisionStatus || 'pending';
     applyStreamTypeSelection(event, 'youtube');
     event.creditType = 'none';

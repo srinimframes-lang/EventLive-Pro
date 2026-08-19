@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
+import { normalizePageTemplate, WEDDING_TEMPLATE_OPTIONS } from '../utils/weddingTemplates.js';
 import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
@@ -230,7 +231,7 @@ export default function EventForm() {
           studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
           shareThumbnail: event.shareThumbnail || '',
-          pageTemplate: event.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
+          pageTemplate: normalizePageTemplate(event.pageTemplate),
           heroBackgroundImage: event.heroBackgroundImage || '',
           bridePhoto: event.bridePhoto || '',
           groomPhoto: event.groomPhoto || '',
@@ -707,7 +708,7 @@ export default function EventForm() {
       endTime: endIso,
       brideName: form.brideName?.trim() || '',
       groomName: form.groomName?.trim() || '',
-      pageTemplate: form.pageTemplate === 'classic-wedding' ? 'classic-wedding' : 'default',
+      pageTemplate: normalizePageTemplate(form.pageTemplate),
       chatEnabled: form.chatEnabled,
     };
 
@@ -1007,6 +1008,11 @@ export default function EventForm() {
             >
               <option value="default">Default (current EventLive-Pro page)</option>
               <option value="classic-wedding">Classic Wedding</option>
+              {WEDDING_TEMPLATE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </Field>
 

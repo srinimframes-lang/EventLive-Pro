@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildBrideWedsGroomTitle,
   buildWeddingEventTitle,
   buildWedsTitle,
   isProvisionableCouplePair,
@@ -193,6 +194,11 @@ test('buildWedsTitle is deterministic from normalized Chi. names', () => {
   );
 });
 
+test('buildBrideWedsGroomTitle is bride first for manual wedding entry', () => {
+  assert.equal(buildBrideWedsGroomTitle('Mounika', 'Srinivas'), 'Mounika Weds Srinivas');
+  assert.equal(buildWedsTitle('Srinivas', 'Mounika'), 'Srinivas Weds Mounika');
+});
+
 test('OCR invitation headings never become the event title', () => {
   for (const garbage of [
     'Wedding Invitation',
@@ -350,4 +356,27 @@ test('isProvisionableCouplePair rejects family and OCR garbage names', () => {
   assert.equal(isProvisionableCouplePair('Smt. Lakshmi Devi', 'Veena'), false);
   assert.equal(isProvisionableCouplePair('Wedding Invitation', 'Shubhamastu'), false);
   assert.equal(isProvisionableCouplePair('daughter of Ramesh', 'son of Naresh'), false);
+});
+
+test('Chi.La.Sow. Dr. bride WITH Chi. Dr. groom skips profession lines', () => {
+  const fields = parseWeddingCardText(`
+    Chi. La. Sow. Dr. Mounika
+    Scientist-CSB
+    with
+    Chi. Dr. Yaswanth
+    MBBS, M.S. General Surgery
+  `);
+  assert.equal(fields.brideName, 'Mounika');
+  assert.equal(fields.groomName, 'Yaswanth');
+  assert.equal(fields.eventTitle, 'Yaswanth Weds Mounika');
+  const dumped = `${fields.brideName} ${fields.groomName} ${fields.eventTitle}`;
+  for (const forbidden of ['Scientist', 'CSB', 'MBBS', 'General Surgery', 'M.S.']) {
+    assert.doesNotMatch(dumped, new RegExp(forbidden.replace('.', '\\.'), 'i'));
+  }
+});
+
+test('profession and qualification lines are never couple names', () => {
+  assert.equal(isProvisionableCouplePair('Scientist-CSB', 'MBBS'), false);
+  assert.equal(isProvisionableCouplePair('Yaswanth', 'M.S. General Surgery'), false);
+  assert.equal(isProvisionableCouplePair('Yaswanth', 'Mounika'), true);
 });

@@ -7,6 +7,7 @@ import {
   RESERVED_PUBLIC_ROOTS,
   slugifyName,
 } from '../utils/seo.js';
+import { weddingPageTemplateEnum } from '../utils/weddingTemplates.js';
 
 const { Schema, model } = mongoose;
 
@@ -181,7 +182,7 @@ const eventSchema = new Schema(
     // Public page template (opt-in). Existing events stay on "default".
     pageTemplate: {
       type: String,
-      enum: ['default', 'classic-wedding'],
+      enum: weddingPageTemplateEnum(),
       default: 'default',
       index: true,
     },
@@ -426,6 +427,12 @@ const eventSchema = new Schema(
       trim: true,
       default: '',
       maxlength: 40,
+    },
+    // How a wedding-card live page was created. Empty = uploaded invitation (legacy).
+    weddingEntryMode: {
+      type: String,
+      enum: ['', 'card', 'manual'],
+      default: '',
     },
     weddingCardFingerprint: {
       type: String,
