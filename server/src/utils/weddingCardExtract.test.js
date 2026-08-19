@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildWeddingEventTitle,
+  buildWedsTitle,
+  normalizeWeddingPersonName,
   parseWeddingCardText,
   stripHonorifics,
 } from './weddingCardExtract.js';
@@ -32,7 +34,7 @@ test('parseWeddingCardText extracts a Chi. / with / Chi.La.Sow. invitation', () 
   assert.equal(fields.weddingTime, '10:15');
   assert.match(fields.venue, /Bojjiah Convention/i);
   assert.match(fields.venue, /Tadipatri/i);
-  assert.equal(fields.eventTitle, 'Sai Kumar Reddy & Pranathi Reddy Wedding');
+  assert.equal(fields.eventTitle, 'Sai Kumar Reddy Weds Pranathi Reddy');
 });
 
 test('parseWeddingCardText reads "Sai Kumar Reddy with Pranathi Reddy"', () => {
@@ -112,7 +114,7 @@ test('parseWeddingCardText extracts a classic Indian invitation', () => {
   assert.equal(fields.weddingDate, '2026-04-12');
   assert.equal(fields.weddingTime, '10:30');
   assert.equal(fields.venue, 'Taj Krishna, Hyderabad');
-  assert.equal(fields.eventTitle, 'Aarav Sharma & Priya Patel Wedding');
+  assert.equal(fields.eventTitle, 'Aarav Sharma Weds Priya Patel');
 });
 
 test('parseWeddingCardText reads compact couple, date, time, and hall lines', () => {
@@ -175,11 +177,42 @@ test('parseWeddingCardText does not use Aarav/Priya as extraction defaults', () 
   assert.notEqual(fields.brideName, 'Priya');
 });
 
-test('buildWeddingEventTitle prefers an explicit title, then couple names', () => {
-  assert.equal(buildWeddingEventTitle({ eventTitle: 'Royal Reception' }), 'Royal Reception');
+test('buildWedsTitle is deterministic from normalized Chi. names', () => {
   assert.equal(
-    buildWeddingEventTitle({ groomName: 'Sai Kumar Reddy', brideName: 'Pranathi Reddy' }),
-    'Sai Kumar Reddy & Pranathi Reddy Wedding'
+    normalizeWeddingPersonName('Chi. Sai Kumar Reddy'),
+    'Sai Kumar Reddy'
   );
-  assert.equal(buildWeddingEventTitle({}), 'Wedding Invitation');
+  assert.equal(
+    normalizeWeddingPersonName('Chi.La.Sow. Pranathi Reddy'),
+    'Pranathi Reddy'
+  );
+  assert.equal(
+    buildWedsTitle('Chi. Sai Kumar Reddy', 'Chi.La.Sow. Pranathi Reddy'),
+    'Sai Kumar Reddy Weds Pranathi Reddy'
+  );
+});
+
+test('OCR invitation headings never become the event title', () => {
+  for (const garbage of [
+    'Wedding Invitation',
+    'Shubhamastu',
+    'Invitation',
+    'Srinath Shubhamastu Avighnamastu',
+  ]) {
+    assert.equal(buildWedsTitle(garbage, garbage), '');
+    assert.equal(parseWeddingCardText(garbage).eventTitle, '');
+    assert.notEqual(parseWeddingCardText(garbage).eventTitle, garbage);
+  }
+});
+
+test('buildWeddingEventTitle ignores OCR eventTitle and uses Weds form', () => {
+  assert.equal(
+    buildWeddingEventTitle({
+      eventTitle: 'Wedding Invitation',
+      groomName: 'Sai Kumar Reddy',
+      brideName: 'Pranathi Reddy',
+    }),
+    'Sai Kumar Reddy Weds Pranathi Reddy'
+  );
+  assert.equal(buildWeddingEventTitle({}), '');
 });

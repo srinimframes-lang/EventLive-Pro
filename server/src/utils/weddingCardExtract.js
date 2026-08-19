@@ -53,7 +53,7 @@ const HONORIFIC =
   '(?:chi\\.?\\s*la\\.?\\s*sow\\.?|kum(?:ari)?\\.?\\s*la\\.?\\s*sow\\.?|chi\\.?\\s*sow\\.?|kum\\.?\\s*sow\\.?|chiranjeevi|sowbhagyavath[iy]|kumari|sri|shri|smt|sow|chi|mr|mrs|ms|miss|dr)';
 
 const NAME_STOP =
-  'weds|with|and|marries|on|at|venue|reception|invitation|wedding|bride|groom|date|time|onwards|sunday|monday|tuesday|wednesday|thursday|friday|saturday';
+  'weds|wed|with|and|marries|on|at|venue|reception|invitation|wedding|marriage|bride|groom|date|time|onwards|sunday|monday|tuesday|wednesday|thursday|friday|saturday|shubhamastu|avighnamastu|sumuhurtham|muhurtham|lagna';
 
 const NAME_WORD = `(?!(?:${NAME_STOP})\\b)[A-Za-z][A-Za-z.'\\-]*`;
 
@@ -126,10 +126,86 @@ export function stripHonorifics(value) {
       /^(chi\.?\s*la\.?\s*sow|kum(?:ari)?\.?\s*la\.?\s*sow|chi\.?\s*sow|kum\.?\s*sow|chiranjeevi|sowbhagyavath[iy])\.?\s+/i,
       ''
     );
-    name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.?(?=\s|[A-Z])/i, '');
+    name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.(?=[A-Za-z])/i, '');
     name = name.replace(/^(mr|mrs|ms|miss|sri|shri|smt|sow|chi|dr|kumari)\.?\s+/i, '');
   }
   return collapseSpaces(name);
+}
+
+const NAME_NOISE_WORDS = new Set([
+  'with',
+  'weds',
+  'wed',
+  'wedding',
+  'invitation',
+  'invite',
+  'invited',
+  'marriage',
+  'venue',
+  'reception',
+  'sumuhurtham',
+  'muhurtham',
+  'lagna',
+  'shubhamastu',
+  'avighnamastu',
+  'card',
+  'save',
+  'date',
+]);
+
+const BLESSING_WORDS = new Set([
+  'shubhamastu',
+  'avighnamastu',
+  'sumuhurtham',
+  'muhurtham',
+  'swagatam',
+]);
+
+/**
+ * Normalize a captured person name: honorifics, invitation keywords,
+ * extra spaces, and duplicated words. Never invents a name.
+ */
+export function normalizeWeddingPersonName(value) {
+  let name = stripHonorifics(value);
+  name = name
+    .replace(/[^A-Za-z .'\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((word) => !NAME_NOISE_WORDS.has(word.toLowerCase()));
+  const deduped = [];
+  for (const word of words) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && prev.toLowerCase() === word.toLowerCase()) continue;
+    deduped.push(word);
+  }
+  return deduped.join(' ').slice(0, 80).trim();
+}
+
+export function isValidWeddingPersonName(value) {
+  const raw = String(value || '');
+  if ([...BLESSING_WORDS].some((word) => new RegExp(`\\b${word}\\b`, 'i').test(raw))) {
+    return false;
+  }
+  const name = normalizeWeddingPersonName(value);
+  if (!name || name.length < 3) return false;
+  const words = name.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 6) return false;
+  if (words.some((word) => BLESSING_WORDS.has(word.toLowerCase()))) return false;
+  if (words.every((word) => NAME_NOISE_WORDS.has(word.toLowerCase()))) return false;
+  if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(name)) return false;
+  return true;
+}
+
+/** Title is ALWAYS `${groom} Weds ${bride}` from normalized names — never OCR text. */
+export function buildWedsTitle(groomName, brideName) {
+  if (!isValidWeddingPersonName(groomName) || !isValidWeddingPersonName(brideName)) return '';
+  const groom = normalizeWeddingPersonName(groomName);
+  const bride = normalizeWeddingPersonName(brideName);
+  if (!groom || !bride) return '';
+  return `${groom} Weds ${bride}`.slice(0, 120);
 }
 
 function cleanPersonName(value) {
@@ -409,20 +485,8 @@ function extractVenue(text, lines) {
   return '';
 }
 
-function extractTitle(lines, names) {
-  const groom = names.groomName;
-  const bride = names.brideName;
-  if (groom && bride) return `${groom} & ${bride} Wedding`.slice(0, 120);
-  if (groom || bride) return `${groom || bride} Wedding`.slice(0, 120);
-
-  for (const line of lines.slice(0, 8)) {
-    if (TITLE_NOISE.test(line) || BOILERPLATE_LINE.test(line)) continue;
-    if (/wedding/i.test(line) && line.length >= 3 && line.length <= 120) {
-      if (!/invitation/i.test(line)) return line.slice(0, 120);
-    }
-  }
-
-  return '';
+function extractTitle(names) {
+  return buildWedsTitle(names.groomName, names.brideName);
 }
 
 /**
@@ -434,23 +498,23 @@ export function parseWeddingCardText(rawText) {
   if (!text) return { ...EMPTY_WEDDING_FIELDS };
 
   const lines = linesOf(text);
-  const names = extractNames(text, lines);
+  const extracted = extractNames(text, lines);
+  const groomName = normalizeWeddingPersonName(extracted.groomName);
+  const brideName = normalizeWeddingPersonName(extracted.brideName);
+  const names = {
+    groomName: isValidWeddingPersonName(groomName) ? groomName : '',
+    brideName: isValidWeddingPersonName(brideName) ? brideName : '',
+  };
   return {
     brideName: names.brideName,
     groomName: names.groomName,
     weddingDate: extractDate(text),
     weddingTime: extractTime(text),
     venue: extractVenue(text, lines),
-    eventTitle: extractTitle(lines, names),
+    eventTitle: extractTitle(names),
   };
 }
 
 export function buildWeddingEventTitle(fields) {
-  const title = String(fields?.eventTitle || fields?.title || '').trim();
-  if (title.length >= 3) return title.slice(0, 120);
-  const groom = String(fields?.groomName || '').trim();
-  const bride = String(fields?.brideName || '').trim();
-  if (groom && bride) return `${groom} & ${bride} Wedding`.slice(0, 120);
-  if (groom || bride) return `${groom || bride} Wedding`.slice(0, 120);
-  return 'Wedding Invitation';
+  return buildWedsTitle(fields?.groomName, fields?.brideName);
 }

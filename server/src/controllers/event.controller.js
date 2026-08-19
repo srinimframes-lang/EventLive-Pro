@@ -281,6 +281,7 @@ export const listEvents = asyncHandler(async (req, res) => {
     'publicUrlStyle',
     'youtubeVideoId',
     'source',
+    'youtubeProvisionStatus',
     'themeSnapshot.name',
     'themeSnapshot.category',
     'themeSnapshot.region',

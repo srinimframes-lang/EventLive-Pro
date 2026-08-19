@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
-import { formatDateTime, resolveMediaUrl } from '../utils/format.js';
+import { buildWatchUrl, resolveMediaUrl } from '../utils/format.js';
+import ShareButtons from '../components/ShareButtons.jsx';
+import YoutubeConnectCard from '../components/YoutubeConnectCard.jsx';
 
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const ALLOWED_EXT = /\.(jpe?g|png|webp)$/i;
 const MAX_BYTES = 8 * 1024 * 1024;
+const POLL_MS = 3000;
+const POLL_BUDGET_MS = 120_000;
 
 const EMPTY_FORM = {
-  eventTitle: '',
   brideName: '',
   groomName: '',
   weddingDate: '',
@@ -16,35 +19,102 @@ const EMPTY_FORM = {
   venue: '',
 };
 
+const PHASES = [
+  { id: 'upload', label: 'Uploading wedding card…' },
+  { id: 'read', label: 'Reading wedding card…' },
+  { id: 'prepare', label: 'Preparing wedding details…' },
+  { id: 'youtube', label: 'Creating YouTube Live…' },
+  { id: 'link', label: 'Generating live link…' },
+  { id: 'ready', label: 'Live link ready' },
+];
+
 function isAllowedImage(file) {
   if (!file) return false;
   if (ALLOWED_TYPES.has(file.type)) return true;
   return ALLOWED_EXT.test(file.name || '');
 }
 
+function wedsTitle(groom, bride) {
+  const g = String(groom || '').trim();
+  const b = String(bride || '').trim();
+  return g && b ? `${g} Weds ${b}` : '';
+}
+
 export default function WeddingCardUpload() {
   const fileRef = useRef(null);
+  const pollRef = useRef(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
   const [extracted, setExtracted] = useState(false);
+  const [needsReview, setNeedsReview] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
-  const [busy, setBusy] = useState('');
+  const [phase, setPhase] = useState('');
   const [error, setError] = useState('');
-  const [saved, setSaved] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const title = useMemo(
+    () => wedsTitle(form.groomName, form.brideName),
+    [form.groomName, form.brideName]
+  );
 
   useEffect(() => {
     return () => {
       if (preview.startsWith('blob:')) URL.revokeObjectURL(preview);
+      if (pollRef.current) window.clearInterval(pollRef.current);
     };
   }, [preview]);
 
+  const stopPoll = () => {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const applyResult = (payload) => {
+    const event = payload?.data || payload;
+    const liveUrl = payload?.liveUrl || (event ? buildWatchUrl(event) : '');
+    setResult({
+      ...payload,
+      event,
+      liveUrl,
+      title: payload?.title || event?.title || title,
+    });
+    if (payload?.status === 'ready' && liveUrl) setPhase('ready');
+  };
+
+  const pollUntilReady = (eventId) => {
+    stopPoll();
+    const started = Date.now();
+    setPhase('link');
+    pollRef.current = window.setInterval(async () => {
+      if (Date.now() - started > POLL_BUDGET_MS) {
+        stopPoll();
+        setError('Wedding details saved. YouTube Live link is being generated.');
+        return;
+      }
+      try {
+        const payload = await eventService.weddingCardStatus(eventId);
+        if (payload?.status === 'ready' && (payload.liveUrl || payload.data)) {
+          stopPoll();
+          applyResult(payload);
+        }
+      } catch {
+        // Keep polling until the budget expires.
+      }
+    }, POLL_MS);
+  };
+
   const handleFile = (picked) => {
     setError('');
-    setSaved(null);
+    setResult(null);
     setExtracted(false);
+    setNeedsReview(false);
     setOcrStatus('');
+    setPhase('');
     setForm(EMPTY_FORM);
+    stopPoll();
 
     if (!picked) return;
     if (!isAllowedImage(picked)) {
@@ -61,23 +131,15 @@ export default function WeddingCardUpload() {
     setPreview(URL.createObjectURL(picked));
   };
 
-  const onInputChange = (e) => {
-    handleFile(e.target.files?.[0] || null);
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((current) => ({ ...current, [name]: value }));
-  };
-
   const extractDetails = async () => {
-    if (!file || busy) return;
+    if (!file || phase) return;
     setError('');
-    setBusy('extract');
+    setPhase('upload');
     try {
+      setPhase('read');
       const data = await eventService.extractWeddingCard(file);
+      setPhase('prepare');
       setForm({
-        eventTitle: data.eventTitle || '',
         brideName: data.brideName || '',
         groomName: data.groomName || '',
         weddingDate: data.weddingDate || '',
@@ -85,37 +147,36 @@ export default function WeddingCardUpload() {
         venue: data.venue || '',
       });
       setOcrStatus(data.ocrStatus || 'ok');
+      setNeedsReview(Boolean(data.needsReview));
       setExtracted(true);
+      setPhase('');
+      if (data.needsReview) {
+        setError('Please review the wedding details before creating the live link.');
+      }
     } catch (err) {
       setError(err.message || 'Could not read the wedding card.');
-    } finally {
-      setBusy('');
+      setPhase('');
     }
   };
 
   const confirmSave = async (e) => {
     e.preventDefault();
-    if (busy) return;
+    if (phase) return;
     setError('');
 
-    if (!form.eventTitle.trim() || form.eventTitle.trim().length < 3) {
-      setError('Please enter an event title (at least 3 characters).');
+    if (!wedsTitle(form.groomName, form.brideName)) {
+      setError('Please review the wedding details before creating the live link.');
       return;
     }
-    if (!form.groomName.trim() && !form.brideName.trim()) {
-      setError('Please enter the bride or groom name.');
-      return;
-    }
-    if (!form.weddingDate || !form.weddingTime) {
-      setError('Please enter the wedding date and time.');
+    if (!form.weddingDate) {
+      setError('Please enter the wedding date.');
       return;
     }
 
-    setBusy('confirm');
+    setPhase('youtube');
     try {
-      const event = await eventService.confirmWeddingCard(
+      const payload = await eventService.confirmWeddingCard(
         {
-          eventTitle: form.eventTitle.trim(),
           brideName: form.brideName.trim(),
           groomName: form.groomName.trim(),
           weddingDate: form.weddingDate,
@@ -124,20 +185,26 @@ export default function WeddingCardUpload() {
         },
         file
       );
-      setSaved(event);
+      applyResult(payload);
+      const eventId = payload.eventId || payload.data?.id;
+      if (payload.status === 'ready') {
+        setPhase('ready');
+      } else if (eventId) {
+        pollUntilReady(eventId);
+      } else {
+        setError(payload.message || 'Wedding details saved. YouTube Live link is being generated.');
+        setPhase('');
+      }
     } catch (err) {
-      setError(err.message || 'Could not save the wedding details.');
-    } finally {
-      setBusy('');
+      setError(err.message || 'Please review the wedding details before creating the live link.');
+      setPhase('');
     }
   };
 
-  const ocrHint =
-    ocrStatus === 'failed'
-      ? 'We could not read this image automatically. Please fill in the details below.'
-      : ocrStatus === 'empty'
-        ? 'Little text was detected. Please fill or correct the details below.'
-        : 'Please review and edit every field. Nothing is saved until you confirm.';
+  const liveUrl = result?.liveUrl || '';
+  const savedEvent = result?.event;
+  const phaseIndex = PHASES.findIndex((item) => item.id === phase);
+  const showProgress = Boolean(phase) && phase !== 'ready';
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
@@ -148,62 +215,71 @@ export default function WeddingCardUpload() {
       </p>
       <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">Upload wedding card</h1>
       <p className="mt-1 text-slate-600">
-        Upload an invitation photo. We will try to read the names, date, time and venue — you
-        review everything before anything is saved.
+        Upload an invitation photo. We read the names and date, then create your EventLivePro live
+        link using your connected YouTube account.
       </p>
 
-      {saved ? (
+      {showProgress && (
+        <div className="card mt-6">
+          <p className="text-sm font-semibold text-slate-900">
+            {PHASES[phaseIndex]?.label || 'Working…'}
+          </p>
+          <ol className="mt-3 space-y-1 text-sm text-slate-600">
+            {PHASES.map((item, index) => (
+              <li key={item.id} className={index <= phaseIndex ? 'font-medium text-brand-700' : ''}>
+                {index < phaseIndex ? '✓' : index === phaseIndex ? '→' : '•'} {item.label}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {phase === 'ready' && result ? (
         <div className="card mt-6 border-green-200 bg-green-50">
-          <p className="text-sm font-semibold text-green-800">Wedding details saved</p>
-          <p className="mt-1 text-sm text-slate-700">{saved.title}</p>
-          {(saved.groomName || saved.brideName) && (
-            <p className="mt-1 text-sm text-slate-600">
-              {saved.groomName || ''}
-              {saved.groomName && saved.brideName ? ' & ' : ''}
-              {saved.brideName || ''}
-            </p>
-          )}
-          {saved.startTime && (
-            <p className="text-sm text-slate-600">{formatDateTime(saved.startTime)}</p>
-          )}
-          {saved.venue ? <p className="text-sm text-slate-600">{saved.venue}</p> : null}
-          {saved.coverImage ? (
+          <p className="text-sm font-semibold text-green-800">Live link ready</p>
+          <p className="mt-1 text-sm font-medium text-slate-800">{result.title}</p>
+          {liveUrl ? <p className="mt-2 break-all text-sm text-slate-700">{liveUrl}</p> : null}
+          {liveUrl ? (
+            <div className="mt-3">
+              <ShareButtons url={liveUrl} title={result.title} />
+            </div>
+          ) : null}
+          {savedEvent?.coverImage ? (
             <img
-              src={resolveMediaUrl(saved.coverImage)}
-              alt="Saved wedding card"
-              className="mt-3 max-h-56 w-full rounded-xl object-contain bg-white"
+              src={resolveMediaUrl(savedEvent.coverImage)}
+              alt="Wedding card"
+              className="mt-3 max-h-56 w-full rounded-xl bg-white object-contain"
             />
           ) : null}
-          <p className="mt-3 text-xs text-slate-500">
-            No YouTube broadcast or live link was created. You can add a live link later from the
-            dashboard.
-          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link to="/dashboard" className="btn-primary">
               Back to dashboard
             </Link>
-            <button
-              type="button"
-              className="btn-outline"
-              onClick={() => {
-                setSaved(null);
-                setExtracted(false);
-                setOcrStatus('');
-                setForm(EMPTY_FORM);
-                setFile(null);
-                if (preview.startsWith('blob:')) URL.revokeObjectURL(preview);
-                setPreview('');
-                if (fileRef.current) fileRef.current.value = '';
-              }}
-            >
-              Upload another card
-            </button>
+            {liveUrl ? (
+              <a href={liveUrl} className="btn-outline" target="_blank" rel="noreferrer">
+                Open live page
+              </a>
+            ) : null}
           </div>
         </div>
       ) : null}
 
-      {!saved && (
+      {result && phase !== 'ready' && result.status === 'provisioning' && !showProgress ? (
+        <div className="card mt-6 border-amber-200 bg-amber-50">
+          <p className="text-sm font-semibold text-amber-900">
+            Wedding details saved. YouTube Live link is being generated.
+          </p>
+          {result.title ? <p className="mt-1 text-sm text-slate-700">{result.title}</p> : null}
+          {liveUrl ? <p className="mt-2 break-all text-xs text-slate-500">{liveUrl}</p> : null}
+        </div>
+      ) : null}
+
+      {phase !== 'ready' && (
         <>
+          <div className="mt-8">
+            <YoutubeConnectCard returnTo="/wedding-card" />
+          </div>
+
           <div className="card mt-6 space-y-4">
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
@@ -219,7 +295,7 @@ export default function WeddingCardUpload() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                 className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700"
-                onChange={onInputChange}
+                onChange={(e) => handleFile(e.target.files?.[0] || null)}
               />
               <p className="mt-1 text-xs text-slate-500">JPG, JPEG, PNG or WEBP. Max 8 MB.</p>
             </div>
@@ -244,47 +320,30 @@ export default function WeddingCardUpload() {
             <button
               type="button"
               className="btn-primary w-full sm:w-auto"
-              disabled={!file || Boolean(busy)}
+              disabled={!file || Boolean(phase)}
               onClick={extractDetails}
             >
-              {busy === 'extract' ? 'Reading card…' : 'Extract wedding details'}
+              Extract wedding details
             </button>
           </div>
 
           {extracted && (
             <form onSubmit={confirmSave} className="card mt-6 space-y-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Review extracted details</h2>
-                <p className="mt-1 text-sm text-slate-600">{ocrHint}</p>
+                <h2 className="text-lg font-bold text-slate-900">Review wedding details</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  {needsReview || ocrStatus !== 'ok'
+                    ? 'Please review the wedding details before creating the live link.'
+                    : 'Edit anything that looks wrong. The live title is generated from the names.'}
+                </p>
               </div>
 
-              <Field label="Event title" htmlFor="eventTitle" required>
-                <input
-                  id="eventTitle"
-                  name="eventTitle"
-                  className="input"
-                  required
-                  minLength={3}
-                  maxLength={120}
-                  placeholder="Event title"
-                  value={form.eventTitle}
-                  onChange={handleChange}
-                />
+              <Field label="Live title">
+                <input className="input bg-slate-50" readOnly value={title || 'Enter groom and bride names'} />
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Bride name" htmlFor="brideName">
-                  <input
-                    id="brideName"
-                    name="brideName"
-                    className="input"
-                    maxLength={80}
-                    placeholder="Bride name"
-                    value={form.brideName}
-                    onChange={handleChange}
-                  />
-                </Field>
-                <Field label="Groom name" htmlFor="groomName">
+                <Field label="Groom name" htmlFor="groomName" required>
                   <input
                     id="groomName"
                     name="groomName"
@@ -292,7 +351,18 @@ export default function WeddingCardUpload() {
                     maxLength={80}
                     placeholder="Groom name"
                     value={form.groomName}
-                    onChange={handleChange}
+                    onChange={(e) => setForm((current) => ({ ...current, groomName: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Bride name" htmlFor="brideName" required>
+                  <input
+                    id="brideName"
+                    name="brideName"
+                    className="input"
+                    maxLength={80}
+                    placeholder="Bride name"
+                    value={form.brideName}
+                    onChange={(e) => setForm((current) => ({ ...current, brideName: e.target.value }))}
                   />
                 </Field>
               </div>
@@ -306,18 +376,17 @@ export default function WeddingCardUpload() {
                     className="input"
                     required
                     value={form.weddingDate}
-                    onChange={handleChange}
+                    onChange={(e) => setForm((current) => ({ ...current, weddingDate: e.target.value }))}
                   />
                 </Field>
-                <Field label="Wedding time" htmlFor="weddingTime" required>
+                <Field label="Wedding time" htmlFor="weddingTime">
                   <input
                     id="weddingTime"
                     name="weddingTime"
                     type="time"
                     className="input"
-                    required
                     value={form.weddingTime}
-                    onChange={handleChange}
+                    onChange={(e) => setForm((current) => ({ ...current, weddingTime: e.target.value }))}
                   />
                 </Field>
               </div>
@@ -330,12 +399,12 @@ export default function WeddingCardUpload() {
                   maxLength={200}
                   placeholder="Hotel / mandap / hall"
                   value={form.venue}
-                  onChange={handleChange}
+                  onChange={(e) => setForm((current) => ({ ...current, venue: e.target.value }))}
                 />
               </Field>
 
-              <button type="submit" className="btn-primary w-full sm:w-auto" disabled={Boolean(busy)}>
-                {busy === 'confirm' ? 'Saving…' : 'Confirm and save details'}
+              <button type="submit" className="btn-primary w-full sm:w-auto" disabled={Boolean(phase)}>
+                Create live link
               </button>
             </form>
           )}

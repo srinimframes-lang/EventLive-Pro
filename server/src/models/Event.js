@@ -427,6 +427,17 @@ const eventSchema = new Schema(
       default: '',
       maxlength: 40,
     },
+    weddingCardFingerprint: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true,
+    },
+    youtubeProvisionStatus: {
+      type: String,
+      enum: ['', 'pending', 'ready', 'failed'],
+      default: '',
+    },
 
     // ── Shareable QR (public live URL) ─────────────────────────
     qrCodeImage: { type: String, trim: true, default: '' },

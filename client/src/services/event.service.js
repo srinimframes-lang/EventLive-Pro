@@ -111,15 +111,22 @@ export const eventService = {
     return data.data;
   },
 
-  /** Save reviewed wedding-card fields. Does not create a YouTube or live link. */
+  /** Review + create live link via existing YouTube provisioning. */
   async confirmWeddingCard(fields, file) {
     const fd = new FormData();
     Object.entries(fields).forEach(([key, value]) => {
       fd.append(key, value == null ? '' : String(value));
     });
     if (file) fd.append('card', file);
-    const { data } = await api.post('/api/events/wedding-card/confirm', fd);
-    return data.data;
+    const { data } = await api.post('/api/events/wedding-card/confirm', fd, {
+      timeout: 120_000,
+    });
+    return data;
+  },
+
+  async weddingCardStatus(id) {
+    const { data } = await api.get(`/api/events/wedding-card/${id}/status`);
+    return data;
   },
 };
 

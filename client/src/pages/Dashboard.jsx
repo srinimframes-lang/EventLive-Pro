@@ -37,8 +37,8 @@ export default function Dashboard() {
   }, [refreshUser, load]);
 
   const liveLink = (ev) => buildWatchUrl(ev, linkOrigin);
-  const weddingCards = events.filter((ev) => ev.source === 'wedding-card');
-  const liveLinks = events.filter((ev) => ev.source !== 'wedding-card');
+  const weddingCards = events.filter((ev) => ev.source === 'wedding-card' && !ev.youtubeVideoId);
+  const liveLinks = events.filter((ev) => !(ev.source === 'wedding-card' && !ev.youtubeVideoId));
   const copyLink = async (ev) => {
     try {
       await navigator.clipboard.writeText(liveLink(ev));
@@ -87,8 +87,8 @@ export default function Dashboard() {
       <div className="card mt-8 bg-gradient-to-br from-rose-50 to-white">
         <h2 className="text-lg font-bold text-slate-900">Upload wedding card</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Upload an invitation photo. We will try to read the names, date, time and venue. You
-          review and edit everything before it is saved — no live link is created yet.
+          Upload an invitation photo. We extract the couple names and create your EventLivePro live
+          link automatically after you review the details.
         </p>
         <Link to="/wedding-card" className="btn-primary mt-5 inline-block">
           Upload Wedding Card
@@ -119,7 +119,11 @@ export default function Dashboard() {
                     </p>
                     {ev.venue ? <p className="text-sm text-slate-500">{ev.venue}</p> : null}
                   </div>
-                  <span className="badge bg-slate-100 text-slate-600">Details saved</span>
+                  <span className="badge bg-slate-100 text-slate-600">
+                    {ev.youtubeProvisionStatus === 'pending' || ev.youtubeProvisionStatus === 'failed'
+                      ? 'Generating live link'
+                      : 'Details saved'}
+                  </span>
                 </div>
               </li>
             ))}

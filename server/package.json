@@ -12,7 +12,7 @@
     "dev": "nodemon src/index.js",
     "dev:memdb": "node scripts/dev-memory-db.js",
     "start": "node src/index.js",
-    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js src/utils/dnsRecords.test.js src/utils/dnsVerify.test.js src/utils/streamFailover.test.js src/utils/streamReconnect.test.js src/utils/youtubeForward.test.js src/utils/streamType.test.js src/utils/streamForward.test.js src/utils/mediaStream.abr.test.js src/utils/systemHealth.test.js src/utils/backup.test.js src/utils/recordingR2Sync.test.js src/utils/ownership.test.js src/utils/shareThumbnail.test.js src/utils/youtubeTokenCrypto.test.js src/utils/youtubeOauth.test.js src/youtubeOauth.integration.test.js src/utils/youtube.test.js src/utils/youtubeLiveApi.test.js src/utils/weddingCardExtract.test.js"
+    "test": "node --test src/utils/seo.test.js src/utils/studioFields.test.js src/utils/eventQr.test.js src/utils/recording.test.js src/utils/dnsRecords.test.js src/utils/dnsVerify.test.js src/utils/streamFailover.test.js src/utils/streamReconnect.test.js src/utils/youtubeForward.test.js src/utils/streamType.test.js src/utils/streamForward.test.js src/utils/mediaStream.abr.test.js src/utils/systemHealth.test.js src/utils/backup.test.js src/utils/recordingR2Sync.test.js src/utils/ownership.test.js src/utils/shareThumbnail.test.js src/utils/youtubeTokenCrypto.test.js src/utils/youtubeOauth.test.js src/youtubeOauth.integration.test.js src/utils/youtube.test.js src/utils/youtubeLiveApi.test.js src/utils/weddingCardExtract.test.js src/utils/weddingCardProvision.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1089.0",
