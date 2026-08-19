@@ -67,6 +67,21 @@ export function publicYoutubeIngest(live) {
 
 export function applyYoutubeLiveFields(target, live) {
   if (!target || !live) return target;
+  const fields = youtubeDocFields(target);
+  const manualId =
+    extractYouTubeId(target.youtubeLiveUrl) ||
+    extractYouTubeId(fields.youtubeVideoId) ||
+    extractYouTubeId(fields.youtubeWatchUrl) ||
+    extractYouTubeId(fields.streamUrl) ||
+    extractYouTubeId(fields.youtubeLiveUrl) ||
+    '';
+  if (manualId) {
+    // Manual URL / video ID has absolute priority over a generated broadcast.
+    if (live.rtmpUrl) target.youtubeRtmpUrl = live.rtmpUrl;
+    if (live.streamKey) target.youtubeStreamKey = live.streamKey;
+    if (live.streamId) target.youtubeLiveStreamId = live.streamId;
+    return target;
+  }
   target.youtubeVideoId = live.broadcastId || target.youtubeVideoId;
   target.streamUrl = live.watchUrl || target.streamUrl;
   target.youtubeWatchUrl = live.watchUrl || '';
@@ -133,14 +148,14 @@ export function resolveYoutubeInput(source = {}) {
   const youtubeWatchUrl = String(source.youtubeWatchUrl || fields.youtubeWatchUrl || '').trim();
   const streamUrl = String(source.streamUrl || fields.streamUrl || '').trim();
   const youtubeVideoId = String(source.youtubeVideoId || fields.youtubeVideoId || '').trim();
-  const inputUrl = youtubeLiveUrl || youtubeWatchUrl || streamUrl || '';
+  const inputUrl = youtubeLiveUrl || youtubeWatchUrl || streamUrl || youtubeVideoId || '';
   const detectedVideoId =
     extractYouTubeId(youtubeLiveUrl) ||
     extractYouTubeId(youtubeWatchUrl) ||
     extractYouTubeId(streamUrl) ||
     extractYouTubeId(youtubeVideoId) ||
     '';
-  return { inputUrl, detectedVideoId };
+  return { inputUrl, detectedVideoId, youtubeLiveUrl, youtubeWatchUrl, streamUrl, youtubeVideoId };
 }
 
 /** Persist a pasted YouTube URL and its exact video ID. Never invent a broadcast. */
@@ -180,6 +195,36 @@ export function logManualYoutubeUrlTrace({
   console.info('final saved video ID:', finalVideoId || '');
 }
 
+export function logYoutubeSaveDebug({
+  youtubeLiveUrl = '',
+  youtubeWatchUrl = '',
+  streamUrl = '',
+  youtubeVideoId = '',
+  detectedManualVideoId = '',
+  existingVideoId = '',
+  generatedBroadcastId = '',
+  finalYoutubeVideoId = '',
+} = {}) {
+  // eslint-disable-next-line no-console
+  console.info('[YT DEBUG]');
+  // eslint-disable-next-line no-console
+  console.info('raw youtubeLiveUrl:', youtubeLiveUrl || '');
+  // eslint-disable-next-line no-console
+  console.info('raw youtubeWatchUrl:', youtubeWatchUrl || '');
+  // eslint-disable-next-line no-console
+  console.info('raw streamUrl:', streamUrl || '');
+  // eslint-disable-next-line no-console
+  console.info('raw youtubeVideoId:', youtubeVideoId || '');
+  // eslint-disable-next-line no-console
+  console.info('detectedManualVideoId:', detectedManualVideoId || '');
+  // eslint-disable-next-line no-console
+  console.info('existingVideoId:', existingVideoId || '');
+  // eslint-disable-next-line no-console
+  console.info('generatedBroadcastId:', generatedBroadcastId || '');
+  // eslint-disable-next-line no-console
+  console.info('finalYoutubeVideoId:', finalYoutubeVideoId || '');
+}
+
 /**
  * True when we should call YouTube Live API instead of requiring a pasted URL.
  * Manual URL / existing video ID always wins.
@@ -189,7 +234,14 @@ export function shouldAutoCreateYoutubeLive(input = {}) {
   const streamType = input.streamType;
   const isOnline = input.isOnline !== undefined ? input.isOnline : fields.isOnline;
   if (isOnline === false) return false;
-  if (resolveYoutubeInput({ ...fields, ...input }).detectedVideoId) return false;
+  const merged = {
+    ...fields,
+    youtubeLiveUrl: input.youtubeLiveUrl || fields.youtubeLiveUrl,
+    youtubeWatchUrl: input.youtubeWatchUrl || fields.youtubeWatchUrl,
+    streamUrl: input.streamUrl || fields.streamUrl,
+    youtubeVideoId: input.youtubeVideoId || fields.youtubeVideoId,
+  };
+  if (resolveYoutubeInput(merged).detectedVideoId) return false;
   if (String(fields.youtubeBroadcastId || input.youtubeBroadcastId || '').trim()) return false;
   if (streamType === 'youtube' || streamType === 'youtube_server') return true;
   if (streamType === 'server_youtube') {
@@ -361,20 +413,33 @@ export async function provisionYoutubeLiveIfNeeded(
   { existingVideoId = '' } = {}
 ) {
   const fields = youtubeDocFields(payload);
-  const manual = resolveYoutubeInput({ ...fields, youtubeLiveUrl: payload?.youtubeLiveUrl });
+  const manual = resolveYoutubeInput({
+    ...fields,
+    youtubeLiveUrl: payload?.youtubeLiveUrl || fields.youtubeLiveUrl,
+    youtubeWatchUrl: payload?.youtubeWatchUrl || fields.youtubeWatchUrl,
+    streamUrl: payload?.streamUrl || fields.streamUrl,
+    youtubeVideoId: payload?.youtubeVideoId || fields.youtubeVideoId,
+  });
   if (manual.detectedVideoId) {
     applyManualYoutubeFields(payload, manual);
     return null;
   }
 
   const keepId =
-    extractYouTubeId(existingVideoId) || extractYouTubeId(fields.youtubeVideoId) || '';
+    extractYouTubeId(existingVideoId) ||
+    extractYouTubeId(fields.youtubeVideoId) ||
+    extractYouTubeId(fields.streamUrl) ||
+    extractYouTubeId(fields.youtubeWatchUrl) ||
+    extractYouTubeId(fields.youtubeLiveUrl) ||
+    '';
   if (keepId) {
     if (!extractYouTubeId(payload.youtubeVideoId)) payload.youtubeVideoId = keepId;
     return null;
   }
 
-  if (!shouldAutoCreateYoutubeLive({ ...fields, streamType })) return null;
+  if (!shouldAutoCreateYoutubeLive({ ...fields, streamType, youtubeLiveUrl: payload?.youtubeLiveUrl })) {
+    return null;
+  }
   const cred = await loadUserCredential(user?._id);
   if (!cred?.connected) return null;
 

@@ -611,10 +611,8 @@ export default function EventForm() {
       /* keep last known ytConnected */
     }
 
-    const youtubeVideoId =
-      form.isOnline && (streamType === 'youtube' || streamType === 'youtube_server')
-        ? extractYouTubeId(form.youtubeUrl)
-        : '';
+    const rawYoutubeUrl = (form.youtubeUrl || '').trim();
+    const youtubeVideoId = extractYouTubeId(rawYoutubeUrl);
 
     const canAutoCreateYoutube =
       ytConnected &&
@@ -623,6 +621,7 @@ export default function EventForm() {
       form.isOnline &&
       (streamType === 'youtube' || streamType === 'youtube_server') &&
       !youtubeVideoId &&
+      !rawYoutubeUrl &&
       !canAutoCreateYoutube
     ) {
       setError(
@@ -717,10 +716,12 @@ export default function EventForm() {
       payload.linkType = streamType;
       payload.streamingDestination = streamType;
       if (streamType === 'youtube') {
-        payload.streamUrl = form.youtubeUrl?.trim() || '';
-        payload.youtubeWatchUrl = payload.streamUrl;
-        payload.youtubeLiveUrl = payload.streamUrl;
-        payload.youtubeVideoId = youtubeVideoId;
+        if (rawYoutubeUrl) {
+          payload.streamUrl = rawYoutubeUrl;
+          payload.youtubeWatchUrl = rawYoutubeUrl;
+          payload.youtubeLiveUrl = rawYoutubeUrl;
+          payload.youtubeVideoId = youtubeVideoId || rawYoutubeUrl;
+        }
         payload.streamProvider = 'youtube';
         payload.youtubeForwardEnabled = false;
         payload.youtubeRtmpUrl = form.youtubeRtmpUrl?.trim() || '';
@@ -735,10 +736,12 @@ export default function EventForm() {
           payload.youtubeStreamKey = form.youtubeStreamKey.trim();
         }
         if (streamType === 'youtube_server') {
-          payload.streamUrl = form.youtubeUrl?.trim() || '';
-          payload.youtubeWatchUrl = payload.streamUrl;
-          payload.youtubeLiveUrl = payload.streamUrl;
-          payload.youtubeVideoId = youtubeVideoId;
+          if (rawYoutubeUrl) {
+            payload.streamUrl = rawYoutubeUrl;
+            payload.youtubeWatchUrl = rawYoutubeUrl;
+            payload.youtubeLiveUrl = rawYoutubeUrl;
+            payload.youtubeVideoId = youtubeVideoId || rawYoutubeUrl;
+          }
         }
         if (form.hlsUrl?.trim()) payload.hlsUrl = form.hlsUrl.trim();
         if (showBackupSection) {

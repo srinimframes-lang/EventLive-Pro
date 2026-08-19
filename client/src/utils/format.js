@@ -60,33 +60,98 @@ export function toDateTimeLocal(value) {
  * Extracts a YouTube video ID from a full URL or returns the input if it
  * already looks like a bare ID. Supports watch?v=, youtu.be/, /live/,
  * /embed/ and /shorts/ formats. Returns '' when nothing usable is found.
+ * Keep in sync with server/src/utils/youtube.js.
  */
-export function extractYouTubeId(input) {
-  if (!input) return '';
-  const value = String(input).trim();
+const YT_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+const YT_ID_TOKEN = '[a-zA-Z0-9_-]{11}';
 
-  // Already a bare 11-char video id.
-  if (/^[a-zA-Z0-9_-]{11}$/.test(value)) return value;
+function cleanYoutubeInput(input) {
+  return String(input || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim();
+}
 
+function validYoutubeId(value) {
+  const id = String(value || '').trim();
+  return YT_ID_RE.test(id) ? id : '';
+}
+
+function hostOf(hostname) {
+  return String(hostname || '')
+    .replace(/^www\./i, '')
+    .toLowerCase();
+}
+
+function isYoutubeHost(host) {
+  return (
+    host === 'youtu.be' ||
+    host.endsWith('youtube.com') ||
+    host.endsWith('youtube-nocookie.com')
+  );
+}
+
+function coerceYoutubeUrl(value) {
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^(www\.)?(m\.|music\.)?(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(value)) {
+    return `https://${value}`;
+  }
+  return '';
+}
+
+function idFromYoutubeUrl(raw) {
+  let parsed;
   try {
-    const url = new URL(value);
-    const host = url.hostname.replace(/^www\./, '');
-
-    if (host === 'youtu.be') {
-      return url.pathname.slice(1, 12);
-    }
-    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
-      const v = url.searchParams.get('v');
-      if (v) return v.slice(0, 11);
-      const match = url.pathname.match(/\/(?:live|embed|shorts)\/([a-zA-Z0-9_-]{11})/);
-      if (match) return match[1];
-    }
+    parsed = new URL(raw);
   } catch {
-    // Not a URL — fall through.
+    return '';
+  }
+  const host = hostOf(parsed.hostname);
+  if (!isYoutubeHost(host)) return '';
+
+  if (host === 'youtu.be') {
+    const id = (parsed.pathname.split('/').filter(Boolean)[0] || '').slice(0, 11);
+    return validYoutubeId(id);
   }
 
-  // Last resort: pull any 11-char token out of the string.
-  const loose = value.match(/[a-zA-Z0-9_-]{11}/);
+  const pathMatch = parsed.pathname.match(
+    new RegExp(`\\/(?:live|embed|shorts|v)\\/(${YT_ID_TOKEN})`, 'i')
+  );
+  if (pathMatch) return validYoutubeId(pathMatch[1]);
+
+  const v = parsed.searchParams.get('v');
+  if (v) return validYoutubeId(v.slice(0, 11));
+
+  return '';
+}
+
+function idFromYoutubeText(value) {
+  const live = value.match(
+    new RegExp(`(?:youtube\\.com|youtube-nocookie\\.com)\\/(?:live|embed|shorts|v)\\/(${YT_ID_TOKEN})`, 'i')
+  );
+  if (live) return live[1];
+  const watch = value.match(new RegExp(`[?&]v=(${YT_ID_TOKEN})`));
+  if (watch) return watch[1];
+  const short = value.match(new RegExp(`youtu\\.be\\/(${YT_ID_TOKEN})`, 'i'));
+  if (short) return short[1];
+  return '';
+}
+
+export function extractYouTubeId(input) {
+  if (!input) return '';
+  const value = cleanYoutubeInput(input);
+  if (!value) return '';
+  if (YT_ID_RE.test(value)) return value;
+
+  const fromParsed = idFromYoutubeUrl(value) || idFromYoutubeUrl(coerceYoutubeUrl(value));
+  if (fromParsed) return fromParsed;
+
+  const fromText = idFromYoutubeText(value);
+  if (fromText) return fromText;
+
+  const loose = value.match(new RegExp(YT_ID_TOKEN));
   return loose ? loose[0] : '';
 }
 
@@ -106,6 +171,36 @@ export function slugifyText(text) {
 }
 
 const WEDDING_NOISE_TOKEN = /(?:^|-)(wedding|weddings|live|stream|streaming|ceremony)(?=-|$)/g;
+
+export const LIVE_LINK_TYPE_SLUG = {
+  wedding: 'wedding',
+  engagement: 'engagement',
+  reception: 'reception',
+  sangeet: 'sangeet',
+  haldi: 'haldi',
+  mehendi: 'mehendi',
+  birthday: 'birthday',
+  house_warming: 'housewarming',
+  housewarming: 'housewarming',
+  upanayanam: 'upanayanam',
+  half_saree: 'half-saree',
+  baby_shower: 'baby-shower',
+  corporate: 'live',
+  temple: 'live',
+  memorial: 'live',
+  conference: 'live',
+  workshop: 'live',
+  webinar: 'live',
+  concert: 'live',
+  meetup: 'live',
+  sports: 'live',
+  other: 'live',
+};
+
+export function liveLinkTypeSlug(category) {
+  const key = String(category || 'wedding').toLowerCase().trim();
+  return LIVE_LINK_TYPE_SLUG[key] || 'live';
+}
 
 export function isCoupleWatchSlug(slug) {
   return /(?:^|-)weds(?:-|$)/.test(String(slug || '').toLowerCase());
@@ -132,14 +227,30 @@ export function coupleSlug(event) {
   return bride || groom || '';
 }
 
+/** New live-link slug: ravi-priya-wedding. Existing stored slugs are never rewritten. */
+export function buildLivePageSlug(event) {
+  if (!event) return '';
+  const typeToken = liveLinkTypeSlug(event.category);
+  const groom = slugifyText(event.groomName);
+  const bride = slugifyText(event.brideName);
+  if (groom && bride) return `${groom}-${bride}-${typeToken}`;
+  if (groom || bride) return `${groom || bride}-${typeToken}`;
+  const title = slugifyText(event.title);
+  if (!title) return '';
+  if (title === typeToken || title.endsWith(`-${typeToken}`)) return title;
+  return `${title}-${typeToken}`;
+}
+
 /**
  * Canonical public watch path.
+ * New live-link events → /live/ravi-priya-wedding
  * Couple-slug events → /deekha-reddy-weds-tarun-reddy
  * Legacy shortCode events → /AM5DJS
  */
 export function watchPath(event) {
   if (!event) return '';
   const slug = event.slug || '';
+  if (event.publicUrlStyle === 'live' && slug) return `/live/${slug}`;
   if (isCoupleWatchSlug(slug)) return `/${slug}`;
   const code = event.shortCode || slug || event.id;
   return code ? `/${code}` : '';

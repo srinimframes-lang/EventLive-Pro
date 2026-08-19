@@ -509,22 +509,25 @@ eventSchema.pre('save', function ensureServerStreamFields() {
 // Keep YouTube fields in sync when only streamUrl was saved.
 // Manual URL / youtubeVideoId always win over a generated broadcast id.
 eventSchema.pre('save', function syncYoutubeFromStreamUrl() {
-  const manualId =
-    extractYouTubeId(this.youtubeVideoId) ||
-    extractYouTubeId(this.streamUrl) ||
+  const fromVideoId = extractYouTubeId(this.youtubeVideoId);
+  const fromUrls =
     extractYouTubeId(this.youtubeWatchUrl) ||
+    extractYouTubeId(this.streamUrl) ||
     '';
-  const id = manualId || extractYouTubeId(this.youtubeBroadcastId) || '';
+  const fromBroadcast = extractYouTubeId(this.youtubeBroadcastId);
+  // Manual / existing youtubeVideoId must never be replaced by youtubeBroadcastId.
+  const id = fromVideoId || fromUrls || fromBroadcast || '';
   if (!id) return;
   this.youtubeVideoId = id;
-  if (manualId) {
-    this.youtubeBroadcastId = manualId;
+  if (fromVideoId || fromUrls) {
+    const preserved = fromVideoId || fromUrls;
+    this.youtubeBroadcastId = preserved;
     const watch =
-      (extractYouTubeId(this.youtubeWatchUrl) === manualId && this.youtubeWatchUrl) ||
-      (extractYouTubeId(this.streamUrl) === manualId && this.streamUrl) ||
-      `https://www.youtube.com/watch?v=${manualId}`;
+      (extractYouTubeId(this.youtubeWatchUrl) === preserved && this.youtubeWatchUrl) ||
+      (extractYouTubeId(this.streamUrl) === preserved && this.streamUrl) ||
+      `https://www.youtube.com/watch?v=${preserved}`;
     this.youtubeWatchUrl = watch;
-    if (!extractYouTubeId(this.streamUrl) || extractYouTubeId(this.streamUrl) !== manualId) {
+    if (!extractYouTubeId(this.streamUrl) || extractYouTubeId(this.streamUrl) !== preserved) {
       this.streamUrl = watch;
     }
   }

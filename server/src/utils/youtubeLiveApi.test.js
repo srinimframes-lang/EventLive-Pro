@@ -26,6 +26,7 @@ const {
   youtubeDocFields,
   provisionYoutubeLiveIfNeeded,
 } = await import('../services/youtubeLiveApi.js');
+const { extractYouTubeId } = await import('./youtube.js');
 
 test('shouldAutoCreateYoutubeLive skips when a /live/ URL was pasted', () => {
   assert.equal(
@@ -163,6 +164,24 @@ test('applyYoutubeLiveFields stores watch URL and ids on the event payload', () 
   assert.equal(payload.youtubeStreamKey, 'aaaa-bbbb-cccc-dddd');
 });
 
+test('applyYoutubeLiveFields does not overwrite a manually supplied youtubeVideoId', () => {
+  const payload = {
+    youtubeVideoId: '882LagGGVM4',
+    youtubeLiveUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    streamUrl: 'https://www.youtube.com/live/882LagGGVM4',
+  };
+  applyYoutubeLiveFields(payload, {
+    broadcastId: 'Tya5ZRG6IPg',
+    streamId: 'streamLive1',
+    watchUrl: 'https://www.youtube.com/watch?v=Tya5ZRG6IPg',
+    rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+    streamKey: 'aaaa-bbbb-cccc-dddd',
+  });
+  assert.equal(payload.youtubeVideoId, '882LagGGVM4');
+  assert.equal(payload.streamUrl, 'https://www.youtube.com/live/882LagGGVM4');
+  assert.equal(payload.youtubeStreamKey, 'aaaa-bbbb-cccc-dddd');
+});
+
 test('getBroadcastPlaybackInfo returns null without an id', async () => {
   assert.equal(await getBroadcastPlaybackInfo('user1', ''), null);
 });
@@ -195,6 +214,20 @@ test('resolveYoutubeInput extracts a /live/ URL video ID', () => {
   });
   assert.equal(parsed.detectedVideoId, '882LagGGVM4');
   assert.equal(parsed.inputUrl, 'https://www.youtube.com/live/882LagGGVM4');
+});
+
+test('resolveYoutubeInput extracts all accepted manual URL formats', () => {
+  const id = '882LagGGVM4';
+  for (const input of [
+    `https://www.youtube.com/watch?v=${id}`,
+    `https://youtu.be/${id}`,
+    `https://www.youtube.com/live/${id}`,
+    `https://youtube.com/live/${id}`,
+    id,
+  ]) {
+    assert.equal(extractYouTubeId(input), id, input);
+    assert.equal(resolveYoutubeInput({ youtubeLiveUrl: input }).detectedVideoId, id, input);
+  }
 });
 
 test('applyManualYoutubeFields preserves the pasted URL and does not keep a generated id', () => {
@@ -261,6 +294,25 @@ test('provisionYoutubeLiveIfNeeded keeps a pasted live URL instead of creating a
   assert.equal(event.youtubeBroadcastId, '882LagGGVM4');
   assert.equal(event.streamUrl, 'https://www.youtube.com/live/882LagGGVM4');
   assert.equal(event.youtubeWatchUrl, 'https://www.youtube.com/live/882LagGGVM4');
+});
+
+test('provisionYoutubeLiveIfNeeded does not create when only youtubeLiveUrl is pasted', async () => {
+  const event = {
+    title: 'Srinivas reception',
+    youtubeLiveUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    youtubeVideoId: '',
+    streamUrl: '',
+  };
+  const ingest = await provisionYoutubeLiveIfNeeded({ _id: 'user1' }, event, 'youtube');
+  assert.equal(ingest, null);
+  assert.equal(event.youtubeVideoId, '882LagGGVM4');
+  assert.equal(shouldAutoCreateYoutubeLive({
+    streamType: 'youtube',
+    isOnline: true,
+    youtubeLiveUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    youtubeVideoId: '',
+    streamUrl: '',
+  }), false);
 });
 
 test('selectLiveYoutubePlayback keeps the event broadcast when it is already live', () => {

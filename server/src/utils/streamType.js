@@ -1,6 +1,16 @@
 import { extractYouTubeId } from './youtube.js';
 import { normalizeStreamingDestination } from './youtubeForward.js';
 
+function youtubeIdFromPayload(payload = {}) {
+  return (
+    extractYouTubeId(payload.youtubeLiveUrl) ||
+    extractYouTubeId(payload.youtubeWatchUrl) ||
+    extractYouTubeId(payload.streamUrl) ||
+    extractYouTubeId(payload.youtubeVideoId) ||
+    ''
+  );
+}
+
 /** Resolve stream type from request body (`streamType`, `linkType`, or destination). */
 export function normalizeStreamType(body = {}) {
   const fromDest = normalizeStreamingDestination(body.streamingDestination);
@@ -83,8 +93,7 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
     if (payload.youtubeForwardEnabled === undefined) {
       payload.youtubeForwardEnabled = true;
     }
-    const yid =
-      extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
+    const yid = youtubeIdFromPayload(payload);
     if (yid) payload.youtubeVideoId = yid;
     return;
   }
@@ -94,8 +103,7 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
     payload.streamingDestination = 'youtube';
     if (payload.creditType !== 'none') payload.creditType = 'youtube';
     payload.youtubeForwardEnabled = false;
-    const yid =
-      extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
+    const yid = youtubeIdFromPayload(payload);
     if (yid) payload.youtubeVideoId = yid;
     if (isCreate) {
       payload.hlsUrl = '';
@@ -109,8 +117,7 @@ export function validateOnlineStreamPayload(payload, streamType, options = {}) {
   const resolved = streamType || inferStreamTypeFromPayload(payload);
   if (!resolved) return 'Stream type is required for online events.';
   if (resolved === 'youtube' || resolved === 'youtube_server') {
-    const yid =
-      extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
+    const yid = youtubeIdFromPayload(payload);
     if (!yid && !options.allowMissingYoutubeUrl) {
       return resolved === 'youtube_server'
         ? 'A valid YouTube Live / embed URL is required for YouTube + Server events.'
@@ -123,8 +130,7 @@ export function validateOnlineStreamPayload(payload, streamType, options = {}) {
 function inferStreamTypeFromPayload(payload) {
   const dest = normalizeStreamingDestination(payload.streamingDestination);
   if (dest) return dest;
-  const yid =
-    extractYouTubeId(payload.youtubeVideoId) || extractYouTubeId(payload.streamUrl) || '';
+  const yid = youtubeIdFromPayload(payload);
   if (yid && payload.streamProvider !== 'rtmp' && payload.streamProvider !== 'hls') {
     return 'youtube';
   }

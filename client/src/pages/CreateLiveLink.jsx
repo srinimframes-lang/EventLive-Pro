@@ -107,7 +107,8 @@ export default function CreateLiveLink() {
     setThumbPreview(URL.createObjectURL(file));
   };
 
-  const youtubeId = extractYouTubeId(form.youtubeUrl);
+  const rawYoutubeUrl = (form.youtubeUrl || '').trim();
+  const youtubeId = extractYouTubeId(rawYoutubeUrl);
   const namesOk = Boolean(form.groomName.trim() || form.brideName.trim());
   const thumbOk = Boolean(thumbFile || existingThumb);
 
@@ -157,10 +158,10 @@ export default function CreateLiveLink() {
       linkType: 'youtube',
       streamingDestination: 'youtube',
       streamProvider: 'youtube',
-      streamUrl: form.youtubeUrl.trim(),
-      youtubeWatchUrl: form.youtubeUrl.trim(),
-      youtubeLiveUrl: form.youtubeUrl.trim(),
-      youtubeVideoId: youtubeId,
+      streamUrl: rawYoutubeUrl,
+      youtubeWatchUrl: rawYoutubeUrl,
+      youtubeLiveUrl: rawYoutubeUrl,
+      youtubeVideoId: youtubeId || rawYoutubeUrl,
     };
 
     setSubmitting(true);

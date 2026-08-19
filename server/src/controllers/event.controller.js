@@ -27,7 +27,7 @@ import { isAdminPanelUser } from '../utils/tenantScope.js';
 import { cacheGet, cacheSet } from '../utils/apiCache.js';
 import {
   applyManualYoutubeFields,
-  logManualYoutubeUrlTrace,
+  logYoutubeSaveDebug,
   provisionYoutubeLiveIfNeeded,
   resolveYoutubeInput,
 } from '../services/youtubeLiveApi.js';
@@ -77,6 +77,12 @@ const EDITABLE_FIELDS = [
   'facebookRtmpUrl',
   'facebookForwardEnabled',
 ];
+
+const YOUTUBE_OPTIONAL_FIELDS = ['youtubeVideoId', 'streamUrl', 'youtubeWatchUrl'];
+
+function isEmptyYoutubeValue(value) {
+  return !String(value ?? '').trim();
+}
 
 function applyAdaptiveStreamingField(target, body, user, { isCreate = false } = {}) {
   // Super Admin only may enable Adaptive (Premium) ABR. Everyone else stays Standard.
@@ -437,7 +443,8 @@ export const createEvent = asyncHandler(async (req, res) => {
   }
   if (req.body.youtubeLiveUrl !== undefined) payload.youtubeLiveUrl = req.body.youtubeLiveUrl;
   const bodyYoutube = resolveYoutubeInput(req.body);
-  if (bodyYoutube.detectedVideoId) {
+  const manualVideoId = bodyYoutube.detectedVideoId;
+  if (manualVideoId) {
     applyManualYoutubeFields(payload, bodyYoutube);
   } else if (payload.youtubeVideoId !== undefined) {
     payload.youtubeVideoId =
@@ -452,13 +459,15 @@ export const createEvent = asyncHandler(async (req, res) => {
 
   const streamType = resolveStreamType(req.body, payload);
   let youtubeIngest = null;
-  try {
-    youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, payload, streamType);
-  } catch (err) {
-    res.status(err.statusCode || 502);
-    throw err;
+  if (!manualVideoId) {
+    try {
+      youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, payload, streamType);
+    } catch (err) {
+      res.status(err.statusCode || 502);
+      throw err;
+    }
   }
-  if (bodyYoutube.detectedVideoId) {
+  if (manualVideoId) {
     applyManualYoutubeFields(payload, bodyYoutube);
     youtubeIngest = null;
   }
@@ -480,9 +489,9 @@ export const createEvent = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(forwardErr);
   }
-  if (bodyYoutube.detectedVideoId) {
+  if (manualVideoId && streamType !== 'server') {
     applyManualYoutubeFields(payload, bodyYoutube);
-  } else if (youtubeIngest) {
+  } else if (!manualVideoId && youtubeIngest) {
     payload.youtubeRtmpUrl = youtubeIngest.rtmpUrl || payload.youtubeRtmpUrl;
     payload.youtubeStreamKey = youtubeIngest.streamKey || payload.youtubeStreamKey;
     payload.youtubeVideoId = youtubeIngest.broadcastId || payload.youtubeVideoId;
@@ -491,13 +500,6 @@ export const createEvent = asyncHandler(async (req, res) => {
     payload.youtubeBroadcastId = youtubeIngest.broadcastId || payload.youtubeBroadcastId;
     payload.youtubeLiveStreamId = youtubeIngest.streamId || payload.youtubeLiveStreamId;
   }
-  logManualYoutubeUrlTrace({
-    inputUrl: bodyYoutube.inputUrl,
-    detectedVideoId: bodyYoutube.detectedVideoId,
-    existingVideoId: '',
-    generatedVideoId: youtubeIngest?.broadcastId || '',
-    finalVideoId: extractYouTubeId(payload.youtubeVideoId) || payload.youtubeVideoId || '',
-  });
   const fbForwardErr = applyFacebookForwardFields(payload, req.body, { isCreate: true });
   if (fbForwardErr) {
     res.status(400);
@@ -505,9 +507,19 @@ export const createEvent = asyncHandler(async (req, res) => {
   }
   applyAdaptiveStreamingField(payload, req.body, req.user, { isCreate: true });
   applyBackupStreamFields(payload, req.body, res);
-  if (bodyYoutube.detectedVideoId) {
+  if (manualVideoId && streamType !== 'server') {
     applyManualYoutubeFields(payload, bodyYoutube);
   }
+  logYoutubeSaveDebug({
+    youtubeLiveUrl: req.body.youtubeLiveUrl || '',
+    youtubeWatchUrl: req.body.youtubeWatchUrl || '',
+    streamUrl: req.body.streamUrl || '',
+    youtubeVideoId: req.body.youtubeVideoId || '',
+    detectedManualVideoId: manualVideoId || '',
+    existingVideoId: '',
+    generatedBroadcastId: youtubeIngest?.broadcastId || '',
+    finalYoutubeVideoId: extractYouTubeId(payload.youtubeVideoId) || payload.youtubeVideoId || '',
+  });
   delete payload.youtubeLiveUrl;
 
   // Customer live links are public immediately. Admins may still create drafts.
@@ -619,33 +631,50 @@ export const updateEvent = asyncHandler(async (req, res) => {
     extractYouTubeId(event.youtubeWatchUrl) ||
     '';
 
+  const streamType = resolveStreamType(req.body, event);
+  const serverOnly = streamType === 'server';
+
   for (const field of EDITABLE_FIELDS) {
-    if (req.body[field] !== undefined) event[field] = req.body[field];
+    if (req.body[field] === undefined) continue;
+    if (
+      !serverOnly &&
+      YOUTUBE_OPTIONAL_FIELDS.includes(field) &&
+      isEmptyYoutubeValue(req.body[field])
+    ) {
+      continue;
+    }
+    event[field] = req.body[field];
   }
   normalizeStudioFields(event);
   if (req.body.youtubeLiveUrl !== undefined) event.youtubeLiveUrl = req.body.youtubeLiveUrl;
   const bodyYoutube = resolveYoutubeInput(req.body);
-  if (bodyYoutube.detectedVideoId) {
+  const manualVideoId = bodyYoutube.detectedVideoId;
+  if (manualVideoId && !serverOnly) {
     applyManualYoutubeFields(event, bodyYoutube);
-  } else if (req.body.youtubeVideoId !== undefined) {
+  } else if (req.body.youtubeVideoId !== undefined && !isEmptyYoutubeValue(req.body.youtubeVideoId)) {
     event.youtubeVideoId =
       extractYouTubeId(event.youtubeVideoId) || String(event.youtubeVideoId || '').trim();
+  } else if (!serverOnly && existingVideoId && !extractYouTubeId(event.youtubeVideoId)) {
+    event.youtubeVideoId = existingVideoId;
   }
   if (req.body.theme !== undefined) {
     await applyThemeSelection(event, req.body.theme, res);
   }
 
-  const streamType = resolveStreamType(req.body, event);
   let youtubeIngest = null;
-  try {
-    youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, event, streamType, {
-      existingVideoId,
-    });
-  } catch (err) {
-    res.status(err.statusCode || 502);
-    throw err;
+  const storedOrManualId =
+    manualVideoId || extractYouTubeId(event.youtubeVideoId) || existingVideoId;
+  if (!storedOrManualId) {
+    try {
+      youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, event, streamType, {
+        existingVideoId,
+      });
+    } catch (err) {
+      res.status(err.statusCode || 502);
+      throw err;
+    }
   }
-  if (bodyYoutube.detectedVideoId) {
+  if (manualVideoId && !serverOnly) {
     applyManualYoutubeFields(event, bodyYoutube);
     youtubeIngest = null;
   }
@@ -674,17 +703,20 @@ export const updateEvent = asyncHandler(async (req, res) => {
   }
   applyAdaptiveStreamingField(event, req.body, req.user, { isCreate: false });
   applyBackupStreamFields(event, req.body, res);
-  if (bodyYoutube.detectedVideoId) {
+  if (manualVideoId && !serverOnly) {
     applyManualYoutubeFields(event, bodyYoutube);
     youtubeIngest = null;
   }
 
-  logManualYoutubeUrlTrace({
-    inputUrl: bodyYoutube.inputUrl,
-    detectedVideoId: bodyYoutube.detectedVideoId,
+  logYoutubeSaveDebug({
+    youtubeLiveUrl: req.body.youtubeLiveUrl || '',
+    youtubeWatchUrl: req.body.youtubeWatchUrl || '',
+    streamUrl: req.body.streamUrl || '',
+    youtubeVideoId: req.body.youtubeVideoId || '',
+    detectedManualVideoId: manualVideoId || '',
     existingVideoId,
-    generatedVideoId: youtubeIngest?.broadcastId || '',
-    finalVideoId: extractYouTubeId(event.youtubeVideoId) || event.youtubeVideoId || '',
+    generatedBroadcastId: youtubeIngest?.broadcastId || '',
+    finalYoutubeVideoId: extractYouTubeId(event.youtubeVideoId) || event.youtubeVideoId || '',
   });
 
   try {
