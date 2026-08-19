@@ -201,9 +201,15 @@ export default function EventForm() {
           isOnline: event.isOnline ?? true,
           location: event.location || 'Online',
           venue: event.venue || '',
-          youtubeUrl: event.youtubeVideoId
-            ? `https://youtu.be/${event.youtubeVideoId}`
-            : event.streamUrl || '',
+          youtubeUrl: (() => {
+            const id = extractYouTubeId(event.youtubeVideoId);
+            const watch = event.youtubeWatchUrl || '';
+            const stream = event.streamUrl || '';
+            if (id && extractYouTubeId(watch) === id) return watch;
+            if (id && extractYouTubeId(stream) === id) return stream;
+            if (id) return `https://youtu.be/${id}`;
+            return watch || stream || '';
+          })(),
           hlsUrl: event.hlsUrl || '',
           rtmpPublishUrl: event.rtmpPublishUrl || '',
           chatEnabled: event.chatEnabled ?? true,
@@ -343,10 +349,6 @@ export default function EventForm() {
         if (data?.watchUrl || data?.broadcastId) {
           setForm((f) => ({
             ...f,
-            youtubeUrl:
-              f.youtubeUrl ||
-              data.watchUrl ||
-              (data.broadcastId ? `https://youtu.be/${data.broadcastId}` : ''),
             youtubeRtmpUrl: data.rtmpUrl || f.youtubeRtmpUrl,
             youtubeStreamKeySet: Boolean(data.streamKey) || f.youtubeStreamKeySet,
           }));
@@ -716,6 +718,8 @@ export default function EventForm() {
       payload.streamingDestination = streamType;
       if (streamType === 'youtube') {
         payload.streamUrl = form.youtubeUrl?.trim() || '';
+        payload.youtubeWatchUrl = payload.streamUrl;
+        payload.youtubeLiveUrl = payload.streamUrl;
         payload.youtubeVideoId = youtubeVideoId;
         payload.streamProvider = 'youtube';
         payload.youtubeForwardEnabled = false;
@@ -732,6 +736,8 @@ export default function EventForm() {
         }
         if (streamType === 'youtube_server') {
           payload.streamUrl = form.youtubeUrl?.trim() || '';
+          payload.youtubeWatchUrl = payload.streamUrl;
+          payload.youtubeLiveUrl = payload.streamUrl;
           payload.youtubeVideoId = youtubeVideoId;
         }
         if (form.hlsUrl?.trim()) payload.hlsUrl = form.hlsUrl.trim();

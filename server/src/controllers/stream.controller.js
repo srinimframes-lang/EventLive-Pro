@@ -145,12 +145,24 @@ function resolvePublicYoutubeVideoId(event) {
   return eventYoutubeLookupId(event) || '';
 }
 
+function preferredStoredYoutubeWatchUrl(event, storedId) {
+  const watch = event.youtubeWatchUrl || '';
+  const stream = event.streamUrl || '';
+  if (storedId && extractYouTubeId(watch) === storedId) return watch;
+  if (storedId && extractYouTubeId(stream) === storedId) return stream;
+  if (storedId) return watch || stream || `https://www.youtube.com/watch?v=${storedId}`;
+  return watch || stream || '';
+}
+
 /**
  * Public-safe view of an event's streaming configuration (no secret key).
  */
 function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null } = {}) {
-  const youtubeVideoId =
-    youtubePlayback?.videoId || resolvePublicYoutubeVideoId(event);
+  const storedId = resolvePublicYoutubeVideoId(event);
+  const playbackId = youtubePlayback?.videoId || '';
+  const playbackMatchesStored = !storedId || !playbackId || playbackId === storedId;
+  const youtubeVideoId = storedId || playbackId || '';
+  const storedWatchUrl = preferredStoredYoutubeWatchUrl(event, storedId);
   const destination = String(event.streamingDestination || '')
     .toLowerCase()
     .replace(/-/g, '_');
@@ -186,7 +198,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
   if (youtubeViewer) {
     const ended = event.status === 'ended' || event.status === 'cancelled';
     if (ended) isLive = Boolean(event.isLive);
-    else if (youtubePlayback?.isLive === true) isLive = true;
+    else if (playbackMatchesStored && youtubePlayback?.isLive === true) isLive = true;
     else isLive = event.status === 'live' || Boolean(event.isLive);
   } else {
     isLive = liveFromProbe
@@ -220,16 +232,18 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
           ? 'youtube'
           : undefined,
     youtubeVideoId,
-    youtubeBroadcastId: youtubePlayback?.broadcastId || event.youtubeBroadcastId || '',
+    youtubeBroadcastId: storedId || (playbackMatchesStored ? youtubePlayback?.broadcastId : '') || event.youtubeBroadcastId || '',
     youtubeWatchUrl:
-      youtubePlayback?.watchUrl || event.youtubeWatchUrl || event.streamUrl || '',
-    streamUrl:
-      youtubePlayback?.watchUrl ||
-      event.youtubeWatchUrl ||
-      event.streamUrl ||
+      storedWatchUrl ||
+      (playbackMatchesStored ? youtubePlayback?.watchUrl : '') ||
       '',
-    youtubeLifeCycleStatus: youtubePlayback?.lifeCycleStatus || '',
-    youtubeIsLive: youtubePlayback?.isLive === true,
+    streamUrl:
+      storedWatchUrl ||
+      (playbackMatchesStored ? youtubePlayback?.watchUrl : '') ||
+      '',
+    youtubeLifeCycleStatus:
+      playbackMatchesStored ? youtubePlayback?.lifeCycleStatus || '' : '',
+    youtubeIsLive: playbackMatchesStored && youtubePlayback?.isLive === true,
     // Never expose live HLS to the public player for YouTube + Server.
     hlsUrl: youtubePlusServer ? '' : isServer ? playbackUrl : event.hlsUrl,
     playbackUrl: youtubePlusServer ? '' : playbackUrl,
@@ -377,13 +391,16 @@ function mediaSecretOk(req) {
  */
 async function resolveYoutubePlaybackForPublicEvent(event) {
   const storedId = eventYoutubeLookupId(event);
+  const storedVideoId = extractYouTubeId(event.youtubeVideoId) || storedId;
   const ownerIds = youtubeOauthUserIds(event);
   if (!ownerIds.length) return null;
   const ended = event.status === 'ended' || event.status === 'cancelled';
   const selectOpts = {
-    eventBroadcastId: extractYouTubeId(event.youtubeBroadcastId) || storedId,
+    eventBroadcastId: storedVideoId || extractYouTubeId(event.youtubeBroadcastId) || storedId,
     eventTitle: event.title,
-    allowActiveFallback: !ended,
+    // A saved video ID (manual paste or existing event) must not be replaced
+    // by another live on the connected channel.
+    allowActiveFallback: !ended && !storedVideoId,
   };
 
   const finish = async (ownerId, info) => {

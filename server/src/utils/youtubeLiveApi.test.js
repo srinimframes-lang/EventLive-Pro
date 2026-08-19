@@ -15,20 +15,34 @@ const {
   youtubeWatchUrl,
   insertBindYoutubeLive,
   applyYoutubeLiveFields,
+  applyManualYoutubeFields,
   publicYoutubeIngest,
   getBroadcastPlaybackInfo,
   eventYoutubeLookupId,
   selectLiveYoutubePlayback,
   youtubeOauthUserIds,
   activeLiveBroadcastListParams,
+  resolveYoutubeInput,
+  youtubeDocFields,
+  provisionYoutubeLiveIfNeeded,
 } = await import('../services/youtubeLiveApi.js');
 
-test('shouldAutoCreateYoutubeLive skips when a URL was pasted', () => {
+test('shouldAutoCreateYoutubeLive skips when a /live/ URL was pasted', () => {
   assert.equal(
     shouldAutoCreateYoutubeLive({
       streamType: 'youtube',
       isOnline: true,
-      streamUrl: 'https://youtu.be/dQw4w9WgXcQ',
+      streamUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    }),
+    false
+  );
+  assert.equal(
+    shouldAutoCreateYoutubeLive({
+      streamType: 'youtube',
+      isOnline: true,
+      youtubeWatchUrl: 'https://www.youtube.com/live/882LagGGVM4',
+      youtubeVideoId: '',
+      streamUrl: '',
     }),
     false
   );
@@ -153,15 +167,15 @@ test('getBroadcastPlaybackInfo returns null without an id', async () => {
   assert.equal(await getBroadcastPlaybackInfo('user1', ''), null);
 });
 
-test('eventYoutubeLookupId prefers the event broadcast over a foreign /live/ URL', () => {
+test('eventYoutubeLookupId prefers the manual video ID over a generated broadcast', () => {
   assert.equal(
     eventYoutubeLookupId({
-      youtubeBroadcastId: 'gusTClw3GbI',
-      youtubeWatchUrl: 'https://www.youtube.com/watch?v=gusTClw3GbI',
-      youtubeVideoId: '5Hn8f8QwUvE',
-      streamUrl: 'https://www.youtube.com/live/5Hn8f8QwUvE',
+      youtubeBroadcastId: 'Tya5ZRG6IPg',
+      youtubeWatchUrl: 'https://www.youtube.com/watch?v=Tya5ZRG6IPg',
+      youtubeVideoId: '882LagGGVM4',
+      streamUrl: 'https://www.youtube.com/live/882LagGGVM4',
     }),
-    'gusTClw3GbI'
+    '882LagGGVM4'
   );
   assert.equal(
     eventYoutubeLookupId({
@@ -171,6 +185,82 @@ test('eventYoutubeLookupId prefers the event broadcast over a foreign /live/ URL
     }),
     'dQw4w9WgXcQ'
   );
+});
+
+test('resolveYoutubeInput extracts a /live/ URL video ID', () => {
+  const parsed = resolveYoutubeInput({
+    youtubeLiveUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    youtubeVideoId: 'Tya5ZRG6IPg',
+    youtubeBroadcastId: 'Tya5ZRG6IPg',
+  });
+  assert.equal(parsed.detectedVideoId, '882LagGGVM4');
+  assert.equal(parsed.inputUrl, 'https://www.youtube.com/live/882LagGGVM4');
+});
+
+test('applyManualYoutubeFields preserves the pasted URL and does not keep a generated id', () => {
+  const event = {
+    youtubeVideoId: 'Tya5ZRG6IPg',
+    youtubeBroadcastId: 'Tya5ZRG6IPg',
+    youtubeWatchUrl: 'https://www.youtube.com/watch?v=Tya5ZRG6IPg',
+    streamUrl: 'https://www.youtube.com/watch?v=Tya5ZRG6IPg',
+  };
+  applyManualYoutubeFields(event, {
+    inputUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    detectedVideoId: '882LagGGVM4',
+  });
+  assert.equal(event.youtubeVideoId, '882LagGGVM4');
+  assert.equal(event.youtubeBroadcastId, '882LagGGVM4');
+  assert.equal(event.streamUrl, 'https://www.youtube.com/live/882LagGGVM4');
+  assert.equal(event.youtubeWatchUrl, 'https://www.youtube.com/live/882LagGGVM4');
+});
+
+test('youtubeDocFields reads mongoose-like documents that do not spread', () => {
+  const event = {};
+  Object.defineProperties(event, {
+    youtubeVideoId: { value: '882LagGGVM4', enumerable: false },
+    streamUrl: { value: 'https://www.youtube.com/live/882LagGGVM4', enumerable: false },
+    toObject: {
+      enumerable: false,
+      value() {
+        return {
+          youtubeVideoId: '882LagGGVM4',
+          streamUrl: 'https://www.youtube.com/live/882LagGGVM4',
+          isOnline: true,
+        };
+      },
+    },
+  });
+  assert.equal({ ...event }.youtubeVideoId, undefined);
+  assert.equal(youtubeDocFields(event).youtubeVideoId, '882LagGGVM4');
+  assert.equal(resolveYoutubeInput(event).detectedVideoId, '882LagGGVM4');
+  assert.equal(
+    shouldAutoCreateYoutubeLive({ ...youtubeDocFields(event), streamType: 'youtube' }),
+    false
+  );
+});
+
+test('provisionYoutubeLiveIfNeeded keeps a pasted live URL instead of creating a broadcast', async () => {
+  const event = {
+    title: 'Srinivas reception',
+    youtubeVideoId: '882LagGGVM4',
+    streamUrl: 'https://www.youtube.com/live/882LagGGVM4',
+    youtubeBroadcastId: 'Tya5ZRG6IPg',
+    toObject() {
+      return {
+        youtubeVideoId: this.youtubeVideoId,
+        streamUrl: this.streamUrl,
+        youtubeBroadcastId: this.youtubeBroadcastId,
+        youtubeWatchUrl: this.youtubeWatchUrl || '',
+        isOnline: true,
+      };
+    },
+  };
+  const ingest = await provisionYoutubeLiveIfNeeded({ _id: 'user1' }, event, 'youtube');
+  assert.equal(ingest, null);
+  assert.equal(event.youtubeVideoId, '882LagGGVM4');
+  assert.equal(event.youtubeBroadcastId, '882LagGGVM4');
+  assert.equal(event.streamUrl, 'https://www.youtube.com/live/882LagGGVM4');
+  assert.equal(event.youtubeWatchUrl, 'https://www.youtube.com/live/882LagGGVM4');
 });
 
 test('selectLiveYoutubePlayback keeps the event broadcast when it is already live', () => {

@@ -77,25 +77,123 @@ export function applyYoutubeLiveFields(target, live) {
   return target;
 }
 
+function pickYoutubeFields(src = {}) {
+  return {
+    isOnline: src.isOnline,
+    youtubeVideoId: src.youtubeVideoId || '',
+    streamUrl: src.streamUrl || '',
+    youtubeWatchUrl: src.youtubeWatchUrl || '',
+    youtubeLiveUrl: src.youtubeLiveUrl || '',
+    youtubeStreamKey: src.youtubeStreamKey || '',
+    youtubeBroadcastId: src.youtubeBroadcastId || '',
+  };
+}
+
+/** Readable YouTube fields from a plain object or Mongoose document (spread is unsafe). */
+export function youtubeDocFields(doc) {
+  if (!doc) return pickYoutubeFields();
+  if (typeof doc.get === 'function') {
+    const fromGet = pickYoutubeFields({
+      isOnline: doc.get('isOnline'),
+      youtubeVideoId: doc.get('youtubeVideoId'),
+      streamUrl: doc.get('streamUrl'),
+      youtubeWatchUrl: doc.get('youtubeWatchUrl'),
+      youtubeLiveUrl: doc.youtubeLiveUrl,
+      youtubeStreamKey: doc.get('youtubeStreamKey'),
+      youtubeBroadcastId: doc.get('youtubeBroadcastId'),
+    });
+    if (
+      fromGet.youtubeVideoId ||
+      fromGet.streamUrl ||
+      fromGet.youtubeWatchUrl ||
+      fromGet.youtubeBroadcastId ||
+      fromGet.isOnline !== undefined
+    ) {
+      return fromGet;
+    }
+  }
+  if (typeof doc.toObject === 'function') {
+    try {
+      return pickYoutubeFields(doc.toObject({ depopulate: true, virtuals: false }));
+    } catch {
+      /* fall through */
+    }
+  }
+  if (doc._doc) return pickYoutubeFields(doc._doc);
+  return pickYoutubeFields(doc);
+}
+
+/**
+ * Manual YouTube URL / video ID from a create/update body or event.
+ * URL fields win over a bare youtubeVideoId.
+ */
+export function resolveYoutubeInput(source = {}) {
+  const fields = youtubeDocFields(source);
+  const youtubeLiveUrl = String(source.youtubeLiveUrl || fields.youtubeLiveUrl || '').trim();
+  const youtubeWatchUrl = String(source.youtubeWatchUrl || fields.youtubeWatchUrl || '').trim();
+  const streamUrl = String(source.streamUrl || fields.streamUrl || '').trim();
+  const youtubeVideoId = String(source.youtubeVideoId || fields.youtubeVideoId || '').trim();
+  const inputUrl = youtubeLiveUrl || youtubeWatchUrl || streamUrl || '';
+  const detectedVideoId =
+    extractYouTubeId(youtubeLiveUrl) ||
+    extractYouTubeId(youtubeWatchUrl) ||
+    extractYouTubeId(streamUrl) ||
+    extractYouTubeId(youtubeVideoId) ||
+    '';
+  return { inputUrl, detectedVideoId };
+}
+
+/** Persist a pasted YouTube URL and its exact video ID. Never invent a broadcast. */
+export function applyManualYoutubeFields(target, { inputUrl = '', detectedVideoId = '' } = {}) {
+  if (!target || !detectedVideoId) return target;
+  const urlId = extractYouTubeId(inputUrl);
+  const preservedUrl =
+    inputUrl && (urlId === detectedVideoId || String(inputUrl).includes(detectedVideoId))
+      ? String(inputUrl).trim()
+      : `https://www.youtube.com/watch?v=${detectedVideoId}`;
+  target.youtubeVideoId = detectedVideoId;
+  target.streamUrl = preservedUrl;
+  target.youtubeWatchUrl = preservedUrl;
+  // Align so public lookup cannot keep a stale auto-created broadcast id.
+  target.youtubeBroadcastId = detectedVideoId;
+  return target;
+}
+
+export function logManualYoutubeUrlTrace({
+  inputUrl = '',
+  detectedVideoId = '',
+  existingVideoId = '',
+  generatedVideoId = '',
+  finalVideoId = '',
+} = {}) {
+  // eslint-disable-next-line no-console
+  console.info('[YT MANUAL URL]');
+  // eslint-disable-next-line no-console
+  console.info('input URL:', inputUrl || '');
+  // eslint-disable-next-line no-console
+  console.info('detected video ID:', detectedVideoId || '');
+  // eslint-disable-next-line no-console
+  console.info('existing event video ID:', existingVideoId || '');
+  // eslint-disable-next-line no-console
+  console.info('generated video ID:', generatedVideoId || '');
+  // eslint-disable-next-line no-console
+  console.info('final saved video ID:', finalVideoId || '');
+}
+
 /**
  * True when we should call YouTube Live API instead of requiring a pasted URL.
- * Manual URL / existing video ID always wins (fallback).
+ * Manual URL / existing video ID always wins.
  */
-export function shouldAutoCreateYoutubeLive({
-  streamType,
-  isOnline,
-  youtubeVideoId,
-  streamUrl,
-  youtubeStreamKey,
-  youtubeBroadcastId,
-} = {}) {
+export function shouldAutoCreateYoutubeLive(input = {}) {
+  const fields = youtubeDocFields(input);
+  const streamType = input.streamType;
+  const isOnline = input.isOnline !== undefined ? input.isOnline : fields.isOnline;
   if (isOnline === false) return false;
-  if (String(youtubeBroadcastId || '').trim()) return false;
-  const hasManualVideo = Boolean(extractYouTubeId(youtubeVideoId) || extractYouTubeId(streamUrl));
-  if (hasManualVideo) return false;
+  if (resolveYoutubeInput({ ...fields, ...input }).detectedVideoId) return false;
+  if (String(fields.youtubeBroadcastId || input.youtubeBroadcastId || '').trim()) return false;
   if (streamType === 'youtube' || streamType === 'youtube_server') return true;
   if (streamType === 'server_youtube') {
-    return !String(youtubeStreamKey || '').trim();
+    return !String(fields.youtubeStreamKey || input.youtubeStreamKey || '').trim();
   }
   return false;
 }
@@ -256,8 +354,27 @@ export async function createBoundYoutubeLive(userId, meta) {
  * authenticated user's existing OAuth credentials. Returns ingest for the admin
  * response, or null when a manual URL should be used / YouTube is not connected.
  */
-export async function provisionYoutubeLiveIfNeeded(user, payload, streamType) {
-  if (!shouldAutoCreateYoutubeLive({ ...payload, streamType })) return null;
+export async function provisionYoutubeLiveIfNeeded(
+  user,
+  payload,
+  streamType,
+  { existingVideoId = '' } = {}
+) {
+  const fields = youtubeDocFields(payload);
+  const manual = resolveYoutubeInput({ ...fields, youtubeLiveUrl: payload?.youtubeLiveUrl });
+  if (manual.detectedVideoId) {
+    applyManualYoutubeFields(payload, manual);
+    return null;
+  }
+
+  const keepId =
+    extractYouTubeId(existingVideoId) || extractYouTubeId(fields.youtubeVideoId) || '';
+  if (keepId) {
+    if (!extractYouTubeId(payload.youtubeVideoId)) payload.youtubeVideoId = keepId;
+    return null;
+  }
+
+  if (!shouldAutoCreateYoutubeLive({ ...fields, streamType })) return null;
   const cred = await loadUserCredential(user?._id);
   if (!cred?.connected) return null;
 
@@ -332,16 +449,18 @@ export function activeLiveBroadcastListParams() {
 }
 
 /**
- * Event-owned YouTube id for API lookup. Prefer the auto-created broadcast,
- * never a polluted /live/ URL from a different video.
+ * Event-owned YouTube id for API lookup.
+ * Manual URL / youtubeVideoId always win over a generated broadcast id.
  */
 export function eventYoutubeLookupId(event) {
+  const fields = youtubeDocFields(event);
   return (
-    extractYouTubeId(event?.youtubeBroadcastId) ||
-    extractYouTubeId(event?.youtubeWatchUrl) ||
-    extractYouTubeId(event?.youtubeVideoId) ||
-    extractYouTubeId(event?.streamUrl) ||
-    String(event?.youtubeBroadcastId || event?.youtubeVideoId || '').trim()
+    extractYouTubeId(fields.youtubeVideoId) ||
+    extractYouTubeId(fields.streamUrl) ||
+    extractYouTubeId(fields.youtubeWatchUrl) ||
+    extractYouTubeId(fields.youtubeLiveUrl) ||
+    extractYouTubeId(fields.youtubeBroadcastId) ||
+    String(fields.youtubeVideoId || fields.youtubeBroadcastId || '').trim()
   );
 }
 
