@@ -280,6 +280,7 @@ export const listEvents = asyncHandler(async (req, res) => {
     'streamDisabled',
     'publicUrlStyle',
     'youtubeVideoId',
+    'source',
     'themeSnapshot.name',
     'themeSnapshot.category',
     'themeSnapshot.region',

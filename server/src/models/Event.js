@@ -420,6 +420,13 @@ const eventSchema = new Schema(
       type: [String],
       default: [],
     },
+    // How the event was created. Empty for existing live-link / admin flows.
+    source: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: 40,
+    },
 
     // ── Shareable QR (public live URL) ─────────────────────────
     qrCodeImage: { type: String, trim: true, default: '' },

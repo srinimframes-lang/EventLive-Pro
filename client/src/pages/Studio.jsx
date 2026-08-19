@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { eventService } from '../services/event.service.js';
 import { streamService, STREAM_PROVIDERS } from '../services/stream.service.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -17,7 +17,7 @@ import FailoverRecoveryBanner from '../components/live/FailoverRecoveryBanner.js
 
 export default function Studio() {
   const { id } = useParams();
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isAdmin, isSubAdmin, isSuperAdmin } = useAuth();
 
   const [event, setEvent] = useState(null);
   const [config, setConfig] = useState(null);
@@ -181,6 +181,10 @@ export default function Studio() {
     );
 
   if (!event) return <p className="py-20 text-center text-slate-500">Loading…</p>;
+
+  if (!isAdmin && !isSubAdmin) {
+    return <Navigate to={`/live-links/${event.id}/edit`} replace />;
+  }
 
   if (!canManage)
     return (

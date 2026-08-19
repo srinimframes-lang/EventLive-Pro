@@ -23,6 +23,7 @@ export default function AdminEvents() {
   const [recordingMeta, setRecordingMeta] = useState({});
   const [streamLoadingId, setStreamLoadingId] = useState(null);
   const [recordingBusyId, setRecordingBusyId] = useState(null);
+  const [disableBusyId, setDisableBusyId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -69,6 +70,24 @@ export default function AdminEvents() {
       load();
     } catch (e) {
       setError(e.message);
+    }
+  };
+
+  const toggleDisabled = async (ev) => {
+    const next = !ev.streamDisabled;
+    const label = next ? 'disable' : 'enable';
+    if (!window.confirm(`${next ? 'Disable' : 'Enable'} live link "${ev.title}"?`)) return;
+    setDisableBusyId(ev.id);
+    setError('');
+    try {
+      await streamService.setDisabled(ev.id, next);
+      setEvents((list) =>
+        list.map((item) => (item.id === ev.id ? { ...item, streamDisabled: next } : item))
+      );
+    } catch (e) {
+      setError(e.message || `Could not ${label} this live link.`);
+    } finally {
+      setDisableBusyId(null);
     }
   };
 
@@ -219,21 +238,31 @@ export default function AdminEvents() {
                     <p className="font-semibold text-slate-900">{ev.title}</p>
                     {couple && <p className="text-sm text-slate-500">{couple}</p>}
                     <p className="text-sm text-slate-500">
-                      {ev.organizer?.name ? `${ev.organizer.name} · ` : ''}
+                      {ev.organizer?.name || ev.organizer?.email
+                        ? `${ev.organizer.name || 'Customer'}${ev.organizer.email ? ` · ${ev.organizer.email}` : ''} · `
+                        : ''}
                       {formatDateTime(ev.startTime)}
                     </p>
                     <p className="mt-1 break-all text-xs text-slate-400">{liveLink(ev)}</p>
                   </div>
                   <span
                     className={`badge ${
-                      ev.isLive
-                        ? 'bg-red-100 text-red-700'
-                        : showRecordedBadge
-                          ? 'bg-indigo-100 text-indigo-700'
-                          : 'bg-slate-100 text-slate-600'
+                      ev.streamDisabled
+                        ? 'bg-amber-100 text-amber-800'
+                        : ev.isLive
+                          ? 'bg-red-100 text-red-700'
+                          : showRecordedBadge
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {ev.isLive ? 'LIVE' : showRecordedBadge ? 'RECORDED' : ev.status}
+                    {ev.streamDisabled
+                      ? 'DISABLED'
+                      : ev.isLive
+                        ? 'LIVE'
+                        : showRecordedBadge
+                          ? 'RECORDED'
+                          : ev.status}
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -271,6 +300,14 @@ export default function AdminEvents() {
                   <Link to={`/events/${ev.id}/edit`} className="btn-outline">
                     Edit
                   </Link>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    disabled={disableBusyId === ev.id}
+                    onClick={() => toggleDisabled(ev)}
+                  >
+                    {ev.streamDisabled ? 'Enable link' : 'Disable link'}
+                  </button>
                   <a href={liveLink(ev)} target="_blank" rel="noreferrer" className="btn-outline">
                     Watch
                   </a>

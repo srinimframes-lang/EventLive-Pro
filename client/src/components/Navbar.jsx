@@ -30,11 +30,20 @@ export default function Navbar() {
       <Link to="/events" onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
         Watch Live
       </Link>
-      {isAuthenticated ? (
-        <>
-          <Link to={homeFor} onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
-            {homeLabel}
-          </Link>
+          {isAuthenticated ? (
+            <>
+              {!isAdmin && !isSubAdmin && (
+                <Link
+                  to="/live-links/new"
+                  onClick={close}
+                  className={`btn-ghost ${stacked ? 'justify-start' : ''}`}
+                >
+                  Create Live Link
+                </Link>
+              )}
+              <Link to={homeFor} onClick={close} className={`btn-ghost ${stacked ? 'justify-start' : ''}`}>
+                {homeLabel}
+              </Link>
           {stacked && user?.name && (
             <span className="px-2 py-1 text-sm text-slate-500">Signed in as {user.name}</span>
           )}

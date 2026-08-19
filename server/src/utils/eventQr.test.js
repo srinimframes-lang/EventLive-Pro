@@ -2,6 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildEventPublicWatchUrl, generateQrPngBuffer } from './eventQr.js';
 
+test('buildEventPublicWatchUrl uses /live path for new live-link events', async () => {
+  const url = await buildEventPublicWatchUrl(
+    {
+      publicUrlStyle: 'live',
+      slug: 'ravi-priya-wedding',
+      shortCode: 'RP24X9',
+    },
+    { seo: { siteUrl: 'https://eventlivepro.com' }, companyName: 'Test' }
+  );
+  assert.equal(url, 'https://eventlivepro.com/live/ravi-priya-wedding');
+});
+
 test('buildEventPublicWatchUrl uses couple slug when stored', async () => {
   const url = await buildEventPublicWatchUrl(
     {

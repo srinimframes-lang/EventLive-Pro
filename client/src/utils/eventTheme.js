@@ -43,6 +43,7 @@ export const PUBLIC_EVENT_TYPE_LABELS = {
 export function publicEventTypeLabel(category) {
   if (!category) return 'LIVE';
   const key = String(category).toLowerCase().trim();
+  if (key === 'housewarming') return PUBLIC_EVENT_TYPE_LABELS.house_warming;
   return PUBLIC_EVENT_TYPE_LABELS[key] || 'LIVE';
 }
 

@@ -3,8 +3,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 /**
  * Allows any authenticated account to reach the event create/edit/studio pages.
- * The server enforces credit balance on creation and ownership on edits, so a
- * customer with enough credits can create and manage their own live links.
+ * Customers are redirected to the Live Link Generator (no payment required).
+ * The server enforces ownership on edits.
  */
 export default function StaffRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();

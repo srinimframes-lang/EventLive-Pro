@@ -49,8 +49,10 @@ import {
   uploadShareThumbnail,
   uploadTemplateImage,
 } from '../controllers/media.controller.js';
+import { extractWeddingCard, confirmWeddingCard } from '../controllers/weddingCard.controller.js';
 import { protect, optionalAuth, authorize, authorizePlatformAdmin } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
+import { weddingCardUpload } from '../middleware/weddingCardUpload.middleware.js';
 
 const router = Router();
 
@@ -58,6 +60,19 @@ router
   .route('/')
   .get(optionalAuth, listEvents)
   .post(protect, createEvent);
+
+router.post(
+  '/wedding-card/extract',
+  protect,
+  weddingCardUpload.single('card'),
+  extractWeddingCard
+);
+router.post(
+  '/wedding-card/confirm',
+  protect,
+  weddingCardUpload.single('card'),
+  confirmWeddingCard
+);
 
 // ── Media-server webhooks (secret-protected, no auth middleware) ──────
 // Registered before the :id routes; 'stream' is a literal first segment so it

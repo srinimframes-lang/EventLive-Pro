@@ -27,6 +27,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
 const Reseller = lazy(() => import('./pages/Reseller.jsx'));
 const EventForm = lazy(() => import('./pages/EventForm.jsx'));
+const CreateLiveLink = lazy(() => import('./pages/CreateLiveLink.jsx'));
+const WeddingCardUpload = lazy(() => import('./pages/WeddingCardUpload.jsx'));
 
 function PageLoader() {
   return (
@@ -77,6 +79,22 @@ export default function App() {
 
             {/* Event management (admin or reseller who owns the event) */}
             <Route
+              path="/live-links/new"
+              element={
+                <ProtectedRoute>
+                  <CreateLiveLink />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/live-links/:id/edit"
+              element={
+                <ProtectedRoute>
+                  <CreateLiveLink />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/events/new"
               element={
                 <StaffRoute>
@@ -108,6 +126,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/wedding-card"
+              element={
+                <ProtectedRoute>
+                  <WeddingCardUpload />
                 </ProtectedRoute>
               }
             />

@@ -16,7 +16,7 @@ const STATUS_STYLES = {
  *  3. Tap "I Have Paid" → a pending request is sent to the Super Admin.
  *  Credits are added only after the admin approves the request.
  */
-export default function BuyCreditsPanel() {
+export default function BuyCreditsPanel({ optional = false }) {
   const { settings } = useSettings();
   const [products, setProducts] = useState([]);
   const [upi, setUpi] = useState({
@@ -86,10 +86,13 @@ export default function BuyCreditsPanel() {
 
   return (
     <div>
-      <h2 className="font-display text-xl font-bold text-slate-900">Buy credits</h2>
+      <h2 className="font-display text-xl font-bold text-slate-900">
+        {optional ? 'Optional payment' : 'Buy credits'}
+      </h2>
       <p className="mt-1 text-sm text-slate-600">
-        Pay with any UPI app, then tap <strong>I Have Paid</strong>. Credits are added once we verify
-        your payment.
+        {optional
+          ? 'Payment is optional and never blocks live-link creation. You can skip this section. If you choose to pay, use the UPI details below — credits are added only after an admin verifies the payment.'
+          : 'Pay with any UPI app, then tap I Have Paid. Credits are added once we verify your payment.'}
       </p>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

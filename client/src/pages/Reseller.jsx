@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { resellerService } from '../services/reseller.service.js';
 import BuyCreditsPanel from '../components/BuyCreditsPanel.jsx';
+import YoutubeConnectCard from '../components/YoutubeConnectCard.jsx';
 import { formatDateTime, watchPath } from '../utils/format.js';
 
 const LINK_COSTS = { youtube: 1, server: 5 };
@@ -54,7 +55,7 @@ export default function Reseller() {
         <div className="card lg:col-span-2">
           <h2 className="text-lg font-bold text-slate-900">Create a live link</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <CreateCard title="YouTube Live Link" cost={LINK_COSTS.youtube} balance={balance} to="/events/new?type=youtube" />
+            <CreateCard title="YouTube Live Link" cost={0} balance={balance} to="/live-links/new" />
             <CreateCard title="Server Live Link" cost={LINK_COSTS.server} balance={balance} to="/events/new?type=server" />
           </div>
         </div>
@@ -62,6 +63,10 @@ export default function Reseller() {
 
       <div id="buy-credits" className="mt-8 scroll-mt-20">
         <BuyCreditsPanel />
+      </div>
+
+      <div className="mt-8">
+        <YoutubeConnectCard returnTo="/reseller" />
       </div>
 
       <section className="mt-10">
@@ -106,12 +111,13 @@ export default function Reseller() {
 }
 
 function CreateCard({ title, cost, balance, to }) {
-  const enough = balance >= cost;
+  const free = !cost;
+  const enough = free || balance >= cost;
   return (
     <div className="rounded-xl border border-slate-200 p-4">
       <p className="font-semibold text-slate-800">{title}</p>
       <p className="text-sm text-slate-500">
-        Costs {cost} credit{cost > 1 ? 's' : ''}
+        {free ? 'Free — payment not required' : `Costs ${cost} credit${cost > 1 ? 's' : ''}`}
       </p>
       {enough ? (
         <Link to={to} className="btn-primary mt-3 inline-block">

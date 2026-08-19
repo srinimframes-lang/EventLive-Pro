@@ -100,6 +100,27 @@ export const eventService = {
     const { data } = await api.post(`/api/events/${id}/qr/sync`);
     return data.data;
   },
+
+  /** OCR a wedding invitation. Does not save event details. */
+  async extractWeddingCard(file) {
+    const fd = new FormData();
+    fd.append('card', file);
+    const { data } = await api.post('/api/events/wedding-card/extract', fd, {
+      timeout: 120_000,
+    });
+    return data.data;
+  },
+
+  /** Save reviewed wedding-card fields. Does not create a YouTube or live link. */
+  async confirmWeddingCard(fields, file) {
+    const fd = new FormData();
+    Object.entries(fields).forEach(([key, value]) => {
+      fd.append(key, value == null ? '' : String(value));
+    });
+    if (file) fd.append('card', file);
+    const { data } = await api.post('/api/events/wedding-card/confirm', fd);
+    return data.data;
+  },
 };
 
 export const EVENT_CATEGORIES = [

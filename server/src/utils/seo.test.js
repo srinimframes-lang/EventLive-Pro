@@ -4,6 +4,7 @@ import {
   buildCoupleWatchSlug,
   buildEventDescription,
   buildEventTitle,
+  buildLivePageSlug,
   buildOgHtml,
   buildShareEventDescription,
   buildShareEventTitle,
@@ -41,6 +42,43 @@ test('watchPath prefers couple slug for new public URLs', () => {
 
 test('watchPath falls back to slug when short code missing', () => {
   assert.equal(watchPath({ slug: 'aarav-weds-priya' }), '/aarav-weds-priya');
+});
+
+test('buildLivePageSlug is groom-bride-eventtype', () => {
+  assert.equal(
+    buildLivePageSlug({
+      groomName: 'Ravi',
+      brideName: 'Priya',
+      category: 'wedding',
+      title: 'Wedding Live',
+    }),
+    'ravi-priya-wedding'
+  );
+});
+
+test('watchPath uses /live/{slug} for new live-link events', () => {
+  assert.equal(
+    watchPath({
+      publicUrlStyle: 'live',
+      slug: 'ravi-priya-wedding',
+      shortCode: 'RP24X9',
+    }),
+    '/live/ravi-priya-wedding'
+  );
+});
+
+test('watchPath does not rewrite legacy short-code events', () => {
+  assert.equal(
+    watchPath({
+      shortCode: 'AP24X9',
+      slug: 'ravi-priya-wedding',
+    }),
+    '/AP24X9'
+  );
+});
+
+test('parsePublicEventCodeFromPath supports /live/ravi-priya-wedding', () => {
+  assert.equal(parsePublicEventCodeFromPath('/live/ravi-priya-wedding'), 'ravi-priya-wedding');
 });
 
 test('buildCoupleWatchSlug is bride-weds-groom', () => {
@@ -99,11 +137,13 @@ test('parsePublicEventCodeFromPath supports short and legacy URLs', () => {
   assert.equal(parsePublicEventCodeFromPath('/AP24X9'), 'AP24X9');
   assert.equal(parsePublicEventCodeFromPath('/AP24X9/aarav-weds-priya'), 'AP24X9');
   assert.equal(parsePublicEventCodeFromPath('/live/AP24X9'), 'AP24X9');
+  assert.equal(parsePublicEventCodeFromPath('/live/ravi-priya-wedding'), 'ravi-priya-wedding');
   assert.equal(parsePublicEventCodeFromPath('/live/AP24X9/aarav-weds-priya'), 'AP24X9');
   assert.equal(parsePublicEventCodeFromPath('/watch/AP24X9'), 'AP24X9');
   assert.equal(parsePublicEventCodeFromPath('/events/AP24X9/live'), 'AP24X9');
   assert.equal(parsePublicEventCodeFromPath('/events/old-slug'), 'old-slug');
   assert.equal(parsePublicEventCodeFromPath('/login'), null);
+  assert.equal(parsePublicEventCodeFromPath('/live-links/new'), null);
   assert.equal(parsePublicEventCodeFromPath('/districts/telangana'), null);
   assert.equal(parsePublicEventCodeFromPath('/'), null);
 });
