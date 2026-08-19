@@ -64,34 +64,44 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-12">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-slate-900">
-            Welcome, {user?.name?.split(' ')[0] || 'there'}
-          </h1>
-          <p className="mt-1 text-slate-600">
-            Create your EventLivePro live link from a YouTube Live URL. Payment is optional.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/wedding-card" className="btn-outline">
-            📤 Upload Wedding Card
-          </Link>
-          <Link to="/live-links/new" className="btn-primary">
-            Create Live Link
-          </Link>
-        </div>
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
+      <h1 className="font-display text-3xl font-bold text-slate-900">
+        Welcome, {user?.name?.split(' ')[0] || 'there'}
+      </h1>
+      <p className="mt-1 text-slate-600">
+        Start from your wedding invitation, or create a live link manually.
+      </p>
+
+      <div className="card mt-6 border-rose-200 bg-gradient-to-br from-rose-50 via-white to-amber-50 shadow-sm sm:mt-8">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-700">Wedding live</p>
+        <h2 className="mt-2 font-display text-2xl font-bold text-slate-900">
+          📤 Upload Wedding Card
+        </h2>
+        <p className="mt-2 text-sm text-slate-600 sm:text-base">
+          Upload your wedding invitation and automatically create your wedding live page.
+        </p>
+        <Link
+          to="/wedding-card"
+          className="btn-primary mt-5 inline-flex w-full justify-center px-5 py-3 text-base sm:w-auto"
+        >
+          📤 Upload Wedding Card
+        </Link>
       </div>
 
-      <div className="card mt-8 bg-gradient-to-br from-rose-50 to-white">
-        <h2 className="text-lg font-bold text-slate-900">Upload wedding card</h2>
+      <div className="card mt-6 bg-gradient-to-br from-brand-50 to-white sm:mt-8">
+        <h2 className="text-lg font-bold text-slate-900">Create Live Link</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Upload an invitation photo. We extract the couple names and create your EventLivePro live
-          link automatically after you review the details.
+          Enter event details, paste your YouTube Live URL, upload a thumbnail, and generate a
+          unique EventLivePro URL instantly. No payment screenshot or admin approval is required.
         </p>
-        <Link to="/wedding-card" className="btn-primary mt-5 inline-block">
-          📤 Upload Wedding Card
+        <ol className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+          <li>1. Event title, names, type, date &amp; time</li>
+          <li>2. YouTube Live URL + thumbnail</li>
+          <li>3. Generate your EventLivePro live link</li>
+          <li>4. Copy or share on WhatsApp</li>
+        </ol>
+        <Link to="/live-links/new" className="btn-outline mt-5 inline-flex w-full justify-center sm:w-auto">
+          Create Live Link
         </Link>
       </div>
 
@@ -130,23 +140,6 @@ export default function Dashboard() {
           </ul>
         </div>
       )}
-
-      <div className="card mt-8 bg-gradient-to-br from-brand-50 to-white">
-        <h2 className="text-lg font-bold text-slate-900">Create a live link</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Enter event details, paste your YouTube Live URL, upload a thumbnail, and generate a
-          unique EventLivePro URL instantly. No payment screenshot or admin approval is required.
-        </p>
-        <ol className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-          <li>1. Event title, names, type, date &amp; time</li>
-          <li>2. YouTube Live URL + thumbnail</li>
-          <li>3. Generate your EventLivePro live link</li>
-          <li>4. Copy or share on WhatsApp</li>
-        </ol>
-        <Link to="/live-links/new" className="btn-primary mt-5 inline-block">
-          Create Live Link
-        </Link>
-      </div>
 
       <div className="mt-8">
         <YoutubeConnectCard returnTo="/dashboard" />
