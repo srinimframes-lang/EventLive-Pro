@@ -115,6 +115,30 @@ test('legacy single recordingR2Key hydrates as one part', () => {
   assert.equal(state.parts[0].filename, 'solo.mp4');
 });
 
+test('getRecordingState falls back from stale 24h duration using timestamps', () => {
+  const event = {
+    _id: 'dddddddddddddddddddddddd',
+    id: 'dddddddddddddddddddddddd',
+    recordingDurationSec: 89791,
+    recordings: [
+      {
+        _id: '111111111111111111111111',
+        filename: '2026-08-19_04-00-00-000000.mp4',
+        storage: 'r2',
+        r2Key: 'recordings/dddddddddddddddddddddddd/2026-08-19_04-00-00-000000.mp4',
+        durationSec: 89791,
+        startedAt: new Date('2026-08-19T04:00:00Z'),
+        endedAt: new Date('2026-08-19T10:02:00Z'),
+        createdAt: new Date('2026-08-19T10:02:00Z'),
+      },
+    ],
+  };
+  const state = getRecordingState(event);
+  assert.equal(state.recordingDurationSec, 6 * 3600 + 120);
+  assert.equal(state.parts[0].durationSec, 6 * 3600 + 120);
+  assert.equal(state.hasRecording, true);
+});
+
 test('soft-deleted parts are hidden so merge can leave a single replay', () => {
   const event = {
     _id: 'cccccccccccccccccccccccc',

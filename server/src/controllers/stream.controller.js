@@ -36,11 +36,22 @@ import {
 } from '../utils/recording.js';
 import {
   deleteRecordingFromR2,
+  headR2Object,
   isR2Configured,
   presignRecordingUrl,
   r2PublicUrl,
 } from '../utils/r2.js';
 import { scheduleEventRecordingUpload } from '../utils/recordingR2Sync.js';
+import {
+  parseMediaMtxDurationToSec,
+} from '../utils/recordingDuration.js';
+import {
+  RECORDING_SIGNED_URL_EXPIRES_SEC,
+  parseByteRange,
+  recordingMediaHeaders,
+  recordingPlaybackStatus,
+  resolveRecordingPlaybackSource,
+} from '../utils/recordingPlayback.js';
 import {
   applyEmergencyAction,
   evaluateStreamHealth,
@@ -87,7 +98,8 @@ import path from 'path';
  * Resolve a browser-playable R2 URL (public base or presigned).
  * Returns '' when this host cannot mint URLs (typical on Render without R2 env).
  */
-async function resolveR2BrowserUrl(r2Key, { expiresIn = 3600 } = {}) {
+async function resolveR2BrowserUrl(r2Key, { expiresIn = RECORDING_SIGNED_URL_EXPIRES_SEC } = {}) {
+  if (!r2Key) return '';
   if (!r2Key) return '';
   const publicUrl = r2PublicUrl(r2Key);
   if (publicUrl) return publicUrl;
@@ -271,6 +283,14 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     recordingDurationSec: rec.recordingDurationSec,
     recordingCount: rec.recordingCount,
     recordingMergeStatus: event.recordingMergeStatus || '',
+    recordingPlaybackStatus: recordingPlaybackStatus({
+      isLive,
+      reconnecting,
+      hasRecording: rec.hasRecording,
+      publiclyVisible: rec.publiclyVisible,
+      mergeStatus: event.recordingMergeStatus || '',
+      storage: rec.recordingStorage,
+    }),
     // Lightweight part list for the player (no R2 URLs — resolve per part on demand).
     // After a successful merge only one part remains active — Parts UI stays hidden.
     recordings: recordingUrl
@@ -1145,7 +1165,7 @@ export const recordingReady = asyncHandler(async (req, res) => {
 
   const eventId = String(req.body.eventId || '').trim();
   const filePath = String(req.body.filePath || req.body.recordingPath || '').trim();
-  const durationSec = Number(req.body.durationSec ?? req.body.duration ?? 0) || 0;
+  const durationSec = parseMediaMtxDurationToSec(req.body.durationSec ?? req.body.duration ?? 0);
   const streamKey = parseMediaMtxPath(req.body.path || req.body.streamKey || eventId);
 
   let event = null;
@@ -1199,6 +1219,39 @@ export const recordingReady = asyncHandler(async (req, res) => {
   });
 });
 
+function sendMp4File(req, res, abs) {
+  let stat;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    res.status(404);
+    throw new Error('Recording file missing');
+  }
+  const parsed = parseByteRange(req.headers.range, stat.size);
+  const headers = recordingMediaHeaders({ contentLength: parsed.contentLength });
+  for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
+  if (parsed.status === 416) {
+    if (parsed.contentRange) res.setHeader('Content-Range', parsed.contentRange);
+    return res.status(416).end();
+  }
+  if (parsed.status === 206) {
+    res.setHeader('Content-Range', parsed.contentRange);
+    res.status(206);
+  } else {
+    res.status(200);
+  }
+  if (req.method === 'HEAD') return res.end();
+  const stream = fs.createReadStream(abs, {
+    start: parsed.start,
+    end: parsed.end,
+  });
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500);
+    res.end();
+  });
+  return stream.pipe(res);
+}
+
 /**
  * @route GET /api/events/:id/stream/recording
  * @desc  Stream / redirect a recorded MP4 part (public within 30 days; admins always).
@@ -1214,8 +1267,6 @@ export const playRecording = asyncHandler(async (req, res) => {
   }
 
   const isAdmin = Boolean(req.user && canManageEvent(event, req.user));
-  // Public visitors: only publiclyVisible recordings.
-  // Admins (admin/superadmin): may replay hidden/expired — no createdBy gate.
   if (!rec.publiclyVisible && !isAdmin) {
     res.status(404);
     throw new Error('Recording is not available');
@@ -1228,32 +1279,54 @@ export const playRecording = asyncHandler(async (req, res) => {
     throw new Error('Recording part not found');
   }
 
+  const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
+  const localExists = Boolean(abs && fs.existsSync(abs));
   const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
+
+  let r2Head = null;
   if (r2Key) {
-    const target = await resolveR2BrowserUrl(r2Key);
+    try {
+      r2Head = await headR2Object(r2Key);
+    } catch (err) {
+      console.warn('[recording] R2 HEAD failed:', err?.message || err);
+      r2Head = null;
+    }
+  }
+
+  const source = resolveRecordingPlaybackSource({
+    part,
+    rec,
+    localExists,
+    r2Head,
+  });
+
+  if (source.kind === 'missing') {
+    res.status(404);
+    throw new Error(
+      source.reason === 'r2-missing' ? 'Recording object missing from R2' : 'Recording file missing'
+    );
+  }
+
+  if (source.kind === 'r2') {
+    const target = await resolveR2BrowserUrl(source.r2Key);
     if (target) {
       return res.redirect(302, target);
     }
-    // This API host cannot mint R2 URLs (e.g. Render without R2 env). Hand off to
-    // the stream VPS which already has credentials — do not 500 the player.
     if (!isOnRecordingFallbackHost(req)) {
       const fallback = fallbackRecordingPlayUrl(event.id, part);
       if (fallback) return res.redirect(302, fallback);
     }
+    if (localExists) return sendMp4File(req, res, abs);
     res.status(500);
     throw new Error('R2 recording URL unavailable');
   }
 
-  const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
-  if (!abs || !fs.existsSync(abs)) {
+  if (!localExists) {
     res.status(404);
     throw new Error('Recording file missing');
   }
 
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Accept-Ranges', 'bytes');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-  return res.sendFile(abs);
+  return sendMp4File(req, res, abs);
 });
 
 /**
@@ -1287,22 +1360,48 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
 
   const filename = part?.filename || rec.recordingFilename;
   const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
+  const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
+  const localExists = Boolean(abs && fs.existsSync(abs));
+  const durationSec = Number(
+    (partId
+      ? rec.parts.find((p) => String(p.id) === String(partId))?.durationSec
+      : rec.recordingDurationSec) || rec.recordingDurationSec || 0
+  );
 
+  let r2Head = null;
   if (r2Key) {
-    const url = await resolveR2BrowserUrl(r2Key, { expiresIn: 6 * 3600 });
+    try {
+      r2Head = await headR2Object(r2Key);
+    } catch (err) {
+      console.warn('[recording] R2 HEAD failed:', err?.message || err);
+      r2Head = null;
+    }
+  }
+
+  const source = resolveRecordingPlaybackSource({ part, rec, localExists, r2Head });
+
+  if (source.kind === 'missing') {
+    res.status(404);
+    throw new Error(
+      source.reason === 'r2-missing' ? 'Recording object missing from R2' : 'Recording file missing'
+    );
+  }
+
+  if (source.kind === 'r2') {
+    const url = await resolveR2BrowserUrl(source.r2Key, { expiresIn: RECORDING_SIGNED_URL_EXPIRES_SEC });
     if (url) {
       return res.status(200).json({
         success: true,
         data: {
           url,
           storage: 'r2',
-          expiresInSec: r2PublicUrl(r2Key) ? null : 6 * 3600,
+          expiresInSec: r2PublicUrl(source.r2Key) ? null : RECORDING_SIGNED_URL_EXPIRES_SEC,
           filename,
+          durationSec,
           partId: part ? String(part._id || part.id || '') : '',
         },
       });
     }
-    // Render (no R2 credentials): return the VPS recording play URL so <video> works.
     if (!isOnRecordingFallbackHost(req)) {
       const fallback = fallbackRecordingPlayUrl(event.id, part);
       if (fallback) {
@@ -1313,10 +1412,26 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
             storage: 'r2',
             expiresInSec: null,
             filename,
+            durationSec,
             partId: part ? String(part._id || part.id || '') : '',
           },
         });
       }
+    }
+    if (localExists) {
+      const apiOrigin = requestOrigin(req);
+      const qs = part && (part._id || part.id) ? `?part=${part._id || part.id}` : '';
+      return res.status(200).json({
+        success: true,
+        data: {
+          url: `${apiOrigin}/api/events/${event.id}/stream/recording${qs}`,
+          storage: 'local',
+          expiresInSec: null,
+          filename,
+          durationSec,
+          partId: part ? String(part._id || part.id || '') : '',
+        },
+      });
     }
     res.status(500);
     throw new Error('R2 recording URL unavailable');
@@ -1331,6 +1446,7 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
       storage: 'local',
       expiresInSec: null,
       filename,
+      durationSec,
       partId: part ? String(part._id || part.id || '') : '',
     },
   });

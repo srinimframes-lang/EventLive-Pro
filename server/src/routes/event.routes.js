@@ -110,6 +110,7 @@ router.post(
   emergencyStreamControl
 );
 router.get('/:id/stream/recording/url', optionalAuth, getRecordingPlayUrl);
+router.head('/:id/stream/recording', optionalAuth, playRecording);
 router.get('/:id/stream/recording', optionalAuth, playRecording);
 router.get('/:id/stream/recording/download', protect, downloadRecording);
 router.get('/:id/stream/recording/meta', protect, getRecordingMeta);

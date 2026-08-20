@@ -53,7 +53,52 @@ MEDIA_SECRET=""
 if [[ -f "$SECRET_FILE" ]]; then
   MEDIA_SECRET="$(grep -E '^MEDIA_SERVER_SECRET=' "$SECRET_FILE" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
 fi
-DURATION_SEC="$(printf '%s' "$DURATION_RAW" | awk '{printf "%.0f", $1+0}')"
+DURATION_SEC="$(DURATION_RAW="$DURATION_RAW" OUT="$OUT" python3 - <<'PY'
+import os, re, subprocess
+
+def parse_go_duration(s):
+    s = (s or '').strip()
+    if re.match(r'^-?\d+(\.\d+)?$', s):
+        return int(round(float(s)))
+    total = 0.0
+    matched = False
+    for n, unit in re.findall(r'(-?\d+(?:\.\d+)?)(ns|us|µs|ms|h|m|s)', s):
+        matched = True
+        x = float(n)
+        total += {
+            'h': 3600.0, 'm': 60.0, 's': 1.0, 'ms': 0.001,
+            'us': 1e-6, 'µs': 1e-6, 'ns': 1e-9,
+        }.get(unit, 0.0) * x
+    return int(round(total)) if matched else 0
+
+raw = os.environ.get('DURATION_RAW', '0')
+sec = parse_go_duration(raw)
+out = os.environ.get('OUT', '')
+probe = 0
+if out:
+    try:
+        p = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', out],
+            capture_output=True, text=True, timeout=60,
+        )
+        probe = int(round(float((p.stdout or '0').strip() or 0)))
+    except Exception:
+        probe = 0
+# Prefer parsed MTX duration when it is not the 24h segment ceiling.
+ceiling = 24 * 3600
+if sec > 0 and abs(sec - ceiling) > 90 * 60:
+    print(sec)
+elif probe > 0 and abs(probe - ceiling) > 90 * 60:
+    print(probe)
+elif sec > 0:
+    print(sec)
+elif probe > 0:
+    print(probe)
+else:
+    print(0)
+PY
+)"
 
 PAYLOAD="$(EVENT_ID="$EVENT_ID" PATH_NAME="$PATH_NAME" OUT="$OUT" DURATION_SEC="$DURATION_SEC" python3 - <<'PY'
 import json, os

@@ -26,9 +26,15 @@ function hasPublicRecordings(config) {
 export function isTemporaryRecordingFallback(config) {
   if (!config || config.isLive) return false;
   if (!hasPublicRecordings(config)) return false;
+  // Active publisher / reconnect grace: parts are a short-lived safety net.
+  if (config.reconnecting === true) return true;
   if (config.isPublishing === true) return true;
+  // Probed offline, or API already settled on recorded VOD — never reconnect UX.
+  if (config.isPublishing === false) return false;
+  if (config.playbackMode === 'recorded') return false;
+  if (config.status === 'ended' || config.status === 'cancelled') return false;
   const endedAt = config.liveEndedAt ? new Date(config.liveEndedAt).getTime() : NaN;
-  if (!Number.isFinite(endedAt) || endedAt <= 0) return true;
+  if (!Number.isFinite(endedAt) || endedAt <= 0) return false;
   return Date.now() - endedAt < TEMP_LIVE_FALLBACK_MS;
 }
 
@@ -37,7 +43,7 @@ export function isTemporaryRecordingFallback(config) {
  * Fast while on parts (LIVE may return); normal cadence while live / idle.
  */
 export function livePollIntervalMs(config, { socketConnected = false } = {}) {
-  if (config && !config.isLive && hasPublicRecordings(config)) {
+  if (config && !config.isLive && hasPublicRecordings(config) && isTemporaryRecordingFallback(config)) {
     return LIVE_PRIORITY_POLL_MS;
   }
   return socketConnected ? REPLAY_POLL_CONNECTED_MS : REPLAY_POLL_DISCONNECTED_MS;

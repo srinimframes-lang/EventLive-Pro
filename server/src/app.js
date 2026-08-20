@@ -34,6 +34,8 @@ app.use(
   compression({
     filter(req, res) {
       if (req.headers['x-no-compression']) return false;
+      const url = String(req.originalUrl || req.url || '');
+      if (url.includes('/stream/recording')) return false;
       return compression.filter(req, res);
     },
   })

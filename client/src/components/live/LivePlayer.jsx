@@ -289,6 +289,7 @@ function usePlayerChrome(videoRef, shellRef, {
   mediaActive = true,
   syncKey = 0,
   onResumeFromPause,
+  trustedDurationSec = 0,
 } = {}) {
   const [paused, setPaused] = useState(true);
   const [ended, setEnded] = useState(false);
@@ -321,11 +322,18 @@ function usePlayerChrome(videoRef, shellRef, {
     setEnded(Boolean(video.ended));
     setMuted(Boolean(video.muted));
     setCurrent(video.currentTime || 0);
-    const dur = Number.isFinite(video.duration) ? video.duration : 0;
-    setDuration(dur > 0 && Number.isFinite(dur) ? dur : 0);
+    const rawDur = Number.isFinite(video.duration) ? video.duration : 0;
+    const trusted = Math.max(0, Number(trustedDurationSec) || 0);
+    let dur = rawDur > 0 && Number.isFinite(rawDur) ? rawDur : 0;
+    if (trusted > 0 && dur > 0 && dur > trusted * 1.25) dur = trusted;
+    else if (trusted > 0 && !(dur > 0)) dur = trusted;
+    setDuration(dur);
     if (video.seekable && video.seekable.length > 0) {
       setSeekMin(video.seekable.start(0));
-      setSeekMax(video.seekable.end(video.seekable.length - 1));
+      let max = video.seekable.end(video.seekable.length - 1);
+      if (trusted > 0 && max > trusted * 1.25) max = trusted;
+      else if (dur > 0 && max > dur * 1.25) max = dur;
+      setSeekMax(max);
     } else if (!isLiveMode && dur > 0) {
       setSeekMin(0);
       setSeekMax(dur);
@@ -337,7 +345,7 @@ function usePlayerChrome(videoRef, shellRef, {
         /* ignore */
       }
     }
-  }, [videoRef, isLiveMode]);
+  }, [videoRef, isLiveMode, trustedDurationSec]);
 
   useEffect(() => {
     if (!mediaActive) return undefined;
@@ -428,10 +436,14 @@ function usePlayerChrome(videoRef, shellRef, {
       const video = videoRef.current;
       if (!video || !Number.isFinite(t)) return;
       let target = t;
+      const trusted = Math.max(0, Number(trustedDurationSec) || 0);
       if (video.seekable && video.seekable.length > 0) {
         const start = video.seekable.start(0);
-        const end = video.seekable.end(video.seekable.length - 1);
+        let end = video.seekable.end(video.seekable.length - 1);
+        if (!isLiveMode && trusted > 0 && end > trusted * 1.25) end = trusted;
         target = Math.min(Math.max(t, start), end);
+      } else if (!isLiveMode && trusted > 0) {
+        target = Math.min(Math.max(t, 0), trusted);
       }
       try {
         video.currentTime = target;
@@ -441,7 +453,7 @@ function usePlayerChrome(videoRef, shellRef, {
       if (user) onUserSeekRef.current?.(target);
       bumpControls();
     },
-    [videoRef, bumpControls]
+    [videoRef, bumpControls, isLiveMode, trustedDurationSec]
   );
 
   const seekBy = useCallback(
@@ -1414,13 +1426,23 @@ function formatPartDuration(sec) {
   return `${r}s`;
 }
 
-function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume = false }) {
+function Mp4Player({
+  src,
+  poster,
+  eventId = '',
+  parts = [],
+  awaitingLiveResume = false,
+  trustedDurationSec = 0,
+}) {
   const videoRef = useRef(null);
   const shellRef = useRef(null);
   const posSaveTimer = useRef(null);
   const restoredPosRef = useRef(false);
+  const sourceAttemptRef = useRef(0);
   const [overlay, setOverlay] = useState(OVERLAY.BUFFERING);
   const [resolvedSrc, setResolvedSrc] = useState('');
+  const [loadError, setLoadError] = useState(false);
+  const [sourceEpoch, setSourceEpoch] = useState(0);
   const [userStarted, setUserStarted] = useState(() => loadUserStarted(eventId));
   const sortedParts = useMemo(() => {
     if (!Array.isArray(parts) || parts.length === 0) return [];
@@ -1433,9 +1455,17 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
     [sortedParts]
   );
   const [partIndex, setPartIndex] = useState(0);
+  const activePart = sortedParts[partIndex] || null;
+  const activePartId = activePart?.id || '';
+  const partTrusted = Math.max(
+    0,
+    Number(activePart?.durationSec || trustedDurationSec) || 0
+  );
   const chrome = usePlayerChrome(videoRef, shellRef, {
     isLiveMode: false,
     mediaActive: userStarted,
+    trustedDurationSec: partTrusted,
+    syncKey: `${activePartId}:${sourceEpoch}`,
   });
 
   useEffect(() => {
@@ -1444,10 +1474,9 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
 
   useEffect(() => {
     setPartIndex(0);
+    sourceAttemptRef.current = 0;
+    setLoadError(false);
   }, [eventId, partsKey]);
-
-  const activePart = sortedParts[partIndex] || null;
-  const activePartId = activePart?.id || '';
 
   const handleFirstPlay = useCallback(() => {
     setUserStarted(true);
@@ -1460,10 +1489,12 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
     setOverlay(OVERLAY.BUFFERING);
     setResolvedSrc('');
     restoredPosRef.current = false;
+    setLoadError(false);
 
     (async () => {
       let playSrc = src;
-      if (eventId) {
+      const attempt = sourceAttemptRef.current;
+      if (eventId && attempt === 0) {
         try {
           const { streamService } = await import('../../services/stream.service.js');
           const info = await streamService.resolveRecordingPlayUrl(eventId, activePartId);
@@ -1471,6 +1502,9 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
         } catch {
           /* fall back to API recording path */
         }
+      } else if (attempt >= 1 && src) {
+        // Same-origin Range-capable API path after a signed/R2 URL failure.
+        playSrc = src;
       }
       if (!cancelled) setResolvedSrc(playSrc || '');
     })();
@@ -1478,7 +1512,7 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
     return () => {
       cancelled = true;
     };
-  }, [src, eventId, activePartId]);
+  }, [src, eventId, activePartId, sourceEpoch]);
 
   useEffect(() => {
     if (!userStarted) return undefined;
@@ -1493,12 +1527,15 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
         restoredPosRef.current = true;
         const saved = loadPlaybackPosition(eventId, 'replay', activePartId);
         if (saved != null) {
-          const dur = Number.isFinite(video.duration) ? video.duration : 0;
+          const rawDur = Number.isFinite(video.duration) ? video.duration : 0;
+          const dur =
+            partTrusted > 0 && rawDur > partTrusted * 1.25 ? partTrusted : rawDur || partTrusted;
           const seekable = video.seekable;
           let inRange = false;
           if (seekable && seekable.length > 0) {
             const start = seekable.start(0);
-            const end = seekable.end(seekable.length - 1);
+            let end = seekable.end(seekable.length - 1);
+            if (partTrusted > 0 && end > partTrusted * 1.25) end = partTrusted;
             inRange = saved >= start && saved <= end;
           } else if (dur > 0) {
             inRange = saved > 0 && saved < dur - 0.5;
@@ -1515,18 +1552,40 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
       video.play?.().catch(() => {});
     };
 
-    const onPlaying = () => setOverlay(OVERLAY.NONE);
+    const onPlaying = () => {
+      setLoadError(false);
+      setOverlay(OVERLAY.NONE);
+    };
     const onWaiting = () => {
       if (isActivelyPlaying(video)) return;
       setOverlay(OVERLAY.BUFFERING);
     };
-    const onError = () => setOverlay(OVERLAY.RECONNECTING);
+    const onError = () => {
+      // Completed VOD must not enter live reconnect. Retry once via the API path.
+      if (sourceAttemptRef.current < 1 && src && resolvedSrc !== src) {
+        sourceAttemptRef.current = 1;
+        setSourceEpoch((n) => n + 1);
+        return;
+      }
+      setLoadError(true);
+      setOverlay(OVERLAY.NONE);
+    };
     const onEnded = () => {
       if (partIndex < sortedParts.length - 1) {
         setPartIndex((i) => i + 1);
       }
     };
     const onTimeUpdate = () => {
+      if (partTrusted > 0 && video.currentTime > partTrusted + 0.35) {
+        try {
+          video.currentTime = partTrusted;
+          video.pause();
+        } catch {
+          /* ignore */
+        }
+        onEnded();
+        return;
+      }
       if (posSaveTimer.current) return;
       posSaveTimer.current = setTimeout(() => {
         posSaveTimer.current = null;
@@ -1544,7 +1603,6 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
     video.addEventListener('error', onError);
     video.addEventListener('ended', onEnded);
     video.addEventListener('timeupdate', onTimeUpdate);
-    // Kick play if metadata already available.
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) restoreAndPlay();
 
     return () => {
@@ -1566,7 +1624,16 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
         /* ignore */
       }
     };
-  }, [userStarted, resolvedSrc, partIndex, sortedParts.length, eventId, activePartId]);
+  }, [
+    userStarted,
+    resolvedSrc,
+    partIndex,
+    sortedParts.length,
+    eventId,
+    activePartId,
+    src,
+    partTrusted,
+  ]);
 
   if (!src && sortedParts.length === 0) return <Offline message="Recording is not available." />;
 
@@ -1580,13 +1647,14 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
 
   const statusLabel = awaitingLiveResume
     ? 'Reconnecting…'
-    : sortedParts.length > 1
-      ? `Replay · Part ${partIndex + 1}/${sortedParts.length}`
-      : 'Replay';
+    : loadError
+      ? 'Unable to load recording'
+      : sortedParts.length > 1
+        ? `Replay · Part ${partIndex + 1}/${sortedParts.length}`
+        : 'Replay';
 
   const showInterrupted = awaitingLiveResume;
-  const showReconnecting = !showInterrupted && overlay === OVERLAY.RECONNECTING;
-  const showBuffering = overlay === OVERLAY.BUFFERING && !showInterrupted;
+  const showBuffering = overlay === OVERLAY.BUFFERING && !showInterrupted && !loadError;
 
   return (
     <Frame shellRef={shellRef}>
@@ -1597,14 +1665,14 @@ function Mp4Player({ src, poster, eventId = '', parts = [], awaitingLiveResume =
         controlsList="nodownload"
         playsInline
         autoPlay
+        preload="metadata"
         poster={poster || undefined}
         onClick={chrome.togglePlay}
         onMouseMove={chrome.bumpControls}
         onTouchStart={chrome.bumpControls}
       />
       <StatusOverlay show={showInterrupted} message={LIVE_INTERRUPTED_MSG} />
-      <StatusOverlay show={showReconnecting} message={RECONNECTING_MSG} />
-      <StatusOverlay show={showBuffering && !showReconnecting} />
+      <StatusOverlay show={showBuffering} />
       <PlayerChrome
         chrome={chrome}
         isLiveMode={false}
@@ -1711,6 +1779,11 @@ export default function LivePlayer({ config, onLiveUiChange }) {
       Boolean(config.recordingUrl) ||
       (Array.isArray(config.recordings) && config.recordings.length > 0);
     if (!hasParts && !hlsLiveResume) return undefined;
+    // Settled replay: leftover HLS files must not flip VOD into live reconnect.
+    if (hasParts && !isTemporaryRecordingFallback(config) && config.isPublishing !== true) {
+      setHlsLiveResume(false);
+      return undefined;
+    }
 
     const playback = resolveServerPlaybackUrl(config);
     if (!playback) return undefined;
@@ -1778,6 +1851,8 @@ export default function LivePlayer({ config, onLiveUiChange }) {
   const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
   const hasServerReplay = Boolean(recordingSrc || recordingParts.length > 0);
+  const recordingDurationSec = Math.max(0, Number(config.recordingDurationSec) || 0);
+  const mergePending = String(config.recordingMergeStatus || '') === 'pending';
   const awaitingLiveResume =
     isTemporaryRecordingFallback({
       ...config,
@@ -1800,6 +1875,7 @@ export default function LivePlayer({ config, onLiveUiChange }) {
           eventId={eventId}
           parts={recordingParts}
           awaitingLiveResume={awaitingLiveResume}
+          trustedDurationSec={recordingDurationSec}
         />
       );
     }
@@ -1843,8 +1919,13 @@ export default function LivePlayer({ config, onLiveUiChange }) {
         eventId={eventId}
         parts={recordingParts}
         awaitingLiveResume={awaitingLiveResume}
+        trustedDurationSec={recordingDurationSec}
       />
     );
+  }
+
+  if (isMediaMtx && mergePending) {
+    return <Offline message="Recording is processing…" />;
   }
 
   if (isMediaMtx) {
@@ -1870,8 +1951,13 @@ export default function LivePlayer({ config, onLiveUiChange }) {
         eventId={eventId}
         parts={recordingParts}
         awaitingLiveResume={awaitingLiveResume}
+        trustedDurationSec={recordingDurationSec}
       />
     );
+  }
+
+  if (!live && mergePending) {
+    return <Offline message="Recording is processing…" />;
   }
 
   if (!live) {

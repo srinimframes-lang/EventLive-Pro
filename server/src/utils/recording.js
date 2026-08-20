@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { parseMediaMtxDurationToSec, partTrustedDurationSec, resolveTrustedDurationSec } from './recordingDuration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -107,7 +108,7 @@ export function hydrateLegacyRecordingPart(event) {
     storage: hasR2 ? 'r2' : 'local',
     startedAt,
     endedAt: event.recordingRecordedAt || startedAt,
-    durationSec: Math.max(0, Number(event.recordingDurationSec) || 0),
+    durationSec: Math.max(0, parseMediaMtxDurationToSec(event.recordingDurationSec) || 0),
     sizeBytes: 0,
     createdAt: event.recordingRecordedAt || startedAt,
     deletedAt: event.recordingDeletedAt || undefined,
@@ -162,7 +163,10 @@ export function syncLegacyRecordingFields(event) {
   event.recordingStorage = latest.storage === 'r2' ? 'r2' : 'local';
   event.recordingR2Key = latest.storage === 'r2' ? latest.r2Key || '' : '';
   event.recordingR2Url = latest.storage === 'r2' ? latest.r2Url || '' : '';
-  event.recordingDurationSec = Math.max(0, Number(latest.durationSec) || 0);
+  event.recordingDurationSec = Math.max(
+    0,
+    partTrustedDurationSec(latest) || Number(latest.durationSec) || 0
+  );
   event.recordingRecordedAt = latest.endedAt || latest.createdAt || latest.startedAt;
   if (!event.recordingPublicUntil && event.recordingRecordedAt) {
     event.recordingPublicUntil = addDays(event.recordingRecordedAt, RECORDING_PUBLIC_DAYS);
@@ -204,6 +208,26 @@ export function getRecordingState(event, { now = new Date() } = {}) {
   const publiclyVisible = Boolean(exists && !adminHidden && !expired);
   const first = parts[0] || null;
   const latest = parts.length ? parts[parts.length - 1] : null;
+  const mappedParts = parts.map((p, index) => {
+    let fileMtime = null;
+    const abs = resolveRecordingAbsolutePath(p.localPath || '');
+    if (abs) {
+      try {
+        fileMtime = fs.statSync(abs).mtime;
+      } catch {
+        fileMtime = null;
+      }
+    }
+    const durationSec = partTrustedDurationSec({ ...p, fileMtime });
+    return { p, index, durationSec };
+  });
+  const trustedTotal =
+    mappedParts.reduce((sum, row) => sum + (Number(row.durationSec) || 0), 0) ||
+    resolveTrustedDurationSec({
+      storedDurationSec: event.recordingDurationSec,
+      startedAt: first?.startedAt || event.liveStartedAt || recordedAt,
+      endedAt: latest?.endedAt || event.liveEndedAt || latest?.createdAt || recordedAt,
+    });
 
   return {
     hasRecording: exists,
@@ -219,10 +243,7 @@ export function getRecordingState(event, { now = new Date() } = {}) {
       : '',
     recordingRecordedAt: recordedAt,
     recordingPublicUntil: publicUntil,
-    recordingDurationSec:
-      parts.reduce((sum, p) => sum + (Number(p.durationSec) || 0), 0) ||
-      event.recordingDurationSec ||
-      0,
+    recordingDurationSec: Math.max(0, Number(trustedTotal) || 0),
     recordingHidden: adminHidden,
     recordingExpired: expired,
     recordingDeleted: deleted,
@@ -232,11 +253,11 @@ export function getRecordingState(event, { now = new Date() } = {}) {
       ? `/api/events/${eventIdOf(event)}/stream/recording/download`
       : '',
     firstPlayPath: first ? partPlayPath(event, first) : '',
-    parts: parts.map((p, index) => ({
+    parts: mappedParts.map(({ p, index, durationSec }) => ({
       id: String(p._id || p.id || ''),
       part: index + 1,
       filename: p.filename || '',
-      durationSec: Math.max(0, Number(p.durationSec) || 0),
+      durationSec: Math.max(0, Number(durationSec) || 0),
       sizeBytes: Math.max(0, Number(p.sizeBytes) || 0),
       storage: p.storage === 'r2' ? 'r2' : 'local',
       r2Key: p.r2Key || '',
@@ -317,7 +338,14 @@ export function replacePartsWithMergedRecording(
     storage: 'local',
     startedAt: startedAt ? new Date(startedAt) : parseRecordingFilenameTimestamp(filename) || when,
     endedAt: endedAt ? new Date(endedAt) : when,
-    durationSec: Math.max(0, Number(durationSec) || 0),
+    durationSec: Math.max(
+      0,
+      resolveTrustedDurationSec({
+        storedDurationSec: durationSec,
+        startedAt: startedAt ? new Date(startedAt) : parseRecordingFilenameTimestamp(filename) || when,
+        endedAt: endedAt ? new Date(endedAt) : when,
+      }) || Number(durationSec) || 0
+    ),
     sizeBytes,
     createdAt: when,
   });
@@ -349,11 +377,22 @@ export function applyRecordingToEvent(event, { filePath, durationSec = 0, record
   const filename = path.basename(abs);
   const startedAt = parseRecordingFilenameTimestamp(filename) || when;
   let sizeBytes = 0;
+  let fileMtime = when;
   try {
-    sizeBytes = fs.statSync(abs).size;
+    const st = fs.statSync(abs);
+    sizeBytes = st.size;
+    if (st.mtime) fileMtime = st.mtime;
   } catch {
     sizeBytes = 0;
   }
+
+  const parsedDuration = parseMediaMtxDurationToSec(durationSec);
+  const trustedDuration = resolveTrustedDurationSec({
+    storedDurationSec: parsedDuration,
+    startedAt,
+    endedAt: when,
+    fileMtime,
+  });
 
   const parts = ensureRecordingsArray(event);
   // Deduplicate by filename/path if finalize is retried for the same segment.
@@ -366,7 +405,10 @@ export function applyRecordingToEvent(event, { filePath, durationSec = 0, record
   if (existing) {
     existing.localPath = abs;
     existing.filename = filename;
-    existing.durationSec = Math.max(0, Number(durationSec) || existing.durationSec || 0);
+    existing.durationSec = Math.max(
+      0,
+      trustedDuration || parsedDuration || existing.durationSec || 0
+    );
     existing.sizeBytes = sizeBytes || existing.sizeBytes || 0;
     existing.endedAt = when;
     if (existing.storage !== 'r2') existing.storage = 'local';
@@ -379,7 +421,7 @@ export function applyRecordingToEvent(event, { filePath, durationSec = 0, record
       storage: 'local',
       startedAt,
       endedAt: when,
-      durationSec: Math.max(0, Number(durationSec) || 0),
+      durationSec: Math.max(0, trustedDuration || parsedDuration || 0),
       sizeBytes,
       createdAt: when,
     });
