@@ -145,3 +145,33 @@ export function findPartInList(parts, partId) {
     null
   );
 }
+
+/**
+ * Re-expose leftover original parts so hosts still running older playback
+ * code (VPS) can find them. Never deletes recordings, R2 objects, or parts.
+ */
+export function restoreSoftDeletedPlayableParts(event, playableParts = []) {
+  const ids = new Set(
+    (playableParts || [])
+      .map((p) => String(p?._id || p?.id || ''))
+      .filter(Boolean)
+  );
+  if (!ids.size) return false;
+  let changed = false;
+  for (const p of ensureRecordingsArray(event)) {
+    if (!p?.deletedAt) continue;
+    if (isMergedRecordingFilename(p.filename)) continue;
+    if (!ids.has(String(p._id || p.id || ''))) continue;
+    p.deletedAt = null;
+    changed = true;
+  }
+  return changed;
+}
+
+export async function persistPlayableRecordingParts(event) {
+  const playable = await loadPlayableRecordingParts(event);
+  if (!restoreSoftDeletedPlayableParts(event, playable)) return playable;
+  if (typeof event.markModified === 'function') event.markModified('recordings');
+  if (typeof event.save === 'function') await event.save();
+  return playable;
+}

@@ -34,7 +34,7 @@ import {
   resolveRecordingAbsolutePath,
   resolveRecordingPartForPlayback,
 } from '../utils/recording.js';
-import { findPartInList, loadPlayableRecordingParts } from '../utils/recordingPlayable.js';
+import { findPartInList, persistPlayableRecordingParts } from '../utils/recordingPlayable.js';
 import {
   deleteRecordingFromR2,
   headR2Object,
@@ -515,7 +515,7 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
   event = (await resolveExpiredReconnect(event, io)) || event;
   const youtubePlayback = await resolveYoutubePlaybackForPublicEvent(event);
   const isPublishing = await publishingStatusForEvent(event);
-  const playableParts = isPublishing ? null : await loadPlayableRecordingParts(event);
+  const playableParts = isPublishing ? null : await persistPlayableRecordingParts(event);
   const data = publicStreamConfig(event, { isPublishing, youtubePlayback, playableParts });
   console.info('[youtube-embed] public stream config', {
     eventId: event.id,
@@ -1291,7 +1291,7 @@ export const playRecording = asyncHandler(async (req, res) => {
   }
 
   const partId = String(req.query.part || '').trim();
-  const playable = await loadPlayableRecordingParts(event);
+  const playable = await persistPlayableRecordingParts(event);
   const part =
     findPartInList(playable, partId || undefined) ||
     resolveRecordingPartForPlayback(event, partId || undefined);
@@ -1377,7 +1377,7 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   }
 
   const partId = String(req.query.part || '').trim();
-  const playable = await loadPlayableRecordingParts(event);
+  const playable = await persistPlayableRecordingParts(event);
   const part =
     findPartInList(playable, partId || undefined) ||
     resolveRecordingPartForPlayback(event, partId || undefined);
