@@ -185,3 +185,17 @@ test('uploaded wedding-card events stay on the wedding template even if category
     DEFAULT_WEDDING_CARD_TEMPLATE
   );
 });
+
+test('quick-create wedding-card events stay groom-first on the wedding template', () => {
+  assert.equal(isManualWeddingEntry({ source: 'wedding-card', weddingEntryMode: 'quick' }), false);
+  assert.equal(
+    resolveWatchWeddingTemplate({
+      source: 'wedding-card',
+      weddingEntryMode: 'quick',
+      pageTemplate: 'default',
+    }),
+    DEFAULT_WEDDING_CARD_TEMPLATE
+  );
+  const start = combineWeddingCardStartTime('2026-12-12', '10:30');
+  assert.equal(start.toISOString(), '2026-12-12T05:00:00.000Z');
+});

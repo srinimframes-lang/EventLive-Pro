@@ -32,6 +32,14 @@ const EMPTY_MANUAL = {
   additionalDetails: '',
 };
 
+const EMPTY_QUICK = {
+  groomName: '',
+  brideName: '',
+  weddingDate: '',
+  weddingTime: '',
+  venue: '',
+};
+
 const PHASES = [
   { id: 'upload', label: 'Uploading wedding card…' },
   { id: 'read', label: 'Reading wedding card…' },
@@ -51,6 +59,63 @@ function wedsTitle(groom, bride) {
   const g = String(groom || '').trim();
   const b = String(bride || '').trim();
   return g && b ? `${g} Weds ${b}` : '';
+}
+
+function formatPreviewDate(isoDate) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || ''));
+  if (!match) return '';
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function formatPreviewTime(value) {
+  const match = /^(\d{1,2}):(\d{2})/.exec(String(value || ''));
+  if (!match) return '';
+  const hour24 = Number(match[1]);
+  if (!Number.isFinite(hour24) || hour24 < 0 || hour24 > 23) return '';
+  const suffix = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${match[2]} ${suffix}`;
+}
+
+function formatIstDateLabel(startTime) {
+  const date = new Date(startTime);
+  if (Number.isNaN(date.getTime())) return '';
+  return date
+    .toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+    .replace(/\//g, '-');
+}
+
+function formatIstTimeLabel(startTime) {
+  const date = new Date(startTime);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+async function copyExactUrl(url) {
+  if (!url) throw new Error('Nothing to copy');
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(url);
+    return;
+  }
+  const area = document.createElement('textarea');
+  area.value = url;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.left = '-9999px';
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand('copy');
+  document.body.removeChild(area);
 }
 
 function brideWedsTitle(groom, bride) {
@@ -83,6 +148,7 @@ export default function WeddingCardUpload() {
   const [preview, setPreview] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
   const [manual, setManual] = useState(EMPTY_MANUAL);
+  const [quick, setQuick] = useState(EMPTY_QUICK);
   const [extracted, setExtracted] = useState(false);
   const [needsReview, setNeedsReview] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
@@ -95,6 +161,12 @@ export default function WeddingCardUpload() {
     [form.groomName, form.brideName]
   );
   const manualTitle = useMemo(() => manualLiveTitle(manual), [manual]);
+  const quickTitle = useMemo(
+    () => wedsTitle(quick.groomName, quick.brideName),
+    [quick.groomName, quick.brideName]
+  );
+  const quickDateLabel = formatPreviewDate(quick.weddingDate);
+  const quickTimeLabel = formatPreviewTime(quick.weddingTime);
 
   useEffect(() => {
     return () => {
@@ -117,7 +189,10 @@ export default function WeddingCardUpload() {
       ...payload,
       event,
       liveUrl,
-      title: payload?.title || event?.title || (mode === 'manual' ? manualTitle : title),
+      title:
+        payload?.title ||
+        event?.title ||
+        (mode === 'manual' ? manualTitle : mode === 'quick' ? quickTitle : title),
     });
     if (payload?.status === 'ready' && liveUrl) setPhase('ready');
   };
@@ -166,6 +241,7 @@ export default function WeddingCardUpload() {
     setPhase('');
     setForm(EMPTY_FORM);
     setManual(EMPTY_MANUAL);
+    setQuick(EMPTY_QUICK);
     stopPoll();
     if (preview.startsWith('blob:')) URL.revokeObjectURL(preview);
     setFile(null);
@@ -310,14 +386,86 @@ export default function WeddingCardUpload() {
     }
   };
 
+  const confirmQuick = async (e) => {
+    e.preventDefault();
+    if (phase) return;
+    setError('');
+
+    const groomName = quick.groomName.trim();
+    const brideName = quick.brideName.trim();
+    const weddingDate = quick.weddingDate;
+    const weddingTime = quick.weddingTime;
+    const venue = quick.venue.trim();
+
+    if (!groomName) {
+      setError('Please enter the groom name.');
+      return;
+    }
+    if (!brideName) {
+      setError('Please enter the bride name.');
+      return;
+    }
+    if (!weddingDate) {
+      setError('Please enter the wedding date.');
+      return;
+    }
+    if (!weddingTime) {
+      setError('Please enter the wedding time.');
+      return;
+    }
+    if (!venue) {
+      setError('Please enter the venue.');
+      return;
+    }
+
+    setMode('quick');
+    setPhase('youtube');
+    try {
+      const payload = await eventService.confirmWeddingCard({
+        entryMode: 'quick',
+        groomName,
+        brideName,
+        weddingDate,
+        weddingTime,
+        venue,
+      });
+      const event = payload?.data || payload;
+      const nextUrl = payload?.liveUrl || (event ? buildWatchUrl(event) : '');
+      const nextTitle = payload?.title || event?.title || wedsTitle(groomName, brideName);
+      setResult({
+        ...payload,
+        event,
+        liveUrl: nextUrl,
+        title: nextTitle,
+      });
+      if (nextUrl) {
+        setError('');
+        setPhase('ready');
+        return;
+      }
+      setError(
+        payload?.message ||
+          'Wedding details were saved, but the live link could not be generated. Please try again.'
+      );
+      setPhase('');
+    } catch (err) {
+      setError(err.message || 'Could not create the wedding live link. Please try again.');
+      setPhase('');
+    }
+  };
+
   const liveUrl = result?.liveUrl || '';
   const savedEvent = result?.event;
-  const progressPhases = mode === 'manual' ? PHASES.filter((item) => item.id !== 'upload' && item.id !== 'read' && item.id !== 'prepare') : PHASES;
+  const progressPhases =
+    mode === 'manual' || mode === 'quick'
+      ? PHASES.filter((item) => item.id !== 'upload' && item.id !== 'read' && item.id !== 'prepare')
+      : PHASES;
   const phaseIndex = progressPhases.findIndex((item) => item.id === phase);
   const showProgress = Boolean(phase) && phase !== 'ready';
   const showChoice = !mode && phase !== 'ready';
   const showUpload = mode === 'upload' && phase !== 'ready';
   const showManual = mode === 'manual' && phase !== 'ready';
+  const showQuick = mode === 'quick' && phase !== 'ready';
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
@@ -348,6 +496,31 @@ export default function WeddingCardUpload() {
                 Upload an invitation photo. We read the names and date, then create the live page.
               </p>
             </button>
+
+            <section className="card border-rose-100 bg-white p-5 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-700">No photo needed</p>
+              <h2 className="mt-2 font-display text-2xl font-bold text-slate-900">
+                Quick Create Live Link
+              </h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Enter the couple details yourself. Names are saved exactly as typed. No invitation
+                photo is required.
+              </p>
+              <div className="mt-4">
+                <YoutubeConnectCard returnTo="/wedding-card" />
+              </div>
+              <QuickCreateForm
+                form={quick}
+                setForm={setQuick}
+                error={error}
+                phase={phase}
+                title={quickTitle}
+                dateLabel={quickDateLabel}
+                timeLabel={quickTimeLabel}
+                onSubmit={confirmQuick}
+              />
+            </section>
+
             <button
               type="button"
               className="card w-full border-amber-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-5 text-left shadow-sm transition hover:border-amber-300"
@@ -396,6 +569,17 @@ export default function WeddingCardUpload() {
               </p>
             </>
           ) : null}
+          {showQuick ? (
+            <>
+              <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">
+                Quick Create Live Link
+              </h1>
+              <p className="mt-1 text-slate-600">
+                Enter the couple details to create your EventLivePro live page. Names are saved
+                exactly as typed. No invitation photo is required.
+              </p>
+            </>
+          ) : null}
         </>
       )}
 
@@ -414,7 +598,31 @@ export default function WeddingCardUpload() {
         </div>
       )}
 
-      {phase === 'ready' && result ? (
+      {mode === 'quick' && error && phase !== 'ready' ? (
+        <div className="card mt-6 border-red-200 bg-red-50">
+          <p className="text-sm font-semibold text-red-800">Could not create the live link</p>
+          <p className="mt-1 text-sm text-red-700">{error}</p>
+        </div>
+      ) : null}
+
+      {mode === 'quick' && phase === 'ready' && result ? (
+        <QuickCreateSuccess
+          title={result.title || quickTitle}
+          dateLabel={
+            formatIstDateLabel(savedEvent?.startTime) ||
+            formatPreviewDate(quick.weddingDate)
+          }
+          timeLabel={
+            formatIstTimeLabel(savedEvent?.startTime) ||
+            formatPreviewTime(quick.weddingTime)
+          }
+          venue={String(savedEvent?.venue || quick.venue || '').trim()}
+          liveUrl={liveUrl}
+          homePath={homePath}
+        />
+      ) : null}
+
+      {phase === 'ready' && result && mode !== 'quick' ? (
         <div className="card mt-6 border-green-200 bg-green-50">
           <p className="text-sm font-semibold text-green-800">Live link ready</p>
           <p className="mt-1 text-sm font-medium text-slate-800">{result.title}</p>
@@ -444,7 +652,7 @@ export default function WeddingCardUpload() {
         </div>
       ) : null}
 
-      {result && phase !== 'ready' && result.status === 'provisioning' && !showProgress ? (
+      {result && phase !== 'ready' && result.status === 'provisioning' && !showProgress && mode !== 'quick' ? (
         <div className="card mt-6 border-amber-200 bg-amber-50">
           <p className="text-sm font-semibold text-amber-900">
             Wedding details saved. YouTube Live link is being generated.
@@ -745,6 +953,26 @@ export default function WeddingCardUpload() {
           </form>
         </>
       )}
+
+      {showQuick && !showProgress && (
+        <>
+          <div className="mt-8">
+            <YoutubeConnectCard returnTo="/wedding-card" />
+          </div>
+          <div className="card mt-6 p-5">
+            <QuickCreateForm
+              form={quick}
+              setForm={setQuick}
+              error={null}
+              phase={phase}
+              title={quickTitle}
+              dateLabel={quickDateLabel}
+              timeLabel={quickTimeLabel}
+              onSubmit={confirmQuick}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -757,6 +985,155 @@ function Field({ label, htmlFor, required, children }) {
         {required ? <span className="text-red-600"> *</span> : null}
       </label>
       {children}
+    </div>
+  );
+}
+
+function QuickCreateForm({ form, setForm, error, phase, title, dateLabel, timeLabel, onSubmit }) {
+  const venue = String(form.venue || '').trim();
+  const update = (key) => (e) => setForm((current) => ({ ...current, [key]: e.target.value }));
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="mt-5 space-y-4">
+      {error ? (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Groom Name" htmlFor="quickGroomName" required>
+          <input
+            id="quickGroomName"
+            name="groomName"
+            className="input"
+            maxLength={80}
+            autoComplete="name"
+            placeholder="Srinivas"
+            value={form.groomName}
+            onChange={update('groomName')}
+          />
+        </Field>
+        <Field label="Bride Name" htmlFor="quickBrideName" required>
+          <input
+            id="quickBrideName"
+            name="brideName"
+            className="input"
+            maxLength={80}
+            autoComplete="name"
+            placeholder="Mounika"
+            value={form.brideName}
+            onChange={update('brideName')}
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Wedding Date" htmlFor="quickWeddingDate" required>
+          <input
+            id="quickWeddingDate"
+            name="weddingDate"
+            type="date"
+            className="input"
+            value={form.weddingDate}
+            onChange={update('weddingDate')}
+          />
+        </Field>
+        <Field label="Wedding Time" htmlFor="quickWeddingTime" required>
+          <input
+            id="quickWeddingTime"
+            name="weddingTime"
+            type="time"
+            className="input"
+            value={form.weddingTime}
+            onChange={update('weddingTime')}
+          />
+        </Field>
+      </div>
+
+      <Field label="Venue" htmlFor="quickVenue" required>
+        <input
+          id="quickVenue"
+          name="venue"
+          className="input"
+          maxLength={200}
+          placeholder="Hyderabad"
+          value={form.venue}
+          onChange={update('venue')}
+        />
+      </Field>
+
+      <div className="rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-amber-50 px-4 py-4 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">Live preview</p>
+        <p className="mt-2 font-display text-xl font-bold text-slate-900">
+          {title || 'Groom Weds Bride'}
+        </p>
+        <p className="mt-2 text-sm text-slate-600">{dateLabel || 'Date'}</p>
+        <p className="text-sm text-slate-600">{timeLabel || 'Time'}</p>
+        <p className="mt-1 text-sm text-slate-700">📍 {venue || 'Venue'}</p>
+      </div>
+
+      <button type="submit" className="btn-primary w-full" disabled={Boolean(phase)}>
+        Create Wedding Live Link
+      </button>
+    </form>
+  );
+}
+
+function QuickCreateSuccess({ title, dateLabel, timeLabel, venue, liveUrl, homePath }) {
+  const [copied, setCopied] = useState(false);
+  const coupleTitle = String(title || '').trim() || 'Groom Weds Bride';
+  const shareText = liveUrl ? `${coupleTitle}\n${liveUrl}` : coupleTitle;
+  const whatsappHref = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
+  const copyLink = async () => {
+    if (!liveUrl) return;
+    try {
+      await copyExactUrl(liveUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt('Copy this live link:', liveUrl);
+    }
+  };
+
+  return (
+    <div className="card mt-6 border-rose-100 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-6 text-center shadow-sm">
+      <p className="text-sm font-semibold text-emerald-700">✅ Wedding Live Link Created</p>
+      <h1 className="mt-3 font-display text-3xl font-bold text-slate-900">{coupleTitle}</h1>
+      {dateLabel ? <p className="mt-3 text-sm text-slate-600">{dateLabel}</p> : null}
+      {timeLabel ? <p className="text-sm text-slate-600">{timeLabel}</p> : null}
+      {venue ? <p className="mt-1 text-sm text-slate-700">📍 {venue}</p> : null}
+      {liveUrl ? (
+        <p className="mt-4 break-all text-xs text-slate-500">{liveUrl}</p>
+      ) : null}
+
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <button type="button" className="btn-primary w-full" disabled={!liveUrl} onClick={copyLink}>
+          {copied ? 'Copied' : 'Copy Live Link'}
+        </button>
+        <a
+          href={whatsappHref}
+          target="_blank"
+          rel="noreferrer"
+          className="btn inline-flex w-full items-center justify-center gap-2 bg-[#25D366] text-white hover:bg-[#1da851] focus:ring-[#25D366]"
+        >
+          Share on WhatsApp
+        </a>
+        {liveUrl ? (
+          <a
+            href={liveUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="btn-outline w-full"
+          >
+            Open Live Page
+          </a>
+        ) : (
+          <span className="btn-outline w-full cursor-not-allowed opacity-50">Open Live Page</span>
+        )}
+        <Link to={homePath} className="btn-outline w-full">
+          Back to Dashboard
+        </Link>
+      </div>
     </div>
   );
 }

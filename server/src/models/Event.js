@@ -431,7 +431,7 @@ const eventSchema = new Schema(
     // How a wedding-card live page was created. Empty = uploaded invitation (legacy).
     weddingEntryMode: {
       type: String,
-      enum: ['', 'card', 'manual'],
+      enum: ['', 'card', 'manual', 'quick'],
       default: '',
     },
     weddingCardFingerprint: {

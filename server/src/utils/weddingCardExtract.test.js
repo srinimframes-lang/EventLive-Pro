@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildBrideWedsGroomTitle,
+  buildExactWedsTitle,
   buildWeddingEventTitle,
   buildWedsTitle,
   isProvisionableCouplePair,
   normalizeWeddingPersonName,
   parseWeddingCardText,
+  preserveEnteredPersonName,
   stripHonorifics,
 } from './weddingCardExtract.js';
 
@@ -197,6 +199,15 @@ test('buildWedsTitle is deterministic from normalized Chi. names', () => {
 test('buildBrideWedsGroomTitle is bride first for manual wedding entry', () => {
   assert.equal(buildBrideWedsGroomTitle('Mounika', 'Srinivas'), 'Mounika Weds Srinivas');
   assert.equal(buildWedsTitle('Srinivas', 'Mounika'), 'Srinivas Weds Mounika');
+});
+
+test('quick-create title keeps exact user spelling and groom-first order', () => {
+  assert.equal(buildExactWedsTitle('Srinivas', 'Mounika'), 'Srinivas Weds Mounika');
+  assert.equal(buildExactWedsTitle('  McDonald  ', "O'Neil"), "McDonald Weds O'Neil");
+  assert.equal(buildExactWedsTitle('sriNivas', 'MOUNIKA'), 'sriNivas Weds MOUNIKA');
+  assert.equal(preserveEnteredPersonName('  Chi. Srinivas  '), 'Chi. Srinivas');
+  assert.notEqual(normalizeWeddingPersonName('sriNivas'), 'sriNivas');
+  assert.notEqual(buildExactWedsTitle('Srinivas', 'Mounika'), buildBrideWedsGroomTitle('Mounika', 'Srinivas'));
 });
 
 test('OCR invitation headings never become the event title', () => {

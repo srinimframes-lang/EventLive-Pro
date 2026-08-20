@@ -242,11 +242,27 @@ export function isValidWeddingPersonName(value) {
   return true;
 }
 
+/** Keep Quick Create spelling exactly as typed. Does not title-case or strip honorifics. */
+export function preserveEnteredPersonName(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
 /** Title is ALWAYS `${groom} Weds ${bride}` from normalized names — never OCR text. */
 export function buildWedsTitle(groomName, brideName) {
   if (!isValidWeddingPersonName(groomName) || !isValidWeddingPersonName(brideName)) return '';
   const groom = normalizeWeddingPersonName(groomName);
   const bride = normalizeWeddingPersonName(brideName);
+  if (!groom || !bride) return '';
+  return `${groom} Weds ${bride}`.slice(0, 120);
+}
+
+/** Quick Create title from the exact names the user typed. Does not use OCR. */
+export function buildExactWedsTitle(groomName, brideName) {
+  const groom = preserveEnteredPersonName(groomName);
+  const bride = preserveEnteredPersonName(brideName);
   if (!groom || !bride) return '';
   return `${groom} Weds ${bride}`.slice(0, 120);
 }
