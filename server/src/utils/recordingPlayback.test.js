@@ -164,6 +164,14 @@ test('selectPlayableRecordingParts falls back from unplayable merged MP4', () =>
     existingIds: new Set([orig.r2Key]),
   });
   assert.equal(keepMerged[0]._id, 'm1');
+
+  const incompleteStillFallsBack = selectPlayableRecordingParts({
+    active: [merged],
+    all: [orig, merged],
+    inspect: { incomplete: true, browserPlayable: false },
+    existingIds: new Set(['o1', orig.r2Key]),
+  });
+  assert.equal(incompleteStillFallsBack[0]._id, 'o1');
 });
 
 test('HTTP Range requests: 206 partial and 416 unsatisfiable', () => {

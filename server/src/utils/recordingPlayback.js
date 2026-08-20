@@ -333,7 +333,7 @@ export function selectPlayableRecordingParts({
   const mergedOnly =
     activeList.length === 1 && isMergedRecordingFilename(activeList[0].filename);
   const playableMerged = Boolean(inspect && inspect.browserPlayable);
-  if (!mergedOnly || playableMerged || inspect?.incomplete) return activeList;
+  if (!mergedOnly || playableMerged) return activeList;
 
   const originals = (Array.isArray(all) ? all : []).filter((p) => {
     if (!p) return false;

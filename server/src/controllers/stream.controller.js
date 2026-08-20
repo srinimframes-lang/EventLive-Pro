@@ -1322,6 +1322,10 @@ export const playRecording = asyncHandler(async (req, res) => {
   });
 
   if (source.kind === 'missing') {
+    if (!isOnRecordingFallbackHost(req)) {
+      const fallback = fallbackRecordingPlayUrl(event.id, part);
+      if (fallback) return res.redirect(302, fallback);
+    }
     res.status(404);
     throw new Error(
       source.reason === 'r2-missing' ? 'Recording object missing from R2' : 'Recording file missing'
@@ -1405,6 +1409,22 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   const source = resolveRecordingPlaybackSource({ part, rec, localExists, r2Head });
 
   if (source.kind === 'missing') {
+    if (!isOnRecordingFallbackHost(req)) {
+      const fallback = fallbackRecordingPlayUrl(event.id, part);
+      if (fallback) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            url: fallback,
+            storage: 'local',
+            expiresInSec: null,
+            filename,
+            durationSec,
+            partId: part ? String(part._id || part.id || '') : '',
+          },
+        });
+      }
+    }
     res.status(404);
     throw new Error(
       source.reason === 'r2-missing' ? 'Recording object missing from R2' : 'Recording file missing'

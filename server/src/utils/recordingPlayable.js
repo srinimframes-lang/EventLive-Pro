@@ -84,12 +84,14 @@ async function partSourceExists(part) {
   if (part?.r2Key) {
     try {
       const head = await headR2Object(part.r2Key);
-      return Boolean(head?.exists && Number(head.size || 0) > 200000);
+      if (head?.exists && Number(head.size || 0) > 200000) return true;
     } catch {
-      return false;
+      /* try localPath candidate below */
     }
   }
-  return false;
+  // Render cannot see VPS disks. Keep sizable local leftovers so the
+  // recording fallback host (stream.eventlivepro.com) can serve them.
+  return Boolean(part?.localPath && Number(part.sizeBytes || 0) > 200000);
 }
 
 /**
@@ -104,9 +106,13 @@ export async function loadPlayableRecordingParts(event) {
 
   let inspect = null;
   if (mergedOnly) {
-    inspect = await inspectRecordingInit(active[0]);
+    try {
+      inspect = await inspectRecordingInit(active[0]);
+    } catch {
+      inspect = { incomplete: true, browserPlayable: false };
+    }
   }
-  if (!mergedOnly || inspect?.browserPlayable || inspect?.incomplete) {
+  if (!mergedOnly || inspect?.browserPlayable) {
     return active;
   }
 
