@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import '../styles/watch-theme.css';
 import {
   eventService,
@@ -15,6 +15,7 @@ import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 import EventQrCard from '../components/EventQrCard.jsx';
 import YoutubeThumbnailPreview from '../components/admin/YoutubeThumbnailPreview.jsx';
+import CopyYoutubeStreamKey from '../components/admin/CopyYoutubeStreamKey.jsx';
 import ToastBanner from '../components/ToastBanner.jsx';
 import { useToast } from '../hooks/useToast.js';
 import { streamService } from '../services/stream.service.js';
@@ -95,6 +96,7 @@ export default function EventForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, isAdmin, isSuperAdmin, isSubAdmin, refreshUser } = useAuth();
   const { settings } = useSettings();
@@ -147,7 +149,7 @@ export default function EventForm() {
   const [serverStream, setServerStream] = useState(null);
   const [serverStreamLoading, setServerStreamLoading] = useState(false);
   const [youtubeConnected, setYoutubeConnected] = useState(false);
-  const [youtubeIngest, setYoutubeIngest] = useState(null);
+  const [youtubeIngest, setYoutubeIngest] = useState(location.state?.youtubeIngest || null);
 
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(isEdit);
@@ -897,6 +899,7 @@ export default function EventForm() {
     if (saved) {
       navigate(isEdit ? `/events/${saved.slug || saved.id}` : `/events/${saved.id}/edit`, {
         replace: true,
+        state: saved.youtubeIngest ? { youtubeIngest: saved.youtubeIngest } : undefined,
       });
     }
   };
@@ -1366,8 +1369,17 @@ export default function EventForm() {
                       />
                     </Field>
                   ) : null}
+                  {isAdmin && id ? (
+                    <>
+                      <CopyYoutubeStreamKey eventId={id} ingest={youtubeIngest} compact />
+                      <p className="text-xs text-slate-500">Press K to copy the Stream Key.</p>
+                    </>
+                  ) : null}
                 </div>
               )}
+              {destYoutube && isAdmin && id && !(youtubeIngest?.watchUrl || youtubeIngest?.streamKey) ? (
+                <CopyYoutubeStreamKey eventId={id} />
+              ) : null}
 
               {showFacebookFields && (
                 <div className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4">

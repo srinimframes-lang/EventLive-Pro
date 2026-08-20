@@ -10,6 +10,7 @@ import EventSeo from '../components/seo/EventSeo.jsx';
 import { coverImageAlt } from '../utils/seo.js';
 import EventQrCard from '../components/EventQrCard.jsx';
 import ShareEmbedCard from '../components/ShareEmbedCard.jsx';
+import CopyYoutubeStreamKey from '../components/admin/CopyYoutubeStreamKey.jsx';
 import { formatDateTime, resolveMediaUrl, watchPath as buildWatchPath } from '../utils/format.js';
 
 export default function EventDetail() {
@@ -132,6 +133,9 @@ export default function EventDetail() {
 
       {canManage && (
         <div className="mt-6 space-y-6">
+          {event.youtubeVideoId || event.youtubeWatchUrl || event.youtubeBroadcastId ? (
+            <CopyYoutubeStreamKey eventId={event.id} />
+          ) : null}
           <ShareEmbedCard event={event} />
           <EventQrCard event={event} />
         </div>

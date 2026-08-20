@@ -737,7 +737,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/events/:id/youtube-ingest
- * @desc  Owner/admin YouTube RTMP + watch URL (never public, never OAuth tokens)
+ * @desc  Admin/Super Admin YouTube RTMP + stream key (never public, never OAuth tokens)
  * @access Private
  */
 export const getYoutubeIngest = asyncHandler(async (req, res) => {
@@ -745,6 +745,10 @@ export const getYoutubeIngest = asyncHandler(async (req, res) => {
   if (!event) {
     res.status(404);
     throw new Error('Event not found');
+  }
+  if (!isAdminPanelUser(req.user)) {
+    res.status(403);
+    throw new Error('You do not have permission to view YouTube ingest credentials');
   }
   assertCanModify(event, req.user, res);
 

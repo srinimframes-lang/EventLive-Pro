@@ -22,7 +22,7 @@ export const eventService = {
   },
   async update(id, payload) {
     const { data } = await api.patch(`/api/events/${id}`, payload);
-    return data.data;
+    return { ...data.data, youtubeIngest: data.youtubeIngest || null };
   },
   async remove(id) {
     const { data } = await api.delete(`/api/events/${id}`);

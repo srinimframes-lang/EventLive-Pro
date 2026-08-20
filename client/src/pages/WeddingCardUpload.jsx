@@ -4,6 +4,7 @@ import { eventService } from '../services/event.service.js';
 import { buildWatchUrl, resolveMediaUrl } from '../utils/format.js';
 import ShareButtons from '../components/ShareButtons.jsx';
 import YoutubeConnectCard from '../components/YoutubeConnectCard.jsx';
+import CopyYoutubeStreamKey from '../components/admin/CopyYoutubeStreamKey.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { MANUAL_WEDDING_CATEGORIES, isCoupleEventType } from '../utils/weddingTemplates.js';
 
@@ -618,6 +619,7 @@ export default function WeddingCardUpload() {
           }
           venue={String(savedEvent?.venue || quick.venue || '').trim()}
           liveUrl={liveUrl}
+          eventId={result.eventId || savedEvent?.id}
           homePath={homePath}
         />
       ) : null}
@@ -630,6 +632,11 @@ export default function WeddingCardUpload() {
           {liveUrl ? (
             <div className="mt-3">
               <ShareButtons url={liveUrl} title={result.title} />
+            </div>
+          ) : null}
+          {isAdmin && (result.eventId || savedEvent?.id) ? (
+            <div className="mt-4 text-left">
+              <CopyYoutubeStreamKey eventId={result.eventId || savedEvent?.id} />
             </div>
           ) : null}
           {savedEvent?.coverImage ? (
@@ -1078,7 +1085,7 @@ function QuickCreateForm({ form, setForm, error, phase, title, dateLabel, timeLa
   );
 }
 
-function QuickCreateSuccess({ title, dateLabel, timeLabel, venue, liveUrl, homePath }) {
+function QuickCreateSuccess({ title, dateLabel, timeLabel, venue, liveUrl, eventId, homePath }) {
   const [copied, setCopied] = useState(false);
   const coupleTitle = String(title || '').trim() || 'Groom Weds Bride';
   const shareText = liveUrl ? `${coupleTitle}\n${liveUrl}` : coupleTitle;
@@ -1104,6 +1111,11 @@ function QuickCreateSuccess({ title, dateLabel, timeLabel, venue, liveUrl, homeP
       {venue ? <p className="mt-1 text-sm text-slate-700">📍 {venue}</p> : null}
       {liveUrl ? (
         <p className="mt-4 break-all text-xs text-slate-500">{liveUrl}</p>
+      ) : null}
+      {eventId ? (
+        <div className="mt-4 text-left">
+          <CopyYoutubeStreamKey eventId={eventId} />
+        </div>
       ) : null}
 
       <div className="mt-6 grid gap-2 sm:grid-cols-2">

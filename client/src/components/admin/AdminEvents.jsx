@@ -6,6 +6,7 @@ import api from '../../services/api.js';
 import EventQrCard from '../EventQrCard.jsx';
 import ShareEmbedCard from '../ShareEmbedCard.jsx';
 import EventGalleryManager from './EventGalleryManager.jsx';
+import CopyYoutubeStreamKey from './CopyYoutubeStreamKey.jsx';
 import { formatDateTime, buildWatchUrl, buildEmbedCode } from '../../utils/format.js';
 
 export default function AdminEvents() {
@@ -269,6 +270,9 @@ export default function AdminEvents() {
                   <button type="button" className="btn-outline" onClick={() => copyLink(ev)}>
                     {copiedId === ev.id ? 'Copied!' : 'Copy live link'}
                   </button>
+                  {ev.youtubeVideoId ? (
+                    <CopyYoutubeStreamKey eventId={ev.id} compact />
+                  ) : null}
                   <button type="button" className="btn-outline" onClick={() => copyEmbedCode(ev)}>
                     {copiedId === `${ev.id}-embed` ? 'Copied!' : 'Copy Embed Code'}
                   </button>
