@@ -34,10 +34,9 @@ import {
   resolveRecordingAbsolutePath,
   resolveRecordingPartForPlayback,
 } from '../utils/recording.js';
-import { findPartInList, persistPlayableRecordingParts } from '../utils/recordingPlayable.js';
+import { findPartInList, persistPlayableRecordingParts, probeRecordingR2Source } from '../utils/recordingPlayable.js';
 import {
   deleteRecordingFromR2,
-  headR2Object,
   isR2Configured,
   presignRecordingUrl,
   r2PublicUrl,
@@ -1302,23 +1301,13 @@ export const playRecording = asyncHandler(async (req, res) => {
 
   const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
   const localExists = Boolean(abs && fs.existsSync(abs));
-  const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
-
-  let r2Head = null;
-  if (r2Key) {
-    try {
-      r2Head = await headR2Object(r2Key);
-    } catch (err) {
-      console.warn('[recording] R2 HEAD failed:', err?.message || err);
-      r2Head = null;
-    }
-  }
-
+  const probed = await probeRecordingR2Source(part, { eventId: event.id, rec });
   const source = resolveRecordingPlaybackSource({
     part,
     rec,
     localExists,
-    r2Head,
+    r2Head: probed.head,
+    r2Key: probed.key,
   });
 
   if (source.kind === 'missing') {
@@ -1387,7 +1376,6 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   }
 
   const filename = part?.filename || rec.recordingFilename;
-  const r2Key = part?.storage === 'r2' ? part.r2Key : !part && rec.recordingR2Key ? rec.recordingR2Key : '';
   const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
   const localExists = Boolean(abs && fs.existsSync(abs));
   const durationSec = Number(
@@ -1395,18 +1383,14 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
       ? rec.parts.find((p) => String(p.id) === String(partId))?.durationSec
       : rec.recordingDurationSec) || rec.recordingDurationSec || 0
   );
-
-  let r2Head = null;
-  if (r2Key) {
-    try {
-      r2Head = await headR2Object(r2Key);
-    } catch (err) {
-      console.warn('[recording] R2 HEAD failed:', err?.message || err);
-      r2Head = null;
-    }
-  }
-
-  const source = resolveRecordingPlaybackSource({ part, rec, localExists, r2Head });
+  const probed = await probeRecordingR2Source(part, { eventId: event.id, rec });
+  const source = resolveRecordingPlaybackSource({
+    part,
+    rec,
+    localExists,
+    r2Head: probed.head,
+    r2Key: probed.key,
+  });
 
   if (source.kind === 'missing') {
     if (!isOnRecordingFallbackHost(req)) {

@@ -10,6 +10,7 @@ import {
   RECORDING_SIGNED_URL_EXPIRES_SEC,
   inspectMp4Init,
   selectPlayableRecordingParts,
+  candidateRecordingR2Keys,
 } from './recordingPlayback.js';
 
 test('buildRecordingR2Key uses recordings/<eventId>/<filename>', () => {
@@ -87,6 +88,16 @@ test('missing R2 object falls back to local or reports missing', () => {
       rec,
       localExists: false,
       r2Head: { exists: true, size: 99 },
+    }).kind,
+    'r2'
+  );
+  assert.equal(
+    resolveRecordingPlaybackSource({
+      part: { storage: 'local', filename: 'clip.mp4', r2Key: '' },
+      rec,
+      localExists: false,
+      r2Head: { exists: true, size: 400000000 },
+      r2Key: 'recordings/e/clip.mp4',
     }).kind,
     'r2'
   );
@@ -172,6 +183,51 @@ test('selectPlayableRecordingParts falls back from unplayable merged MP4', () =>
     existingIds: new Set(['o1', orig.r2Key]),
   });
   assert.equal(incompleteStillFallsBack[0]._id, 'o1');
+});
+
+test('unplayable merged plus restored originals prefers originals (production Prudhvi shape)', () => {
+  const merged = {
+    filename: 'merged_1786916022256.mp4',
+    _id: '6a822cbe737c776ca64e206d',
+    sizeBytes: 3512408145,
+    startedAt: new Date('2026-08-16T14:56:38.687Z'),
+  };
+  const orig = {
+    filename: '2026-08-16_18-26-15-800755.mp4',
+    _id: '6a8201ab737c776ca64e0ee6',
+    r2Key: 'recordings/6a81adf1ce2dbab2249f08cd/2026-08-16_18-26-15-800755.mp4',
+    localPath: '/root/EventLive-Pro/recordings/6a81adf1ce2dbab2249f08cd/2026-08-16_18-26-15-800755.mp4',
+    sizeBytes: 400000000,
+    startedAt: new Date('2026-08-16T18:26:15.800Z'),
+  };
+  const parts = selectPlayableRecordingParts({
+    active: [merged, orig],
+    all: [merged, orig],
+    inspect: { hasVideo: false, hasAudio: true, audioCodec: 'mp4a', browserPlayable: false },
+    existingIds: new Set([orig._id, orig.r2Key, orig.localPath, orig.filename]),
+  });
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0]._id, orig._id);
+  assert.equal(parts[0].filename, orig.filename);
+});
+
+test('candidateRecordingR2Keys includes filename key when storage is local', () => {
+  const keys = candidateRecordingR2Keys({
+    eventId: '6a81adf1ce2dbab2249f08cd',
+    part: {
+      storage: 'local',
+      filename: '2026-08-16_18-26-15-800755.mp4',
+      r2Key: '',
+    },
+    rec: { recordingR2Key: 'recordings/6a81adf1ce2dbab2249f08cd/merged_1786916022256.mp4' },
+  });
+  assert.deepEqual(keys, [
+    'recordings/6a81adf1ce2dbab2249f08cd/2026-08-16_18-26-15-800755.mp4',
+  ]);
+  assert.equal(
+    keys.includes('recordings/6a81adf1ce2dbab2249f08cd/merged_1786916022256.mp4'),
+    false
+  );
 });
 
 test('HTTP Range requests: 206 partial and 416 unsatisfiable', () => {

@@ -31,3 +31,29 @@ export function isReplayVodState({ playbackMode, reconnecting, isLive } = {}) {
   if (reconnecting) return false;
   return playbackMode === 'recorded' || playbackMode === 'replay';
 }
+
+export function isMergedReplayFilename(filename) {
+  return /^merged_/i.test(String(filename || '').trim());
+}
+
+/** Skip an unplayable merged MP4 when original parts are also listed. */
+export function firstReplayPartIndex(parts = []) {
+  const list = Array.isArray(parts) ? parts : [];
+  if (list.length <= 1) return 0;
+  const index = list.findIndex((p) => p && !isMergedReplayFilename(p.filename));
+  return index >= 0 ? index : 0;
+}
+
+/**
+ * After a replay media error: retry the same part via the API path once,
+ * then advance to the next part. Never enter live reconnect.
+ */
+export function nextReplayActionAfterError({
+  retriedSamePart = false,
+  partIndex = 0,
+  partCount = 0,
+} = {}) {
+  if (!retriedSamePart) return 'retry-same-part';
+  if (partIndex < Math.max(0, Number(partCount) || 0) - 1) return 'next-part';
+  return 'fail';
+}

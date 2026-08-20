@@ -11,6 +11,7 @@ import {
 } from './recording.js';
 import { getR2ObjectRange, headR2Object } from './r2.js';
 import {
+  candidateRecordingR2Keys,
   inspectMp4Init,
   isMergedRecordingFilename,
   selectPlayableRecordingParts,
@@ -36,7 +37,7 @@ async function readLocalRange(abs, start, end) {
   }
 }
 
-export async function inspectRecordingInit(part) {
+export async function inspectRecordingInit(part, eventId = '') {
   const key = cacheKey(part);
   if (key && inspectCache.has(key)) return inspectCache.get(key);
 
@@ -44,9 +45,17 @@ export async function inspectRecordingInit(part) {
   try {
     const abs = resolveRecordingAbsolutePath(part?.localPath);
     const localOk = Boolean(abs && fs.existsSync(abs));
+    const r2Keys = candidateRecordingR2Keys({ part, eventId });
     const readRange = async (start, end) => {
       if (localOk) return readLocalRange(abs, start, end);
-      if (part?.r2Key) return getR2ObjectRange(part.r2Key, start, end);
+      for (const r2Key of r2Keys) {
+        try {
+          const buf = await getR2ObjectRange(r2Key, start, end);
+          if (buf?.length) return buf;
+        } catch {
+          /* try next key */
+        }
+      }
       return Buffer.alloc(0);
     };
 
@@ -72,7 +81,7 @@ export async function inspectRecordingInit(part) {
   return result;
 }
 
-async function partSourceExists(part) {
+async function partSourceExists(part, eventId = '') {
   const abs = resolveRecordingAbsolutePath(part?.localPath);
   if (abs && fs.existsSync(abs)) {
     try {
@@ -81,17 +90,34 @@ async function partSourceExists(part) {
       return false;
     }
   }
-  if (part?.r2Key) {
+  const keys = candidateRecordingR2Keys({ part, eventId });
+  for (const key of keys) {
     try {
-      const head = await headR2Object(part.r2Key);
+      const head = await headR2Object(key);
       if (head?.exists && Number(head.size || 0) > 200000) return true;
     } catch {
-      /* try localPath candidate below */
+      /* try next key */
     }
   }
   // Render cannot see VPS disks. Keep sizable local leftovers so the
   // recording fallback host (stream.eventlivepro.com) can serve them.
   return Boolean(part?.localPath && Number(part.sizeBytes || 0) > 200000);
+}
+
+export async function probeRecordingR2Source(part, { eventId = '', rec = null } = {}) {
+  const keys = candidateRecordingR2Keys({ part, rec, eventId });
+  if (!keys.length) return { key: '', head: null };
+  let sawMiss = false;
+  for (const key of keys) {
+    try {
+      const head = await headR2Object(key);
+      if (head?.exists && Number(head.size || 0) > 0) return { key, head };
+      if (head && head.exists === false) sawMiss = true;
+    } catch {
+      /* try next key */
+    }
+  }
+  return { key: keys[0], head: sawMiss ? { exists: false, size: 0 } : null };
 }
 
 /**
@@ -101,25 +127,24 @@ async function partSourceExists(part) {
 export async function loadPlayableRecordingParts(event) {
   const active = listActiveRecordingParts(event);
   const all = ensureRecordingsArray(event);
-  const mergedOnly =
-    active.length === 1 && isMergedRecordingFilename(active[0]?.filename);
+  const eventId = String(event?.id || event?._id || '');
+  const merged = active.filter((p) => isMergedRecordingFilename(p.filename));
 
   let inspect = null;
-  if (mergedOnly) {
+  if (merged.length) {
     try {
-      inspect = await inspectRecordingInit(active[0]);
+      inspect = await inspectRecordingInit(merged[0], eventId);
     } catch {
       inspect = { incomplete: true, browserPlayable: false };
     }
+    if (inspect?.browserPlayable) return merged;
   }
-  if (!mergedOnly || inspect?.browserPlayable) {
-    return active;
-  }
+  if (!merged.length) return active;
 
   const existingIds = new Set();
   const checks = all.map(async (p) => {
     if (!p || isMergedRecordingFilename(p.filename)) return;
-    if (await partSourceExists(p)) {
+    if (await partSourceExists(p, eventId)) {
       if (p._id || p.id) existingIds.add(String(p._id || p.id));
       if (p.r2Key) existingIds.add(String(p.r2Key));
       if (p.localPath) existingIds.add(String(p.localPath));

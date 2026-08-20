@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { extractYouTubeId, resolveMediaUrl } from '../../utils/format.js';
+import {
+  extractYouTubeId,
+  resolveMediaUrl,
+} from '../../utils/format.js';
 import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
 import {
   failoverBackupVideoId,
@@ -22,6 +25,8 @@ import {
 } from '../../utils/livePriority.js';
 import {
   clampReplaySeek,
+  firstReplayPartIndex,
+  nextReplayActionAfterError,
   shouldRestoreReplaySeek,
 } from '../../utils/replayPlayback.js';
 import '../../styles/watch-theme.css';
@@ -1461,6 +1466,13 @@ function Mp4Player({
   const [partIndex, setPartIndex] = useState(0);
   const activePart = sortedParts[partIndex] || null;
   const activePartId = activePart?.id || '';
+  const partApiSrc = eventId
+    ? resolveMediaUrl(
+        `/api/events/${eventId}/stream/recording${
+          activePartId ? `?part=${encodeURIComponent(activePartId)}` : ''
+        }`
+      )
+    : src;
   const partTrusted = Math.max(
     0,
     Number(activePart?.durationSec || trustedDurationSec) || 0
@@ -1477,10 +1489,10 @@ function Mp4Player({
   }, [eventId]);
 
   useEffect(() => {
-    setPartIndex(0);
+    setPartIndex(firstReplayPartIndex(sortedParts));
     sourceAttemptRef.current = 0;
     setLoadError(false);
-  }, [eventId, partsKey]);
+  }, [eventId, partsKey, sortedParts]);
 
   const handleFirstPlay = useCallback(() => {
     setUserStarted(true);
@@ -1510,7 +1522,7 @@ function Mp4Player({
     setLoadError(false);
 
     (async () => {
-      let playSrc = src;
+      let playSrc = partApiSrc || src;
       const attempt = sourceAttemptRef.current;
       if (eventId && attempt === 0) {
         try {
@@ -1520,9 +1532,9 @@ function Mp4Player({
         } catch {
           /* fall back to API recording path */
         }
-      } else if (attempt >= 1 && src) {
+      } else if (attempt >= 1 && (partApiSrc || src)) {
         // Same-origin Range-capable API path after a signed/R2 URL failure.
-        playSrc = src;
+        playSrc = partApiSrc || src;
       }
       if (!cancelled) setResolvedSrc(playSrc || '');
     })();
@@ -1530,7 +1542,7 @@ function Mp4Player({
     return () => {
       cancelled = true;
     };
-  }, [src, eventId, activePartId, sourceEpoch]);
+  }, [src, eventId, activePartId, sourceEpoch, partApiSrc]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1576,10 +1588,22 @@ function Mp4Player({
       setOverlay(OVERLAY.BUFFERING);
     };
     const onError = () => {
-      // Completed VOD must not enter live reconnect. Retry once via the API path.
-      if (sourceAttemptRef.current < 1 && src && resolvedSrc !== src) {
+      // Completed VOD must not enter live reconnect.
+      const alreadyOnApi = Boolean(partApiSrc && resolvedSrc === partApiSrc);
+      const action = nextReplayActionAfterError({
+        retriedSamePart: sourceAttemptRef.current >= 1 || alreadyOnApi,
+        partIndex,
+        partCount: sortedParts.length,
+      });
+      if (action === 'retry-same-part') {
         sourceAttemptRef.current = 1;
         setSourceEpoch((n) => n + 1);
+        return;
+      }
+      if (action === 'next-part') {
+        sourceAttemptRef.current = 0;
+        setLoadError(false);
+        setPartIndex((i) => i + 1);
         return;
       }
       setLoadError(true);
@@ -1649,6 +1673,7 @@ function Mp4Player({
     eventId,
     activePartId,
     src,
+    partApiSrc,
     partTrusted,
   ]);
 
@@ -1703,7 +1728,11 @@ function Mp4Player({
               role="tab"
               aria-selected={idx === partIndex}
               className={`recording-parts__btn ${idx === partIndex ? 'is-active' : ''}`}
-              onClick={() => setPartIndex(idx)}
+              onClick={() => {
+                sourceAttemptRef.current = 0;
+                setLoadError(false);
+                setPartIndex(idx);
+              }}
             >
               Part {p.part || idx + 1}
               {p.durationSec ? (

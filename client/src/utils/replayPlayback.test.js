@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   clampReplaySeek,
+  firstReplayPartIndex,
   isReplayVodState,
+  nextReplayActionAfterError,
   shouldRestoreReplaySeek,
 } from './replayPlayback.js';
 
@@ -49,4 +51,28 @@ test('completed recording is VOD, not reconnecting', () => {
   assert.equal(isReplayVodState({ playbackMode: 'recorded', isLive: false, reconnecting: false }), true);
   assert.equal(isReplayVodState({ playbackMode: 'recorded', isLive: true }), false);
   assert.equal(isReplayVodState({ playbackMode: 'recorded', reconnecting: true }), false);
+});
+
+test('firstReplayPartIndex skips audio-only merged when originals are listed', () => {
+  const parts = [
+    { id: 'merged', filename: 'merged_1786916022256.mp4' },
+    { id: 'orig', filename: '2026-08-16_18-26-15-800755.mp4' },
+  ];
+  assert.equal(firstReplayPartIndex(parts), 1);
+  assert.equal(firstReplayPartIndex([{ id: 'merged', filename: 'merged_1.mp4' }]), 0);
+});
+
+test('nextReplayActionAfterError retries then advances parts, never reconnects', () => {
+  assert.equal(
+    nextReplayActionAfterError({ retriedSamePart: false, partIndex: 0, partCount: 5 }),
+    'retry-same-part'
+  );
+  assert.equal(
+    nextReplayActionAfterError({ retriedSamePart: true, partIndex: 0, partCount: 5 }),
+    'next-part'
+  );
+  assert.equal(
+    nextReplayActionAfterError({ retriedSamePart: true, partIndex: 4, partCount: 5 }),
+    'fail'
+  );
 });

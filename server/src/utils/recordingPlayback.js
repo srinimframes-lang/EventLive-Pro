@@ -144,22 +144,41 @@ export function isSignedUrlExpired(url, { now = Date.now() } = {}) {
   }
 }
 
+/** R2 object keys to try, including a filename key when storage is still "local". */
+export function candidateRecordingR2Keys({ part = null, rec = null, eventId = '' } = {}) {
+  const keys = [];
+  const add = (value) => {
+    const key = String(value || '').trim();
+    if (key && !keys.includes(key)) keys.push(key);
+  };
+  add(part?.r2Key);
+  const sameFile =
+    !part ||
+    (part.filename && rec?.recordingFilename && String(part.filename) === String(rec.recordingFilename));
+  if (sameFile) add(rec?.recordingR2Key);
+  add(buildRecordingR2Key(eventId, part?.filename || rec?.recordingFilename));
+  return keys;
+}
+
 /**
  * Decide local vs R2 vs missing. Never invent an object.
  * r2Head: { exists, size } from HEAD, or null when HEAD was skipped.
  */
+
 export function resolveRecordingPlaybackSource({
   part = null,
   rec = null,
   localExists = false,
   r2Head = null,
+  r2Key: r2KeyOverride = '',
 } = {}) {
   const r2Key =
-    part?.storage === 'r2'
+    String(r2KeyOverride || '').trim() ||
+    (part?.storage === 'r2'
       ? part.r2Key || ''
       : !part && rec?.recordingR2Key
         ? rec.recordingR2Key
-        : '';
+        : '');
 
   if (r2Key) {
     if (r2Head && r2Head.exists === false) {
@@ -330,10 +349,9 @@ export function selectPlayableRecordingParts({
   existingIds = new Set(),
 } = {}) {
   const activeList = (Array.isArray(active) ? active : []).filter(Boolean);
-  const mergedOnly =
-    activeList.length === 1 && isMergedRecordingFilename(activeList[0].filename);
+  const hasMerged = activeList.some((p) => isMergedRecordingFilename(p.filename));
   const playableMerged = Boolean(inspect && inspect.browserPlayable);
-  if (!mergedOnly || playableMerged) return activeList;
+  if (!hasMerged || playableMerged) return activeList;
 
   const originals = (Array.isArray(all) ? all : []).filter((p) => {
     if (!p) return false;
