@@ -45,6 +45,53 @@ function runCmd(bin, args, { timeoutMs = 30 * 60 * 1000 } = {}) {
   });
 }
 
+async function probeMp4Streams(filePath) {
+  return new Promise((resolve) => {
+    const child = spawn(
+      'ffprobe',
+      ['-v', 'error', '-show_streams', '-of', 'json', filePath],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+    let out = '';
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+      resolve({ hasVideo: false, hasAudio: false, videoCodec: '', audioCodec: '', durationSec: 0 });
+    }, 60_000);
+    child.stdout.on('data', (c) => {
+      out += String(c);
+    });
+    child.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const json = JSON.parse(out || '{}');
+        const streams = Array.isArray(json.streams) ? json.streams : [];
+        const video = streams.find((s) => s.codec_type === 'video');
+        const audio = streams.find((s) => s.codec_type === 'audio');
+        const durationSec = Math.round(
+          Number(video?.duration || audio?.duration || json.format?.duration || 0)
+        );
+        resolve({
+          hasVideo: Boolean(video),
+          hasAudio: Boolean(audio),
+          videoCodec: String(video?.codec_name || ''),
+          audioCodec: String(audio?.codec_name || ''),
+          durationSec: Number.isFinite(durationSec) ? durationSec : 0,
+        });
+      } catch {
+        resolve({ hasVideo: false, hasAudio: false, videoCodec: '', audioCodec: '', durationSec: 0 });
+      }
+    });
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve({ hasVideo: false, hasAudio: false, videoCodec: '', audioCodec: '', durationSec: 0 });
+    });
+  });
+}
+
 async function probeDurationSec(filePath) {
   return new Promise((resolve) => {
     const child = spawn(
@@ -111,10 +158,16 @@ async function ffmpegConcat(inputs, outputPath) {
       listFile,
       '-c',
       'copy',
+      '-map',
+      '0',
       '-movflags',
       '+faststart',
       outputPath,
     ]);
+    const copied = await probeMp4Streams(outputPath);
+    if (!copied.hasVideo) {
+      throw new Error('concat copy produced no video track');
+    }
   } catch (copyErr) {
     // Fallback re-encode when codecs differ across OBS reconnect segments.
     await runCmd('ffmpeg', [
@@ -139,6 +192,10 @@ async function ffmpegConcat(inputs, outputPath) {
       '+faststart',
       outputPath,
     ]);
+    const encoded = await probeMp4Streams(outputPath);
+    if (!encoded.hasVideo) {
+      throw new Error(`concat re-encode produced no video track (${copyErr?.message || copyErr})`);
+    }
   } finally {
     try {
       fs.unlinkSync(listFile);
@@ -193,7 +250,12 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
     await ffmpegConcat(inputs, outPath);
+    const probed = await probeMp4Streams(outPath);
+    if (!probed.hasVideo) {
+      throw new Error('merged MP4 has no video track');
+    }
     const durationSec =
+      probed.durationSec ||
       (await probeDurationSec(outPath)) ||
       parts.reduce((sum, p) => sum + (Number(p.durationSec) || 0), 0);
     const startedAt = parts[0]?.startedAt || new Date();

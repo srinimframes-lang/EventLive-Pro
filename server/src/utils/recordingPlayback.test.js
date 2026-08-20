@@ -8,6 +8,8 @@ import {
   resolveRecordingPlaybackSource,
   sameOriginRecordingPlayUrl,
   RECORDING_SIGNED_URL_EXPIRES_SEC,
+  inspectMp4Init,
+  selectPlayableRecordingParts,
 } from './recordingPlayback.js';
 
 test('buildRecordingR2Key uses recordings/<eventId>/<filename>', () => {
@@ -88,6 +90,80 @@ test('missing R2 object falls back to local or reports missing', () => {
     }).kind,
     'r2'
   );
+});
+
+test('inspectMp4Init detects H.264 video vs audio-only merged files', () => {
+  function box(type, payload) {
+    const p = Buffer.from(payload);
+    const b = Buffer.alloc(8 + p.length);
+    b.writeUInt32BE(8 + p.length, 0);
+    b.write(type, 4, 4, 'ascii');
+    p.copy(b, 8);
+    return b;
+  }
+  function hdlr(handler) {
+    const payload = Buffer.alloc(24);
+    payload.write(handler, 8, 4, 'ascii');
+    return box('hdlr', payload);
+  }
+  function stsd(codec) {
+    const payload = Buffer.alloc(16);
+    payload.writeUInt32BE(1, 4);
+    payload.write(codec, 12, 4, 'ascii');
+    return box('stsd', payload);
+  }
+
+  const audioOnly = Buffer.concat([
+    box('ftyp', Buffer.from('isom')),
+    box('moov', Buffer.concat([hdlr('soun'), stsd('mp4a')])),
+  ]);
+  const audio = inspectMp4Init(audioOnly);
+  assert.equal(audio.hasAudio, true);
+  assert.equal(audio.hasVideo, false);
+  assert.equal(audio.browserPlayable, false);
+  assert.equal(audio.audioCodec, 'mp4a');
+
+  const avc = Buffer.concat([
+    box('ftyp', Buffer.from('isom')),
+    box('moov', Buffer.concat([hdlr('vide'), stsd('avc1'), hdlr('soun'), stsd('mp4a')])),
+  ]);
+  const video = inspectMp4Init(avc);
+  assert.equal(video.hasVideo, true);
+  assert.equal(video.videoCodec, 'avc1');
+  assert.equal(video.browserPlayable, true);
+});
+
+test('selectPlayableRecordingParts falls back from unplayable merged MP4', () => {
+  const merged = { filename: 'merged_1.mp4', _id: 'm1', sizeBytes: 3512408145 };
+  const orig = {
+    filename: '2026-08-16_17-21-33-518717.mp4',
+    _id: 'o1',
+    r2Key: 'recordings/e/a.mp4',
+    sizeBytes: 1036137704,
+    startedAt: new Date('2026-08-16T17:21:33Z'),
+  };
+  const tiny = {
+    filename: '2026-08-16_14-56-38-687336.mp4',
+    _id: 'tiny',
+    r2Key: 'recordings/e/tiny.mp4',
+    sizeBytes: 2336,
+  };
+  const parts = selectPlayableRecordingParts({
+    active: [merged],
+    all: [tiny, orig, merged],
+    inspect: { hasVideo: false, browserPlayable: false, incomplete: false },
+    existingIds: new Set(['o1', orig.r2Key]),
+  });
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0]._id, 'o1');
+
+  const keepMerged = selectPlayableRecordingParts({
+    active: [merged],
+    all: [orig, merged],
+    inspect: { hasVideo: true, videoCodec: 'avc1', browserPlayable: true },
+    existingIds: new Set([orig.r2Key]),
+  });
+  assert.equal(keepMerged[0]._id, 'm1');
 });
 
 test('HTTP Range requests: 206 partial and 416 unsatisfiable', () => {

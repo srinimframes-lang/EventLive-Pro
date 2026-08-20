@@ -247,6 +247,28 @@ export async function deleteRecordingFromR2(key) {
   return deleteR2Object(key);
 }
 
+/** Read a byte range from an R2 object (init-segment / moov inspect). */
+export async function getR2ObjectRange(key, start, end) {
+  const s3 = getClient();
+  if (!s3 || !key) return Buffer.alloc(0);
+  const from = Math.max(0, Number(start) || 0);
+  const to = Math.max(from, Number(end) || from);
+  const res = await s3.send(
+    new GetObjectCommand({
+      Bucket: getR2Bucket(),
+      Key: key,
+      Range: `bytes=${from}-${to}`,
+    })
+  );
+  if (!res.Body) return Buffer.alloc(0);
+  if (typeof res.Body.transformToByteArray === 'function') {
+    return Buffer.from(await res.Body.transformToByteArray());
+  }
+  const chunks = [];
+  for await (const chunk of res.Body) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
 /** Download an R2 object to a local path (used when merging parts already migrated). */
 export async function downloadR2ObjectToFile(key, destPath) {
   const s3 = getClient();

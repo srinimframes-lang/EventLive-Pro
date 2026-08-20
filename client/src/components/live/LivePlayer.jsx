@@ -20,6 +20,10 @@ import {
   isTemporaryRecordingFallback,
   probeLiveHlsPlaylist,
 } from '../../utils/livePriority.js';
+import {
+  clampReplaySeek,
+  shouldRestoreReplaySeek,
+} from '../../utils/replayPlayback.js';
 import '../../styles/watch-theme.css';
 
 const RETRY_MS = 2500;
@@ -1482,6 +1486,20 @@ function Mp4Player({
     setUserStarted(true);
     saveUserStarted(eventId);
     restoredPosRef.current = false;
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      video.muted = false;
+      const playPromise = video.play?.();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          video.muted = true;
+          video.play?.().catch(() => {});
+        });
+      }
+    } catch {
+      /* ignore */
+    }
   }, [eventId]);
 
   useEffect(() => {
@@ -1515,41 +1533,38 @@ function Mp4Player({
   }, [src, eventId, activePartId, sourceEpoch]);
 
   useEffect(() => {
-    if (!userStarted) return undefined;
     const video = videoRef.current;
     if (!video || !resolvedSrc) return undefined;
     setOverlay(OVERLAY.BUFFERING);
+    video.muted = true;
     video.src = resolvedSrc;
     video.load();
 
     const restoreAndPlay = () => {
       if (!restoredPosRef.current) {
-        restoredPosRef.current = true;
         const saved = loadPlaybackPosition(eventId, 'replay', activePartId);
-        if (saved != null) {
-          const rawDur = Number.isFinite(video.duration) ? video.duration : 0;
-          const dur =
-            partTrusted > 0 && rawDur > partTrusted * 1.25 ? partTrusted : rawDur || partTrusted;
-          const seekable = video.seekable;
-          let inRange = false;
-          if (seekable && seekable.length > 0) {
-            const start = seekable.start(0);
-            let end = seekable.end(seekable.length - 1);
-            if (partTrusted > 0 && end > partTrusted * 1.25) end = partTrusted;
-            inRange = saved >= start && saved <= end;
-          } else if (dur > 0) {
-            inRange = saved > 0 && saved < dur - 0.5;
-          }
-          if (inRange) {
-            try {
-              video.currentTime = saved;
-            } catch {
-              /* ignore */
-            }
+        if (
+          shouldRestoreReplaySeek({
+            readyState: video.readyState,
+            videoWidth: video.videoWidth,
+            saved,
+            trustedDurationSec: partTrusted,
+            videoDuration: video.duration,
+          })
+        ) {
+          restoredPosRef.current = true;
+          try {
+            video.currentTime = clampReplaySeek({
+              saved,
+              trustedDurationSec: partTrusted,
+              videoDuration: video.duration,
+            });
+          } catch {
+            /* ignore */
           }
         }
       }
-      video.play?.().catch(() => {});
+      if (userStarted) video.play?.().catch(() => {});
     };
 
     const onPlaying = () => {
@@ -1597,6 +1612,7 @@ function Mp4Player({
     };
 
     video.addEventListener('loadedmetadata', restoreAndPlay, { once: true });
+    video.addEventListener('canplay', restoreAndPlay, { once: true });
     video.addEventListener('playing', onPlaying);
     video.addEventListener('canplay', onPlaying);
     video.addEventListener('waiting', onWaiting);
@@ -1607,6 +1623,7 @@ function Mp4Player({
 
     return () => {
       video.removeEventListener('loadedmetadata', restoreAndPlay);
+      video.removeEventListener('canplay', restoreAndPlay);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplay', onPlaying);
       video.removeEventListener('waiting', onWaiting);
@@ -1637,14 +1654,6 @@ function Mp4Player({
 
   if (!src && sortedParts.length === 0) return <Offline message="Recording is not available." />;
 
-  if (!userStarted) {
-    return (
-      <Frame shellRef={shellRef}>
-        <ClickToPlay poster={poster} onPlay={handleFirstPlay} />
-      </Frame>
-    );
-  }
-
   const statusLabel = awaitingLiveResume
     ? 'Reconnecting…'
     : loadError
@@ -1653,8 +1662,8 @@ function Mp4Player({
         ? `Replay · Part ${partIndex + 1}/${sortedParts.length}`
         : 'Replay';
 
-  const showInterrupted = awaitingLiveResume;
-  const showBuffering = overlay === OVERLAY.BUFFERING && !showInterrupted && !loadError;
+  const showInterrupted = userStarted && awaitingLiveResume;
+  const showBuffering = userStarted && overlay === OVERLAY.BUFFERING && !showInterrupted && !loadError;
 
   return (
     <Frame shellRef={shellRef}>
@@ -1664,24 +1673,28 @@ function Mp4Player({
         controls={false}
         controlsList="nodownload"
         playsInline
+        muted
         autoPlay
         preload="metadata"
         poster={poster || undefined}
-        onClick={chrome.togglePlay}
+        onClick={userStarted ? chrome.togglePlay : handleFirstPlay}
         onMouseMove={chrome.bumpControls}
         onTouchStart={chrome.bumpControls}
       />
+      {!userStarted ? <ClickToPlay poster={poster} onPlay={handleFirstPlay} /> : null}
       <StatusOverlay show={showInterrupted} message={LIVE_INTERRUPTED_MSG} />
       <StatusOverlay show={showBuffering} />
-      <PlayerChrome
-        chrome={chrome}
-        isLiveMode={false}
-        behindLive={false}
-        lagSec={0}
-        onGoLive={() => {}}
-        statusLabel={statusLabel}
-      />
-      {!awaitingLiveResume && sortedParts.length > 1 ? (
+      {userStarted ? (
+        <PlayerChrome
+          chrome={chrome}
+          isLiveMode={false}
+          behindLive={false}
+          lagSec={0}
+          onGoLive={() => {}}
+          statusLabel={statusLabel}
+        />
+      ) : null}
+      {userStarted && !awaitingLiveResume && sortedParts.length > 1 ? (
         <div className="recording-parts" role="tablist" aria-label="Recording parts">
           {sortedParts.map((p, idx) => (
             <button

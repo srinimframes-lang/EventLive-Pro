@@ -29,8 +29,16 @@ BASE="$(basename "$SEGMENT")"
 TMP="${DEST_DIR}/.${BASE}.tmp.mp4"
 OUT="${DEST_DIR}/${BASE}"
 
+has_video() {
+  local f="$1"
+  command -v ffprobe >/dev/null 2>&1 || return 0
+  local codec
+  codec="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$f" 2>/dev/null || true)"
+  [[ -n "$codec" ]]
+}
+
 if command -v ffmpeg >/dev/null 2>&1; then
-  if ffmpeg -y -loglevel error -i "$SEGMENT" -c copy -movflags +faststart "$TMP"; then
+  if ffmpeg -y -loglevel error -i "$SEGMENT" -map 0 -c copy -movflags +faststart "$TMP" && has_video "$TMP"; then
     mv -f "$TMP" "$OUT"
     rm -f "$SEGMENT"
   else

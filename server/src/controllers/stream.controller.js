@@ -34,6 +34,7 @@ import {
   resolveRecordingAbsolutePath,
   resolveRecordingPartForPlayback,
 } from '../utils/recording.js';
+import { findPartInList, loadPlayableRecordingParts } from '../utils/recordingPlayable.js';
 import {
   deleteRecordingFromR2,
   headR2Object,
@@ -44,6 +45,7 @@ import {
 import { scheduleEventRecordingUpload } from '../utils/recordingR2Sync.js';
 import {
   parseMediaMtxDurationToSec,
+  partTrustedDurationSec,
 } from '../utils/recordingDuration.js';
 import {
   RECORDING_SIGNED_URL_EXPIRES_SEC,
@@ -169,7 +171,7 @@ function preferredStoredYoutubeWatchUrl(event, storedId) {
 /**
  * Public-safe view of an event's streaming configuration (no secret key).
  */
-function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null } = {}) {
+function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null, playableParts = null } = {}) {
   const storedId = resolvePublicYoutubeVideoId(event);
   const playbackId = youtubePlayback?.videoId || '';
   const playbackMatchesStored = !storedId || !playbackId || playbackId === storedId;
@@ -222,7 +224,22 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
           : Boolean(event.isLive);
   }
   const rec = getRecordingState(event);
-  const recordingUrl = isLive ? '' : buildPublicRecordingUrl(event);
+  const playbackParts = Array.isArray(playableParts) && playableParts.length > 0
+    ? playableParts.map((p, index) => ({
+        id: String(p._id || p.id || rec.parts[index]?.id || ''),
+        part: index + 1,
+        durationSec: Math.max(0, partTrustedDurationSec(p) || Number(p.durationSec) || 0),
+        startedAt: p.startedAt || null,
+        createdAt: p.createdAt || null,
+        filename: p.filename || '',
+      }))
+    : rec.parts;
+  const firstPlayableId = playbackParts[0]?.id || '';
+  const recordingUrl = isLive
+    ? ''
+    : firstPlayableId
+      ? `/api/events/${event.id}/stream/recording?part=${firstPlayableId}`
+      : buildPublicRecordingUrl(event);
   const playbackMode = isLive
     ? reconnecting
       ? 'reconnecting'
@@ -281,7 +298,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     recordingPublicUntil: rec.recordingPublicUntil,
     recordingRecordedAt: rec.recordingRecordedAt,
     recordingDurationSec: rec.recordingDurationSec,
-    recordingCount: rec.recordingCount,
+    recordingCount: playbackParts.length || rec.recordingCount,
     recordingMergeStatus: event.recordingMergeStatus || '',
     recordingPlaybackStatus: recordingPlaybackStatus({
       isLive,
@@ -294,7 +311,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     // Lightweight part list for the player (no R2 URLs — resolve per part on demand).
     // After a successful merge only one part remains active — Parts UI stays hidden.
     recordings: recordingUrl
-      ? rec.parts.map((p) => ({
+      ? playbackParts.map((p) => ({
           id: p.id,
           part: p.part,
           durationSec: p.durationSec,
@@ -498,7 +515,8 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
   event = (await resolveExpiredReconnect(event, io)) || event;
   const youtubePlayback = await resolveYoutubePlaybackForPublicEvent(event);
   const isPublishing = await publishingStatusForEvent(event);
-  const data = publicStreamConfig(event, { isPublishing, youtubePlayback });
+  const playableParts = isPublishing ? null : await loadPlayableRecordingParts(event);
+  const data = publicStreamConfig(event, { isPublishing, youtubePlayback, playableParts });
   console.info('[youtube-embed] public stream config', {
     eventId: event.id,
     slug: event.slug || '',
@@ -1273,10 +1291,13 @@ export const playRecording = asyncHandler(async (req, res) => {
   }
 
   const partId = String(req.query.part || '').trim();
-  const part = resolveRecordingPartForPlayback(event, partId || undefined);
-  if (partId && !part) {
+  const playable = await loadPlayableRecordingParts(event);
+  const part =
+    findPartInList(playable, partId || undefined) ||
+    resolveRecordingPartForPlayback(event, partId || undefined);
+  if (!part) {
     res.status(404);
-    throw new Error('Recording part not found');
+    throw new Error(partId ? 'Recording part not found' : 'Recording file missing');
   }
 
   const abs = resolveRecordingAbsolutePath(part?.localPath || rec.recordingPath);
@@ -1352,10 +1373,13 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   }
 
   const partId = String(req.query.part || '').trim();
-  const part = resolveRecordingPartForPlayback(event, partId || undefined);
-  if (partId && !part) {
+  const playable = await loadPlayableRecordingParts(event);
+  const part =
+    findPartInList(playable, partId || undefined) ||
+    resolveRecordingPartForPlayback(event, partId || undefined);
+  if (!part) {
     res.status(404);
-    throw new Error('Recording part not found');
+    throw new Error(partId ? 'Recording part not found' : 'Recording file missing');
   }
 
   const filename = part?.filename || rec.recordingFilename;
