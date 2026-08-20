@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { resolveMediaUrl } from '../../../utils/format.js';
+import { publicPhotoSrc } from '../../../utils/format.js';
 import { galleryPhotoAlt } from '../../../utils/seo.js';
 
 const VARIANTS = {
@@ -72,7 +72,7 @@ export default function ThemedGallery({ photos = [], variant = 'default', event,
             <div key={photoId || photo.url} className="gallery-item group relative overflow-hidden">
               <button type="button" onClick={() => setActiveIndex(index)} className="block h-full w-full">
                 <img
-                  src={resolveMediaUrl(photo.url)}
+                  src={publicPhotoSrc(photo, event)}
                   alt={alt}
                   loading="lazy"
                   decoding="async"
@@ -168,7 +168,7 @@ export default function ThemedGallery({ photos = [], variant = 'default', event,
           )}
           <figure className="relative max-h-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
             <img
-              src={resolveMediaUrl(active.url)}
+              src={publicPhotoSrc(active, event)}
               alt={active.caption || 'Event photo'}
               className="mx-auto max-h-[80vh] w-auto max-w-full rounded-lg object-contain"
             />

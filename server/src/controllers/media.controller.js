@@ -8,10 +8,11 @@ import { persistUpload, removeUpload } from '../utils/storage.js';
 import {
   deleteR2Object,
   isR2Configured,
-  presignR2Url,
   r2PublicUrl,
+  sendR2Object,
   uploadFileToR2,
 } from '../utils/r2.js';
+import { galleryApiImagePath, resolveGalleryDisplayUrl } from '../utils/galleryUrls.js';
 
 async function findEventOr404(id, res) {
   const event = await Event.findById(id);
@@ -33,8 +34,12 @@ function sortGallery(gallery = []) {
   });
 }
 
-function galleryApiImagePath(eventId, photoId) {
-  return `/api/events/${eventId}/gallery/${photoId}/image`;
+function imageContentType(name = '') {
+  const ext = path.extname(String(name)).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return 'image/jpeg';
 }
 
 function safeExt(originalname = '', mimetype = '') {
@@ -59,33 +64,20 @@ async function removeGalleryAsset(photo) {
 }
 
 /**
- * Attach fresh display URLs for R2-backed gallery photos (presigned or public).
- * Legacy Cloudinary/local URLs are left unchanged.
+ * Attach browser-facing gallery URLs. R2 photos use a public base when set,
+ * otherwise the durable `/api/events/:id/gallery/:photoId/image` path.
+ * Never return private presigned r2.cloudflarestorage.com URLs.
  */
-export async function hydrateGalleryUrls(eventLike, { expiresIn = 6 * 3600, directUrlLimit = 48 } = {}) {
+export async function hydrateGalleryUrls(eventLike) {
   if (!eventLike?.gallery?.length) return eventLike?.gallery || [];
   const eventId = eventLike.id || eventLike._id;
-  const sorted = sortGallery(eventLike.gallery);
-
-  return Promise.all(
-    sorted.map(async (photo, index) => {
-      const plain = typeof photo.toObject === 'function' ? photo.toObject() : { ...photo };
-      const id = String(plain.id || plain._id || '');
-      if (plain.r2Key) {
-        // Beyond the first N photos, use the durable redirect path so we do not
-        // burn CPU signing hundreds of URLs on every watch-page load.
-        if (Number.isFinite(directUrlLimit) && index >= directUrlLimit) {
-          plain.url = galleryApiImagePath(eventId, id);
-        } else {
-          const publicUrl = r2PublicUrl(plain.r2Key);
-          const signed = publicUrl || (await presignR2Url(plain.r2Key, { expiresIn }));
-          plain.url = signed || galleryApiImagePath(eventId, id);
-        }
-      }
-      plain.id = id;
-      return plain;
-    })
-  );
+  return sortGallery(eventLike.gallery).map((photo) => {
+    const plain = typeof photo.toObject === 'function' ? photo.toObject() : { ...photo };
+    const id = String(plain.id || plain._id || '');
+    plain.url = resolveGalleryDisplayUrl({ ...plain, id }, eventId);
+    plain.id = id;
+    return plain;
+  });
 }
 
 /**
@@ -296,7 +288,7 @@ export const setGalleryCover = asyncHandler(async (req, res) => {
 
 /**
  * @route GET /api/events/:id/gallery/:photoId/image
- * @desc  Redirect to a fresh R2 (or legacy) image URL for <img> tags.
+ * @desc  Public image bytes (or a public R2 URL) for <img> tags. No login.
  * @access Public
  */
 export const playGalleryImage = asyncHandler(async (req, res) => {
@@ -309,21 +301,26 @@ export const playGalleryImage = asyncHandler(async (req, res) => {
 
   if (photo.r2Key) {
     const publicUrl = r2PublicUrl(photo.r2Key);
-    const target = publicUrl || (await presignR2Url(photo.r2Key, { expiresIn: 6 * 3600 }));
-    if (!target) {
-      res.status(500);
-      throw new Error('Gallery image URL unavailable');
+    if (publicUrl) {
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.redirect(302, publicUrl);
     }
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    return res.redirect(302, target);
+    const sent = await sendR2Object(photo.r2Key, req, res, {
+      contentType: imageContentType(photo.filename || photo.r2Key),
+    });
+    if (!sent) {
+      res.status(404);
+      throw new Error('Photo file missing');
+    }
+    return;
   }
 
-  // Legacy Cloudinary / absolute URL
-  if (/^https?:\/\//i.test(photo.url)) {
+  // Legacy Cloudinary / absolute URL (never private R2 API hosts)
+  if (/^https?:\/\//i.test(photo.url) && !photo.url.toLowerCase().includes('.r2.cloudflarestorage.com')) {
     return res.redirect(302, photo.url);
   }
 
-  // Legacy local /uploads path — serve from disk via redirect to static.
+  // Legacy local /uploads path — static + R2 fallback in app.js.
   if (photo.url.startsWith('/uploads/')) {
     return res.redirect(302, photo.url);
   }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { eventService } from '../../services/event.service.js';
-import { resolveMediaUrl } from '../../utils/format.js';
+import { publicPhotoSrc } from '../../utils/format.js';
 
 const ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
 
@@ -207,7 +207,7 @@ export default function EventGalleryManager({ eventId, photos = [], onChange, on
                   title="Preview"
                 >
                   <img
-                    src={resolveMediaUrl(photo.url)}
+                    src={publicPhotoSrc(photo, { id: eventId })}
                     alt={photo.filename || photo.caption || 'Gallery photo'}
                     loading="lazy"
                     className="h-full w-full object-cover"
@@ -285,7 +285,7 @@ export default function EventGalleryManager({ eventId, photos = [], onChange, on
             ×
           </button>
           <img
-            src={resolveMediaUrl(preview.url)}
+            src={publicPhotoSrc(preview, { id: eventId })}
             alt={preview.filename || 'Preview'}
             className="max-h-[85vh] max-w-full rounded-lg object-contain"
             onClick={(e) => e.stopPropagation()}

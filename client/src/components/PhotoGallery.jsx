@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { resolveMediaUrl } from '../utils/format.js';
+import { publicPhotoSrc } from '../utils/format.js';
 import { galleryPhotoAlt } from '../utils/seo.js';
 
 /**
@@ -67,7 +67,7 @@ export default function PhotoGallery({ photos = [], event, onDelete, initialCoun
                 className="block h-full w-full"
               >
                 <img
-                  src={resolveMediaUrl(photo.url)}
+                  src={publicPhotoSrc(photo, event)}
                   alt={alt}
                   loading="lazy"
                   decoding="async"
@@ -170,7 +170,7 @@ export default function PhotoGallery({ photos = [], event, onDelete, initialCoun
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={resolveMediaUrl(active.url)}
+              src={publicPhotoSrc(active, event)}
               alt={active.caption || 'Event photo'}
               className="mx-auto max-h-[80vh] w-auto max-w-full rounded-lg object-contain"
             />

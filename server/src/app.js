@@ -12,6 +12,8 @@ import { notFound, errorHandler } from './middleware/error.middleware.js';
 import { UPLOADS_DIR } from './middleware/upload.middleware.js';
 import { startDomainCache, isActiveDomainOrigin } from './utils/domainCache.js';
 import { getSitemap, getRobots } from './controllers/seo.controller.js';
+import { sendR2Object } from './utils/r2.js';
+import { uploadsR2KeyFromPath } from './utils/storage.js';
 
 const app = express();
 
@@ -36,6 +38,8 @@ app.use(
       if (req.headers['x-no-compression']) return false;
       const url = String(req.originalUrl || req.url || '');
       if (url.includes('/stream/recording')) return false;
+      if (url.includes('/gallery/') && url.includes('/image')) return false;
+      if (url.startsWith('/uploads/')) return false;
       return compression.filter(req, res);
     },
   })
@@ -65,7 +69,7 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Serve uploaded media (gallery photos, photography logos).
+// Serve uploaded media (cover/hero/logos). Local disk first, then durable R2.
 app.use(
   '/uploads',
   express.static(UPLOADS_DIR, {
@@ -73,6 +77,19 @@ app.use(
     fallthrough: true,
   })
 );
+app.use('/uploads', async (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const key = uploadsR2KeyFromPath(req.path);
+  if (!key) return next();
+  try {
+    const sent = await sendR2Object(key, req, res);
+    if (!sent) return next();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[uploads] R2 fallback failed:', err.message);
+    if (!res.headersSent) return next();
+  }
+});
 
 if (!env.isProd) {
   app.use(

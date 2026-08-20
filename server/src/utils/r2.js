@@ -17,6 +17,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import dotenv from 'dotenv';
 import {
   S3Client,
@@ -267,6 +268,80 @@ export async function getR2ObjectRange(key, start, end) {
   const chunks = [];
   for await (const chunk of res.Body) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
+}
+
+function isR2MissingError(err) {
+  const status = Number(err?.$metadata?.httpStatusCode || 0);
+  const name = String(err?.name || '');
+  return status === 404 || name === 'NotFound' || name === 'NoSuchKey';
+}
+
+function asNodeReadable(body) {
+  if (!body) return null;
+  if (typeof body.pipe === 'function') return body;
+  if (typeof Readable.fromWeb === 'function') {
+    try {
+      return Readable.fromWeb(body);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function applyPublicImageHeaders(res, { contentType, contentLength, etag } = {}) {
+  if (contentType) res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'public, max-age=604800');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  if (contentLength != null && contentLength !== '') {
+    res.setHeader('Content-Length', String(contentLength));
+  }
+  if (etag) res.setHeader('ETag', etag);
+}
+
+/**
+ * Stream (or HEAD) a public image from R2. Returns false when the object is missing.
+ * Used for gallery photos and /uploads fallback so browsers never need private
+ * presigned r2.cloudflarestorage.com URLs.
+ */
+export async function sendR2Object(key, req, res, { contentType } = {}) {
+  const s3 = getClient();
+  if (!s3 || !key) return false;
+  const bucket = getR2Bucket();
+  const method = String(req?.method || 'GET').toUpperCase();
+
+  try {
+    if (method === 'HEAD') {
+      const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+      applyPublicImageHeaders(res, {
+        contentType: contentType || head.ContentType || 'application/octet-stream',
+        contentLength: head.ContentLength,
+        etag: head.ETag,
+      });
+      res.status(200).end();
+      return true;
+    }
+
+    const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const stream = asNodeReadable(obj.Body);
+    if (!stream) return false;
+    applyPublicImageHeaders(res, {
+      contentType: contentType || obj.ContentType || 'application/octet-stream',
+      contentLength: obj.ContentLength,
+      etag: obj.ETag,
+    });
+    res.status(200);
+    await new Promise((resolve, reject) => {
+      stream.on('error', reject);
+      res.on('error', reject);
+      res.on('finish', resolve);
+      stream.pipe(res);
+    });
+    return true;
+  } catch (err) {
+    if (isR2MissingError(err)) return false;
+    throw err;
+  }
 }
 
 /** Download an R2 object to a local path (used when merging parts already migrated). */

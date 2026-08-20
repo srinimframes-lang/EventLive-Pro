@@ -412,6 +412,24 @@ export function resolveMediaUrl(url) {
 }
 
 /**
+ * Gallery <img> src. Prefer the durable public API path when the photo lives
+ * in R2 so browsers never load private/expiring r2.cloudflarestorage.com URLs.
+ */
+export function publicPhotoSrc(photo, event) {
+  const eventId = event?.id || event?._id;
+  const photoId = photo?.id || photo?._id;
+  const url = String(photo?.url || '');
+  if (
+    eventId &&
+    photoId &&
+    (photo?.r2Key || /r2\.cloudflarestorage\.com/i.test(url))
+  ) {
+    return resolveMediaUrl(`/api/events/${eventId}/gallery/${photoId}/image`);
+  }
+  return resolveMediaUrl(url);
+}
+
+/**
  * Prefer WebP/auto format when the host supports on-the-fly transforms.
  * Cloudinary: inject f_auto,q_auto. R2 / local uploads / signed URLs unchanged
  * (never mutate R2 keys or replay URLs).
