@@ -66,14 +66,9 @@ import {
   buildYoutubeForwardTarget,
   DEFAULT_YOUTUBE_RTMP,
 } from '../utils/youtubeForward.js';
-import { loadUserCredential } from '../utils/youtubeOauth.js';
 import {
-  ensureBroadcastEmbeddable,
   eventYoutubeLookupId,
-  getBroadcastPlaybackInfo,
-  listActiveBroadcastPlayback,
-  selectLiveYoutubePlayback,
-  youtubeOauthUserIds,
+  youtubeWatchUrl,
 } from '../services/youtubeLiveApi.js';
 import {
   DEFAULT_FACEBOOK_RTMP,
@@ -425,87 +420,24 @@ function mediaSecretOk(req) {
  * @desc  Public streaming configuration for the player
  * @access Public
  */
-async function resolveYoutubePlaybackForPublicEvent(event) {
+ * Public stream config must not call YouTube Data API on every player poll.
+ * Use the EventLivePro database IDs created during provisioning.
+ */
+function resolveYoutubePlaybackForPublicEvent(event) {
   const storedId = eventYoutubeLookupId(event);
-  const storedVideoId = extractYouTubeId(event.youtubeVideoId) || storedId;
-  const ownerIds = youtubeOauthUserIds(event);
-  if (!ownerIds.length) return null;
-  const ended = event.status === 'ended' || event.status === 'cancelled';
-  const selectOpts = {
-    eventBroadcastId: storedVideoId || extractYouTubeId(event.youtubeBroadcastId) || storedId,
-    eventTitle: event.title,
-    // A saved video ID (manual paste or existing event) must not be replaced
-    // by another live on the connected channel.
-    allowActiveFallback: !ended && !storedVideoId,
+  if (!storedId) return null;
+  const watchUrl =
+    event.youtubeWatchUrl || event.streamUrl || youtubeWatchUrl(storedId);
+  return {
+    videoId: storedId,
+    broadcastId: extractYouTubeId(event.youtubeBroadcastId) || storedId,
+    title: String(event.title || ''),
+    watchUrl,
+    lifeCycleStatus: '',
+    privacyStatus: '',
+    enableEmbed: true,
+    isLive: event.status === 'live' || Boolean(event.isLive),
   };
-
-  const finish = async (ownerId, info) => {
-    if (!info) return null;
-    try {
-      return (await ensureBroadcastEmbeddable(ownerId, info)) || info;
-    } catch (err) {
-      console.info('[youtube-embed] enableEmbed update skipped', err?.message || err);
-      return info;
-    }
-  };
-
-  // Prefer the account that owns this event's broadcast.
-  for (const ownerId of ownerIds) {
-    try {
-      const storedInfo = storedId ? await getBroadcastPlaybackInfo(ownerId, storedId) : null;
-      let activeInfos = [];
-      if (!ended) {
-        try {
-          activeInfos = await listActiveBroadcastPlayback(ownerId);
-        } catch (err) {
-          console.info('[youtube-embed] active live list skipped', err?.message || err);
-        }
-      }
-      const cred = await loadUserCredential(ownerId);
-      const info = selectLiveYoutubePlayback(storedInfo, activeInfos, selectOpts);
-      console.info('[youtube-embed] playback trace', {
-        eventId: String(event.id || event._id || ''),
-        slug: event.slug || '',
-        shortCode: event.shortCode || '',
-        eventYoutubeBroadcastId: event.youtubeBroadcastId || '',
-        eventYoutubeVideoId: event.youtubeVideoId || '',
-        eventStreamUrl: event.streamUrl || '',
-        eventYoutubeWatchUrl: event.youtubeWatchUrl || '',
-        channelId: cred?.channelId || '',
-        channelTitle: cred?.channelTitle || '',
-        storedBroadcastId: storedInfo?.broadcastId || '',
-        storedVideoId: storedInfo?.videoId || '',
-        storedLifeCycleStatus: storedInfo?.lifeCycleStatus || '',
-        storedIsLive: storedInfo?.isLive === true,
-        youtubeApiLiveBroadcastIds: activeInfos.map((item) => item.broadcastId),
-        youtubeApiLiveVideoIds: activeInfos.map((item) => item.videoId),
-        youtubeApiLiveTitles: activeInfos.map((item) => item.title),
-        selectedBroadcastId: info?.broadcastId || '',
-        selectedVideoId: info?.videoId || '',
-        selectedIsLive: info?.isLive === true,
-      });
-      if (!storedInfo && !info) continue;
-      const resolved = await finish(ownerId, info || storedInfo);
-      if (resolved) return resolved;
-    } catch (err) {
-      console.info('[youtube-embed] broadcast lookup skipped', err?.message || err);
-    }
-  }
-
-  if (ended) return null;
-
-  // createdBy may not have YouTube connected; try organizer (or vice versa).
-  for (const ownerId of ownerIds) {
-    try {
-      const activeInfos = await listActiveBroadcastPlayback(ownerId);
-      const info = selectLiveYoutubePlayback(null, activeInfos, selectOpts);
-      const resolved = await finish(ownerId, info);
-      if (resolved) return resolved;
-    } catch (err) {
-      console.info('[youtube-embed] active live list skipped', err?.message || err);
-    }
-  }
-  return null;
 }
 
 export const getStreamConfig = asyncHandler(async (req, res) => {

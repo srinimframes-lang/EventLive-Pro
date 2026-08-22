@@ -445,6 +445,7 @@ const eventSchema = new Schema(
       enum: ['', 'pending', 'ready', 'failed'],
       default: '',
     },
+    youtubeProvisionError: { type: String, default: '', maxlength: 500 },
 
     // ── Shareable QR (public live URL) ─────────────────────────
     qrCodeImage: { type: String, trim: true, default: '' },
@@ -569,6 +570,7 @@ eventSchema.set('toJSON', {
     delete ret.rtmpStreamKey;
     delete ret.youtubeStreamKey;
     delete ret.facebookStreamKey;
+    delete ret.youtubeProvisionError;
     return ret;
   },
 });

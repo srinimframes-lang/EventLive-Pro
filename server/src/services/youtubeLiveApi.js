@@ -102,6 +102,58 @@ export function wrapYoutubeError(err, step = '') {
   return safe;
 }
 
+export function isYoutubeQuotaExceeded(err) {
+  const info = describeYoutubeApiError(err);
+  return (
+    info.reason === 'quotaExceeded' ||
+    info.reason === 'dailyLimitExceeded' ||
+    /quotaExceeded|quota exceeded|dailyLimitExceeded/i.test(info.message)
+  );
+}
+
+function isTransientYoutubeError(err) {
+  if (isYoutubeQuotaExceeded(err)) return false;
+  const info = describeYoutubeApiError(err);
+  if (info.status === 401 || info.status === 403 || info.status === 400) return false;
+  const code = String(err?.code || '');
+  return (
+    info.status >= 500 ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND'
+  );
+}
+
+async function youtubeApiCall(method, eventId, fn) {
+  youtubeLog(`API method: ${method}`);
+  youtubeLog(`Event ID: ${eventId || ''}`);
+  try {
+    const result = await fn();
+    youtubeLog('Result: success', { method, eventId: eventId || '' });
+    return result;
+  } catch (err) {
+    youtubeLog('Result: failure', { method, eventId: eventId || '', ...describeYoutubeApiError(err) });
+    throw err;
+  }
+}
+
+async function withTransientRetry(method, eventId, fn, { attempts = 2 } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await youtubeApiCall(method, eventId, fn);
+    } catch (err) {
+      lastErr = err;
+      if (isYoutubeQuotaExceeded(err) || !isTransientYoutubeError(err) || i === attempts - 1) {
+        throw wrapYoutubeError(err, method);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  }
+  throw wrapYoutubeError(lastErr, method);
+}
+
 async function authorizedClientForUser(userId) {
   const cred = await loadUserCredential(userId, { withSecrets: true });
   const tokenFound = Boolean(cred?.connected && cred?.refreshTokenEnc);
@@ -413,13 +465,19 @@ export async function liveBroadcastsTransition(userId, params) {
 }
 
 /** Insert broadcast + stream, bind them, return ingest details. Does not log tokens. */
-export async function insertBindYoutubeLive(youtube, { title, description, startTime } = {}) {
+export async function insertBindYoutubeLive(
+  youtube,
+  { title, description, startTime, eventId = '', persist } = {}
+) {
   const snippetTitle = String(title || 'EventLivePro Live').slice(0, 100);
+  const savePartial = async (partial) => {
+    if (typeof persist !== 'function') return;
+    await persist(partial);
+  };
 
-  youtubeLog('Creating broadcast', { title: snippetTitle });
-  let broadcastRes;
-  try {
-    broadcastRes = await youtube.liveBroadcasts.insert({
+  youtubeLog('Creating broadcast', { title: snippetTitle, eventId: eventId || '' });
+  const broadcastRes = await withTransientRetry('liveBroadcasts.insert', eventId, () =>
+    youtube.liveBroadcasts.insert({
       part: ['id', 'snippet', 'contentDetails', 'status'],
       requestBody: {
         snippet: {
@@ -440,11 +498,8 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
           monitorStream: { enableMonitorStream: false },
         },
       },
-    });
-  } catch (err) {
-    youtubeLog('Broadcast response', { ok: false, ...describeYoutubeApiError(err) });
-    throw wrapYoutubeError(err, 'liveBroadcasts.insert');
-  }
+    })
+  );
   const broadcast = apiData(broadcastRes);
   const broadcastId = broadcast.id;
   youtubeLog('Broadcast response', { ok: true, broadcastId: broadcastId || '' });
@@ -454,11 +509,12 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
     throw wrapYoutubeError(err, 'liveBroadcasts.insert');
   }
   youtubeLog('Final video ID', { broadcastId });
+  const watchUrl = youtubeWatchUrl(broadcastId);
+  await savePartial({ broadcastId, watchUrl });
 
   youtubeLog('Creating stream');
-  let streamRes;
-  try {
-    streamRes = await youtube.liveStreams.insert({
+  const streamRes = await withTransientRetry('liveStreams.insert', eventId, () =>
+    youtube.liveStreams.insert({
       part: ['id', 'snippet', 'cdn', 'status'],
       requestBody: {
         snippet: { title: `${snippetTitle} stream`.slice(0, 100) },
@@ -468,11 +524,8 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
           resolution: 'variable',
         },
       },
-    });
-  } catch (err) {
-    youtubeLog('Stream response', { ok: false, ...describeYoutubeApiError(err) });
-    throw wrapYoutubeError(err, 'liveStreams.insert');
-  }
+    })
+  );
   const stream = apiData(streamRes);
   const streamId = stream.id;
   youtubeLog('Stream response', { ok: true, streamId: streamId || '' });
@@ -483,23 +536,32 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
   }
   youtubeLog('Final stream ID', { streamId });
 
+  let ingest = stream.cdn?.ingestionInfo || {};
+  let streamKey = String(ingest.streamName || '').trim();
+  const rtmpUrl =
+    ingest.ingestionAddress || ingest.rtmpsIngestionAddress || 'rtmp://a.rtmp.youtube.com/live2';
+  youtubeLog('Stream key available: ' + Boolean(streamKey));
+  await savePartial({
+    broadcastId,
+    watchUrl,
+    streamId,
+    rtmpUrl,
+    streamKey,
+  });
+
   youtubeLog('Binding broadcast and stream', { broadcastId, streamId });
-  try {
-    await youtube.liveBroadcasts.bind({
+  await withTransientRetry('liveBroadcasts.bind', eventId, () =>
+    youtube.liveBroadcasts.bind({
       part: ['id', 'snippet', 'contentDetails', 'status'],
       id: broadcastId,
       streamId,
-    });
-  } catch (err) {
-    youtubeLog('Binding broadcast and stream', { ok: false, ...describeYoutubeApiError(err) });
-    throw wrapYoutubeError(err, 'liveBroadcasts.bind');
-  }
+    })
+  );
 
-  // Bind puts the broadcast in `ready`. Re-apply auto-start after bind so OBS
-  // can push RTMP without finishing setup in YouTube Studio.
+  // Bind can reset auto-start. One update only — never on status polls.
   if (typeof youtube.liveBroadcasts.update === 'function') {
-    try {
-      await youtube.liveBroadcasts.update({
+    await withTransientRetry('liveBroadcasts.update', eventId, () =>
+      youtube.liveBroadcasts.update({
         part: ['id', 'contentDetails', 'status'],
         requestBody: {
           id: broadcastId,
@@ -516,22 +578,19 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
             monitorStream: { enableMonitorStream: false },
           },
         },
-      });
-    } catch (err) {
-      youtubeLog('Broadcast update after bind', { ok: false, ...describeYoutubeApiError(err) });
-      throw wrapYoutubeError(err, 'liveBroadcasts.update');
-    }
+      })
+    );
   }
 
-  let ingest = stream.cdn?.ingestionInfo || {};
-  let streamKey = String(ingest.streamName || '').trim();
   if (!streamKey && typeof youtube.liveStreams.list === 'function') {
     try {
-      const listed = await youtube.liveStreams.list({
-        part: ['id', 'cdn'],
-        id: [streamId],
-        maxResults: 1,
-      });
+      const listed = await youtubeApiCall('liveStreams.list', eventId, () =>
+        youtube.liveStreams.list({
+          part: ['id', 'cdn'],
+          id: [streamId],
+          maxResults: 1,
+        })
+      );
       const item = apiData(listed)?.items?.[0] || {};
       ingest = item.cdn?.ingestionInfo || ingest;
       streamKey = String(ingest.streamName || '').trim();
@@ -545,18 +604,24 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
     err.statusCode = 502;
     throw wrapYoutubeError(err, 'liveStreams.insert');
   }
+  await savePartial({
+    broadcastId,
+    watchUrl,
+    streamId,
+    rtmpUrl: ingest.ingestionAddress || ingest.rtmpsIngestionAddress || rtmpUrl,
+    streamKey,
+  });
 
   return {
     broadcastId,
     streamId,
-    watchUrl: youtubeWatchUrl(broadcastId),
-    rtmpUrl:
-      ingest.ingestionAddress || ingest.rtmpsIngestionAddress || 'rtmp://a.rtmp.youtube.com/live2',
+    watchUrl,
+    rtmpUrl: ingest.ingestionAddress || ingest.rtmpsIngestionAddress || rtmpUrl,
     streamKey,
   };
 }
 
-export async function createBoundYoutubeLive(userId, meta) {
+export async function createBoundYoutubeLive(userId, meta = {}) {
   const { youtube } = await authorizedClientForUser(userId);
   return insertBindYoutubeLive(youtube, meta);
 }
@@ -620,12 +685,19 @@ export async function provisionYoutubeLiveIfNeeded(
   }
 
   try {
+    const eventId = String(payload?._id || payload?.id || '');
     const live = await createBoundYoutubeLive(user._id, {
       title: payload.title,
       description: payload.description,
       startTime: payload.startTime,
+      eventId,
+      persist: async (partial) => {
+        applyYoutubeLiveFields(payload, partial);
+        if (typeof payload.save === 'function') await payload.save();
+      },
     });
     youtubeLog('Saving YouTube data to event', {
+      eventId,
       broadcastId: live.broadcastId || '',
       streamId: live.streamId || '',
       watchUrl: live.watchUrl || '',
@@ -760,11 +832,13 @@ export async function getBroadcastPlaybackInfo(userId, broadcastOrVideoId) {
   const id = String(broadcastOrVideoId || '').trim();
   if (!userId || !id) return null;
   const { youtube } = await authorizedClientForUser(userId);
-  const res = await youtube.liveBroadcasts.list({
-    part: ['id', 'snippet', 'status', 'contentDetails'],
-    id: [id],
-    maxResults: 1,
-  });
+  const res = await youtubeApiCall('liveBroadcasts.list', '', () =>
+    youtube.liveBroadcasts.list({
+      part: ['id', 'snippet', 'status', 'contentDetails'],
+      id: [id],
+      maxResults: 1,
+    })
+  );
   return playbackInfoFromBroadcastItem(apiData(res)?.items?.[0]);
 }
 
@@ -772,7 +846,9 @@ export async function getBroadcastPlaybackInfo(userId, broadcastOrVideoId) {
 export async function listActiveBroadcastPlayback(userId) {
   if (!userId) return [];
   const { youtube } = await authorizedClientForUser(userId);
-  const res = await youtube.liveBroadcasts.list(activeLiveBroadcastListParams());
+  const res = await youtubeApiCall('liveBroadcasts.list', '', () =>
+    youtube.liveBroadcasts.list(activeLiveBroadcastListParams())
+  );
   return (apiData(res)?.items || [])
     .map(playbackInfoFromBroadcastItem)
     .filter(Boolean);
@@ -783,24 +859,26 @@ export async function ensureBroadcastEmbeddable(userId, info) {
   if (!userId || !info?.broadcastId) return info;
   if (info.enableEmbed && info.privacyStatus !== 'private') return info;
   const { youtube } = await authorizedClientForUser(userId);
-  await youtube.liveBroadcasts.update({
-    part: ['id', 'contentDetails', 'status'],
-    requestBody: {
-      id: info.broadcastId,
-      status: {
-        privacyStatus: info.privacyStatus === 'private' ? 'unlisted' : info.privacyStatus || 'unlisted',
-        selfDeclaredMadeForKids: false,
+  await youtubeApiCall('liveBroadcasts.update', '', () =>
+    youtube.liveBroadcasts.update({
+      part: ['id', 'contentDetails', 'status'],
+      requestBody: {
+        id: info.broadcastId,
+        status: {
+          privacyStatus: info.privacyStatus === 'private' ? 'unlisted' : info.privacyStatus || 'unlisted',
+          selfDeclaredMadeForKids: false,
+        },
+        contentDetails: {
+          enableAutoStart: true,
+          enableAutoStop: false,
+          enableEmbed: true,
+          enableDvr: true,
+          recordFromStart: true,
+          monitorStream: { enableMonitorStream: false },
+        },
       },
-      contentDetails: {
-        enableAutoStart: true,
-        enableAutoStop: false,
-        enableEmbed: true,
-        enableDvr: true,
-        recordFromStart: true,
-        monitorStream: { enableMonitorStream: false },
-      },
-    },
-  });
+    })
+  );
   return {
     ...info,
     enableEmbed: true,

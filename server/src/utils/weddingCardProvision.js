@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { extractYouTubeId } from './youtube.js';
 import {
   applyYoutubeLiveFields,
+  isYoutubeQuotaExceeded,
   provisionYoutubeLiveIfNeeded,
   youtubeLog,
 } from '../services/youtubeLiveApi.js';
@@ -38,10 +39,8 @@ export function eventHasYoutubeBroadcast(event) {
 }
 
 export function shouldRetryYoutubeProvision(event) {
-  if (!event) return false;
-  if (eventHasYoutubeBroadcast(event)) return false;
-  const status = String(event.youtubeProvisionStatus || '');
-  return status === 'pending' || status === '';
+  // Status polling must never call YouTube APIs. Manual retry is confirm only.
+  return false;
 }
 
 export function weddingCardLiveStatus(event, { ingest = null, error = null } = {}) {
@@ -52,7 +51,7 @@ export function weddingCardLiveStatus(event, { ingest = null, error = null } = {
       reason: '',
     };
   }
-  const errMessage = String(error?.message || '').trim();
+  const errMessage = String(error?.message || event?.youtubeProvisionError || '').trim();
   if (error || String(event.youtubeProvisionStatus || '') === 'failed') {
     return {
       status: 'failed',
@@ -79,6 +78,7 @@ export async function runWeddingCardYoutubeProvision(
   if (!event) return { ingest: null, error: null };
   if (eventHasYoutubeBroadcast(event)) {
     event.youtubeProvisionStatus = 'ready';
+    event.youtubeProvisionError = '';
     return { ingest: null, error: null };
   }
 
@@ -98,6 +98,7 @@ export async function runWeddingCardYoutubeProvision(
       applyStreamTypeSelection(event, 'youtube');
       event.creditType = 'none';
       event.youtubeProvisionStatus = 'ready';
+      event.youtubeProvisionError = '';
       event.status = 'published';
       youtubeLog('Creation completed');
     } else if (!eventHasYoutubeBroadcast(event)) {
@@ -106,12 +107,17 @@ export async function runWeddingCardYoutubeProvision(
         'YouTube Live was not created. Confirm YouTube is connected and live streaming is enabled on that channel.'
       );
       err.statusCode = 502;
+      event.youtubeProvisionError = err.message;
       return { ingest: null, error: err };
     }
     return { ingest: ingest || null, error: null };
   } catch (error) {
     event.youtubeProvisionStatus = 'failed';
-    youtubeLog('Creation failed', { message: error?.message || 'YouTube Live creation failed' });
+    event.youtubeProvisionError = String(error?.message || 'YouTube Live creation failed').slice(0, 500);
+    youtubeLog('Creation failed', {
+      message: event.youtubeProvisionError,
+      quotaExceeded: isYoutubeQuotaExceeded(error),
+    });
     return { ingest: null, error };
   } finally {
     if (lockId) provisionLocks.delete(lockId);

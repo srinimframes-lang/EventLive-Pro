@@ -48,7 +48,7 @@ test('eventHasYoutubeBroadcast is true when a video id exists', () => {
   assert.equal(eventHasYoutubeBroadcast({ title: 'Sai Kumar Reddy Weds Pranathi Reddy' }), false);
 });
 
-test('shouldRetryYoutubeProvision is false once a broadcast exists', () => {
+test('shouldRetryYoutubeProvision never auto-retries (status poll is DB-only)', () => {
   assert.equal(
     shouldRetryYoutubeProvision({
       youtubeVideoId: '882LagGGVM4',
@@ -61,7 +61,7 @@ test('shouldRetryYoutubeProvision is false once a broadcast exists', () => {
       youtubeVideoId: '',
       youtubeProvisionStatus: 'pending',
     }),
-    true
+    false
   );
   assert.equal(
     shouldRetryYoutubeProvision({
@@ -115,4 +115,46 @@ test('provisioning is skipped when a YouTube broadcast already exists', async ()
   assert.equal(called, 0);
   assert.equal(ingest, null);
   assert.equal(event.youtubeProvisionStatus, 'ready');
+});
+
+test('in-flight wedding provision does not start a second YouTube create', async () => {
+  let started = 0;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const event = { _id: 'evt-lock', youtubeVideoId: '' };
+  const first = runWeddingCardYoutubeProvision(
+    { _id: 'user1' },
+    event,
+    {
+      provisionFn: async () => {
+        started += 1;
+        await gate;
+        return {
+          watchUrl: 'https://www.youtube.com/watch?v=882LagGGVM4',
+          broadcastId: '882LagGGVM4',
+          streamId: 'stream1',
+          rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+          streamKey: 'key',
+        };
+      },
+    }
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = await runWeddingCardYoutubeProvision(
+    { _id: 'user1' },
+    { _id: 'evt-lock', youtubeVideoId: '' },
+    {
+      provisionFn: async () => {
+        started += 1;
+        return null;
+      },
+    }
+  );
+  assert.equal(second.ingest, null);
+  assert.equal(started, 1);
+  release();
+  await first;
+  assert.equal(started, 1);
 });

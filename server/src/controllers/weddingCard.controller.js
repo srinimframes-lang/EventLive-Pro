@@ -20,7 +20,6 @@ import { scheduleEventQrSync } from '../utils/eventSave.js';
 import {
   eventHasYoutubeBroadcast,
   runWeddingCardYoutubeProvision,
-  shouldRetryYoutubeProvision,
   weddingCardDuplicateFilter,
   weddingCardFingerprint,
   weddingCardLiveStatus,
@@ -41,7 +40,11 @@ function combineStartTime(dateStr, timeStr) {
 }
 
 async function publicWeddingCardPayload(event, extra = {}) {
-  const live = weddingCardLiveStatus(event, extra);
+  const storedReason = String(event.youtubeProvisionError || extra.error?.message || '').trim();
+  const live = weddingCardLiveStatus(event, {
+    ...extra,
+    error: extra.error || (storedReason ? { message: storedReason } : null),
+  });
   const liveUrl = await buildEventPublicWatchUrl(event);
   const json = event.toJSON ? event.toJSON() : { ...event };
   if (json._id && json.id == null) json.id = String(json._id);
@@ -280,7 +283,7 @@ export const confirmWeddingCard = asyncHandler(async (req, res) => {
 
 /**
  * @route   GET /api/events/wedding-card/:id/status
- * @desc    Poll live-link provisioning. Retries YouTube only when no broadcast exists.
+ * @desc    Read EventLivePro DB provisioning state. Does not call YouTube APIs.
  * @access  Private
  */
 export const weddingCardStatus = asyncHandler(async (req, res) => {
@@ -290,12 +293,6 @@ export const weddingCardStatus = asyncHandler(async (req, res) => {
     throw new Error('Event not found');
   }
   assertCanManageEvent(event, req.user, res);
-
-  if (shouldRetryYoutubeProvision(event)) {
-    const { ingest, error } = await runWeddingCardYoutubeProvision(req.user, event);
-    await event.save();
-    return res.status(200).json(await publicWeddingCardPayload(event, { ingest, error }));
-  }
 
   res.status(200).json(await publicWeddingCardPayload(event));
 });

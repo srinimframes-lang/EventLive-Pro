@@ -27,6 +27,7 @@ const {
   provisionYoutubeLiveIfNeeded,
   describeYoutubeApiError,
   wrapYoutubeError,
+  isYoutubeQuotaExceeded,
 } = await import('../services/youtubeLiveApi.js');
 const { extractYouTubeId } = await import('./youtube.js');
 
@@ -100,19 +101,24 @@ test('youtubeWatchUrl builds a public watch URL from the broadcast id', () => {
 });
 
 test('insertBindYoutubeLive creates, binds, and returns ingest (no tokens)', async () => {
+  const counts = { insert: 0, streamInsert: 0, bind: 0, update: 0, streamList: 0 };
+  const persisted = [];
   const youtube = {
     liveBroadcasts: {
       insert: async (params) => {
+        counts.insert += 1;
         assert.equal(params.requestBody.contentDetails.enableAutoStart, true);
         assert.equal(params.requestBody.contentDetails.enableAutoStop, false);
         return { data: { id: 'bcastLive1' } };
       },
       bind: async (params) => {
+        counts.bind += 1;
         assert.equal(params.id, 'bcastLive1');
         assert.equal(params.streamId, 'streamLive1');
         return { data: { id: 'bcastLive1' } };
       },
       update: async (params) => {
+        counts.update += 1;
         assert.equal(params.requestBody.id, 'bcastLive1');
         assert.equal(params.requestBody.contentDetails.enableAutoStart, true);
         assert.equal(params.requestBody.contentDetails.enableAutoStop, false);
@@ -126,26 +132,45 @@ test('insertBindYoutubeLive creates, binds, and returns ingest (no tokens)', asy
       },
     },
     liveStreams: {
-      insert: async () => ({
-        data: {
-          id: 'streamLive1',
-          cdn: {
-            ingestionInfo: {
-              ingestionAddress: 'rtmp://a.rtmp.youtube.com/live2',
-              streamName: 'aaaa-bbbb-cccc-dddd',
+      insert: async () => {
+        counts.streamInsert += 1;
+        return {
+          data: {
+            id: 'streamLive1',
+            cdn: {
+              ingestionInfo: {
+                ingestionAddress: 'rtmp://a.rtmp.youtube.com/live2',
+                streamName: 'aaaa-bbbb-cccc-dddd',
+              },
             },
           },
-        },
-      }),
+        };
+      },
+      list: async () => {
+        counts.streamList += 1;
+        return { data: { items: [] } };
+      },
     },
   };
 
-  const live = await insertBindYoutubeLive(youtube, { title: 'Ravi Priya Wedding' });
+  const live = await insertBindYoutubeLive(youtube, {
+    title: 'Ravi Priya Wedding',
+    eventId: 'evt1',
+    persist: async (partial) => {
+      persisted.push({ ...partial, streamKey: partial.streamKey ? true : false });
+    },
+  });
   assert.equal(live.broadcastId, 'bcastLive1');
   assert.equal(live.streamId, 'streamLive1');
   assert.equal(live.watchUrl, 'https://www.youtube.com/watch?v=bcastLive1');
   assert.equal(live.rtmpUrl, 'rtmp://a.rtmp.youtube.com/live2');
   assert.equal(live.streamKey, 'aaaa-bbbb-cccc-dddd');
+  assert.equal(counts.insert, 1);
+  assert.equal(counts.streamInsert, 1);
+  assert.equal(counts.bind, 1);
+  assert.equal(counts.update, 1);
+  assert.equal(counts.streamList, 0);
+  assert.equal(persisted[0]?.broadcastId, 'bcastLive1');
   const json = JSON.stringify(publicYoutubeIngest(live));
   assert.equal(/access_token|refresh_token|client_secret/i.test(json), false);
 });
@@ -491,5 +516,55 @@ test('describeYoutubeApiError redacts token-like values', () => {
   });
   assert.equal(info.message.includes('ya29.'), false);
   assert.match(info.message, /\[redacted\]/);
+});
+
+test('quotaExceeded does not retry liveBroadcasts.insert', async () => {
+  let inserts = 0;
+  const youtube = {
+    liveBroadcasts: {
+      insert: async () => {
+        inserts += 1;
+        const err = new Error('quota');
+        err.response = {
+          status: 403,
+          data: {
+            error: {
+              errors: [{ reason: 'quotaExceeded', message: 'The request cannot be completed because you have exceeded your quota.' }],
+              message: 'The request cannot be completed because you have exceeded your quota.',
+            },
+          },
+        };
+        throw err;
+      },
+    },
+    liveStreams: {
+      insert: async () => {
+        throw new Error('should not insert stream after quotaExceeded');
+      },
+    },
+  };
+  await assert.rejects(
+    () => insertBindYoutubeLive(youtube, { title: 'Quota Event', eventId: 'evt-q' }),
+    /quotaExceeded/
+  );
+  assert.equal(inserts, 1);
+});
+
+test('quotaExceeded is detected and not treated as a success', () => {
+  const err = {
+    code: 403,
+    response: {
+      status: 403,
+      data: {
+        error: {
+          errors: [{ reason: 'quotaExceeded', message: 'The request cannot be completed because you have exceeded your quota.' }],
+          message: 'The request cannot be completed because you have exceeded your quota.',
+        },
+      },
+    },
+  };
+  assert.equal(isYoutubeQuotaExceeded(err), true);
+  const wrapped = wrapYoutubeError(err, 'liveBroadcasts.insert');
+  assert.match(wrapped.message, /quotaExceeded/);
 });
 
