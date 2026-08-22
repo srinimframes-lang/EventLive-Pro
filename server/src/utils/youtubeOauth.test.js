@@ -34,6 +34,7 @@ test('sanitizeReturnTo blocks open redirects', () => {
   assert.equal(sanitizeReturnTo('https://evil.example/phish', user), '/dashboard');
   assert.equal(sanitizeReturnTo('//evil.example', user), '/dashboard');
   assert.equal(sanitizeReturnTo('/admin', user), '/admin');
+  assert.equal(sanitizeReturnTo('/wedding-card', user), '/wedding-card');
 });
 
 test('defaultReturnToForUser follows existing roles', () => {

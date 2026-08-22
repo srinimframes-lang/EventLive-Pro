@@ -25,6 +25,8 @@ const {
   resolveYoutubeInput,
   youtubeDocFields,
   provisionYoutubeLiveIfNeeded,
+  describeYoutubeApiError,
+  wrapYoutubeError,
 } = await import('../services/youtubeLiveApi.js');
 const { extractYouTubeId } = await import('./youtube.js');
 
@@ -449,5 +451,45 @@ test('selectLiveYoutubePlayback uses the account live even when the Studio title
     { eventBroadcastId: 'NPB8S-cxHg0', eventTitle: 'Srinivas weds mounika reception' }
   );
   assert.equal(picked.videoId, '882LagGGVM4');
+});
+
+test('describeYoutubeApiError surfaces liveStreamingNotEnabled without tokens', () => {
+  const err = {
+    code: 403,
+    response: {
+      status: 403,
+      data: {
+        error: {
+          code: 403,
+          message: 'The user is not enabled for live streaming.',
+          errors: [
+            {
+              reason: 'liveStreamingNotEnabled',
+              message: 'The user is not enabled for live streaming.',
+            },
+          ],
+        },
+      },
+    },
+  };
+  const info = describeYoutubeApiError(err);
+  assert.equal(info.status, 403);
+  assert.equal(info.reason, 'liveStreamingNotEnabled');
+  assert.match(info.message, /not enabled for live streaming/i);
+  assert.equal(/ya29|refresh_token|access_token/i.test(JSON.stringify(info)), false);
+
+  const wrapped = wrapYoutubeError(err, 'liveBroadcasts.insert');
+  assert.equal(wrapped.code, 'youtube_api_error');
+  assert.equal(wrapped.statusCode, 403);
+  assert.match(wrapped.message, /liveBroadcasts\.insert/);
+  assert.match(wrapped.message, /liveStreamingNotEnabled/);
+});
+
+test('describeYoutubeApiError redacts token-like values', () => {
+  const info = describeYoutubeApiError({
+    message: 'invalid_grant for ya29.secret-token-value',
+  });
+  assert.equal(info.message.includes('ya29.'), false);
+  assert.match(info.message, /\[redacted\]/);
 });
 

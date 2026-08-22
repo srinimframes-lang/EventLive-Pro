@@ -14,6 +14,23 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const POLL_MS = 3000;
 const POLL_BUDGET_MS = 120_000;
 
+function youtubeFailMessage(payload) {
+  const reason = String(payload?.reason || payload?.message || '').trim();
+  if (!reason) return 'YouTube Live creation failed';
+  if (/YouTube Live creation failed/i.test(reason)) return reason;
+  return `YouTube Live creation failed\nReason: ${reason}`;
+}
+
+function hasYoutubeBroadcast(payload) {
+  const event = payload?.data || {};
+  return Boolean(
+    event.youtubeVideoId ||
+      event.youtubeBroadcastId ||
+      event.youtubeWatchUrl ||
+      payload?.youtubeWatchUrl
+  );
+}
+
 const EMPTY_FORM = {
   brideName: '',
   groomName: '',
@@ -196,6 +213,7 @@ export default function WeddingCardUpload() {
         (mode === 'manual' ? manualTitle : mode === 'quick' ? quickTitle : title),
     });
     if (payload?.status === 'ready' && liveUrl) setPhase('ready');
+    if (payload?.status === 'failed') setPhase('');
   };
 
   const pollUntilReady = (eventId) => {
@@ -205,14 +223,23 @@ export default function WeddingCardUpload() {
     pollRef.current = window.setInterval(async () => {
       if (Date.now() - started > POLL_BUDGET_MS) {
         stopPoll();
-        setError('Wedding details saved. YouTube Live link is being generated.');
+        setError(
+          'YouTube Live creation failed\nReason: The YouTube Live was not created. Check Render logs for [YouTube] errors.'
+        );
+        setPhase('');
         return;
       }
       try {
         const payload = await eventService.weddingCardStatus(eventId);
-        if (payload?.status === 'ready' && (payload.liveUrl || payload.data)) {
+        if (payload?.status === 'ready' && hasYoutubeBroadcast(payload)) {
           stopPoll();
           applyResult(payload);
+          return;
+        }
+        if (payload?.status === 'failed') {
+          stopPoll();
+          applyResult(payload);
+          setError(youtubeFailMessage(payload));
         }
       } catch {
         // Keep polling until the budget expires.
@@ -223,12 +250,21 @@ export default function WeddingCardUpload() {
   const handleConfirmPayload = (payload) => {
     applyResult(payload);
     const eventId = payload.eventId || payload.data?.id;
-    if (payload.status === 'ready') {
+    if (payload.status === 'ready' && hasYoutubeBroadcast(payload)) {
+      setError('');
       setPhase('ready');
-    } else if (eventId) {
+      return;
+    }
+    if (payload.status === 'failed') {
+      stopPoll();
+      setError(youtubeFailMessage(payload));
+      setPhase('');
+      return;
+    }
+    if (eventId) {
       pollUntilReady(eventId);
     } else {
-      setError(payload.message || 'Wedding details saved. YouTube Live link is being generated.');
+      setError(youtubeFailMessage(payload) || 'Wedding details saved. YouTube Live link is being generated.');
       setPhase('');
     }
   };
@@ -430,25 +466,7 @@ export default function WeddingCardUpload() {
         weddingTime,
         venue,
       });
-      const event = payload?.data || payload;
-      const nextUrl = payload?.liveUrl || (event ? buildWatchUrl(event) : '');
-      const nextTitle = payload?.title || event?.title || wedsTitle(groomName, brideName);
-      setResult({
-        ...payload,
-        event,
-        liveUrl: nextUrl,
-        title: nextTitle,
-      });
-      if (nextUrl) {
-        setError('');
-        setPhase('ready');
-        return;
-      }
-      setError(
-        payload?.message ||
-          'Wedding details were saved, but the live link could not be generated. Please try again.'
-      );
-      setPhase('');
+      handleConfirmPayload(payload);
     } catch (err) {
       setError(err.message || 'Could not create the wedding live link. Please try again.');
       setPhase('');
@@ -601,7 +619,7 @@ export default function WeddingCardUpload() {
 
       {mode === 'quick' && error && phase !== 'ready' ? (
         <div className="card mt-6 border-red-200 bg-red-50">
-          <p className="text-sm font-semibold text-red-800">Could not create the live link</p>
+          <p className="text-sm font-semibold text-red-800">YouTube Live creation failed</p>
           <p className="mt-1 text-sm text-red-700">{error}</p>
         </div>
       ) : null}
@@ -629,6 +647,9 @@ export default function WeddingCardUpload() {
           <p className="text-sm font-semibold text-green-800">Live link ready</p>
           <p className="mt-1 text-sm font-medium text-slate-800">{result.title}</p>
           {liveUrl ? <p className="mt-2 break-all text-sm text-slate-700">{liveUrl}</p> : null}
+          {result.youtubeWatchUrl ? (
+            <p className="mt-2 break-all text-sm text-slate-700">{result.youtubeWatchUrl}</p>
+          ) : null}
           {liveUrl ? (
             <div className="mt-3">
               <ShareButtons url={liveUrl} title={result.title} />
@@ -656,6 +677,15 @@ export default function WeddingCardUpload() {
               </a>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {result && phase !== 'ready' && result.status === 'failed' ? (
+        <div className="card mt-6 border-red-200 bg-red-50">
+          <p className="text-sm font-semibold text-red-800">YouTube Live creation failed</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
+            {result.reason || error || result.message}
+          </p>
         </div>
       ) : null}
 

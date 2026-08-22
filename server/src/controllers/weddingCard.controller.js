@@ -45,13 +45,19 @@ async function publicWeddingCardPayload(event, extra = {}) {
   const liveUrl = await buildEventPublicWatchUrl(event);
   const json = event.toJSON ? event.toJSON() : { ...event };
   if (json._id && json.id == null) json.id = String(json._id);
+  const youtubeWatchUrl =
+    live.status === 'ready'
+      ? String(json.youtubeWatchUrl || json.streamUrl || extra.ingest?.watchUrl || '').trim()
+      : '';
   return {
-    success: true,
+    success: live.status !== 'failed',
     status: live.status,
     eventId: String(json.id || json._id),
     title: json.title || '',
     liveUrl,
-    message: live.message,
+    youtubeWatchUrl,
+    message: live.status === 'failed' ? live.reason || live.message : live.message,
+    reason: live.reason || '',
     data: json,
   };
 }

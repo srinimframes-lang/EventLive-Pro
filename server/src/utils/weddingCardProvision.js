@@ -3,6 +3,7 @@ import { extractYouTubeId } from './youtube.js';
 import {
   applyYoutubeLiveFields,
   provisionYoutubeLiveIfNeeded,
+  youtubeLog,
 } from '../services/youtubeLiveApi.js';
 import { applyStreamTypeSelection } from './streamType.js';
 
@@ -40,25 +41,29 @@ export function shouldRetryYoutubeProvision(event) {
   if (!event) return false;
   if (eventHasYoutubeBroadcast(event)) return false;
   const status = String(event.youtubeProvisionStatus || '');
-  return status === 'pending' || status === 'failed' || status === '';
+  return status === 'pending' || status === '';
 }
 
 export function weddingCardLiveStatus(event, { ingest = null, error = null } = {}) {
   if (eventHasYoutubeBroadcast(event) || ingest) {
     return {
       status: 'ready',
-      message: 'Live link ready',
+      message: 'YouTube Live created successfully',
+      reason: '',
     };
   }
-  if (error) {
+  const errMessage = String(error?.message || '').trim();
+  if (error || String(event.youtubeProvisionStatus || '') === 'failed') {
     return {
-      status: 'provisioning',
-      message: 'Wedding details saved. YouTube Live link is being generated.',
+      status: 'failed',
+      message: 'YouTube Live creation failed',
+      reason: errMessage || 'YouTube Live creation failed',
     };
   }
   return {
     status: 'provisioning',
     message: 'Wedding details saved. YouTube Live link is being generated.',
+    reason: '',
   };
 }
 
@@ -88,17 +93,25 @@ export async function runWeddingCardYoutubeProvision(
       existingVideoId: event.youtubeVideoId || event.youtubeBroadcastId || '',
     });
     if (ingest) {
+      youtubeLog('Saving YouTube data to event');
       applyYoutubeLiveFields(event, ingest);
       applyStreamTypeSelection(event, 'youtube');
       event.creditType = 'none';
       event.youtubeProvisionStatus = 'ready';
       event.status = 'published';
+      youtubeLog('Creation completed');
     } else if (!eventHasYoutubeBroadcast(event)) {
-      event.youtubeProvisionStatus = event.youtubeProvisionStatus || 'pending';
+      event.youtubeProvisionStatus = 'failed';
+      const err = new Error(
+        'YouTube Live was not created. Confirm YouTube is connected and live streaming is enabled on that channel.'
+      );
+      err.statusCode = 502;
+      return { ingest: null, error: err };
     }
     return { ingest: ingest || null, error: null };
   } catch (error) {
     event.youtubeProvisionStatus = 'failed';
+    youtubeLog('Creation failed', { message: error?.message || 'YouTube Live creation failed' });
     return { ingest: null, error };
   } finally {
     if (lockId) provisionLocks.delete(lockId);

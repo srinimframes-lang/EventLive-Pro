@@ -14,7 +14,7 @@ import {
 
 export { YOUTUBE_OAUTH_SCOPES, STATE_TTL_MS };
 
-const ALLOWED_RETURN_TO = new Set(['/dashboard', '/admin', '/reseller', '/live-links/new']);
+const ALLOWED_RETURN_TO = new Set(['/dashboard', '/admin', '/reseller', '/live-links/new', '/wedding-card']);
 
 export function youtubeOauthConfigured() {
   return Boolean(

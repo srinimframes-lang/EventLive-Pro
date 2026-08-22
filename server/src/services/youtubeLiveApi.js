@@ -12,8 +12,107 @@ import {
 import { decryptYoutubeToken } from '../utils/youtubeTokenCrypto.js';
 import { getYoutubeGoogleAdapter } from '../utils/youtubeGoogle.js';
 
+const SECRET_KEY_RE = /token|secret|authorization|cookie|password/i;
+const SECRET_VALUE_RE = /ya29\.[A-Za-z0-9._~-]+|1\/\/[A-Za-z0-9._~-]+|access_token|refresh_token|client_secret/gi;
+
+function youtubeSafeText(value) {
+  return String(value || '').replace(SECRET_VALUE_RE, '[redacted]');
+}
+
+function sanitizeYoutubeLogValue(value, depth = 0) {
+  if (value == null) return value;
+  if (typeof value === 'string') return youtubeSafeText(value);
+  if (typeof value !== 'object' || depth > 4) return youtubeSafeText(String(value));
+  if (Array.isArray(value)) return value.slice(0, 20).map((item) => sanitizeYoutubeLogValue(item, depth + 1));
+  const out = {};
+  Object.entries(value).forEach(([key, val]) => {
+    if (SECRET_KEY_RE.test(key)) {
+      out[key] = val ? true : false;
+      return;
+    }
+    out[key] = sanitizeYoutubeLogValue(val, depth + 1);
+  });
+  return out;
+}
+
+/** Safe server log. Never writes access/refresh tokens. */
+export function youtubeLog(step, extra) {
+  const prefix = `[YouTube] ${step}`;
+  if (extra === undefined) {
+    // eslint-disable-next-line no-console
+    console.info(prefix);
+    return;
+  }
+  // eslint-disable-next-line no-console
+  console.info(prefix, sanitizeYoutubeLogValue(extra));
+}
+
+/**
+ * Extract the real YouTube / Google API error without secrets.
+ * googleapis may put details on err.errors[], err.response.data.error, or err.message.
+ */
+export function describeYoutubeApiError(err) {
+  if (!err) {
+    return { status: 502, reason: 'unknown', message: 'YouTube API request failed', step: '' };
+  }
+  const data = err.response?.data?.error || {};
+  const first = Array.isArray(err.errors) ? err.errors[0] : Array.isArray(data.errors) ? data.errors[0] : null;
+  const reason = youtubeSafeText(
+    first?.reason ||
+      data.status ||
+      data.reason ||
+      err.youtubeReason ||
+      (typeof err.code === 'string' ? err.code : '') ||
+      ''
+  );
+  const message = youtubeSafeText(
+    first?.message || data.message || err.message || 'YouTube API request failed'
+  );
+  const numeric =
+    Number(err.statusCode) ||
+    Number(err.response?.status) ||
+    (typeof err.code === 'number' ? err.code : 0) ||
+    Number(data.code) ||
+    502;
+  const status = numeric >= 400 && numeric < 600 ? numeric : 502;
+  return {
+    status,
+    reason: String(reason === 'youtube_api_error' ? '' : reason),
+    message,
+    step: err.youtubeStep || '',
+  };
+}
+
+export function wrapYoutubeError(err, step = '') {
+  if (err?.code === 'youtube_not_connected') return err;
+  if (err?.code === 'youtube_api_error') {
+    if (step && !err.youtubeStep) err.youtubeStep = step;
+    return err;
+  }
+  const info = describeYoutubeApiError(err);
+  const stepLabel = step || info.step;
+  const reasonBit = info.reason ? `${info.reason} — ${info.message}` : info.message;
+  const safe = new Error(
+    stepLabel ? `YouTube ${stepLabel} failed: ${reasonBit}` : `YouTube Live creation failed: ${reasonBit}`
+  );
+  safe.statusCode = info.status;
+  safe.code = 'youtube_api_error';
+  safe.youtubeReason = info.reason;
+  safe.youtubeStep = stepLabel;
+  return safe;
+}
+
 async function authorizedClientForUser(userId) {
   const cred = await loadUserCredential(userId, { withSecrets: true });
+  const tokenFound = Boolean(cred?.connected && cred?.refreshTokenEnc);
+  youtubeLog('OAuth token found: ' + tokenFound, {
+    userId: String(userId || ''),
+    connected: Boolean(cred?.connected),
+    hasRefreshToken: Boolean(cred?.refreshTokenEnc),
+    hasAccessToken: Boolean(cred?.accessTokenEnc),
+    channelId: cred?.channelId || '',
+    scopes: cred?.scopes || [],
+  });
   if (!cred || !cred.connected || !cred.refreshTokenEnc) {
     const err = new Error('YouTube is not connected for this account');
     err.code = 'youtube_not_connected';
@@ -36,6 +135,22 @@ async function authorizedClientForUser(userId) {
       applyRefreshedTokens(userId, tokens).catch(() => {});
     });
   }
+
+  const expiresAt = cred.accessTokenExpiresAt ? cred.accessTokenExpiresAt.getTime() : 0;
+  const expired = !expiresAt || expiresAt <= Date.now() + 60_000;
+  youtubeLog('Access token refresh attempted', { needed: expired });
+  if (expired && typeof client.getAccessToken === 'function') {
+    try {
+      await client.getAccessToken();
+      if (client.credentials) {
+        await applyRefreshedTokens(userId, client.credentials);
+      }
+    } catch (err) {
+      youtubeLog('Access token refresh failed', describeYoutubeApiError(err));
+      throw wrapYoutubeError(err, 'oauth.refresh');
+    }
+  }
+
   return { client, youtube: g.youtubeClient(client), credential: cred };
 }
 
@@ -300,68 +415,18 @@ export async function liveBroadcastsTransition(userId, params) {
 /** Insert broadcast + stream, bind them, return ingest details. Does not log tokens. */
 export async function insertBindYoutubeLive(youtube, { title, description, startTime } = {}) {
   const snippetTitle = String(title || 'EventLivePro Live').slice(0, 100);
-  const broadcastRes = await youtube.liveBroadcasts.insert({
-    part: ['id', 'snippet', 'contentDetails', 'status'],
-    requestBody: {
-      snippet: {
-        title: snippetTitle,
-        description: String(description || '').slice(0, 5000),
-        scheduledStartTime: scheduledStartIso(startTime),
-      },
-      status: {
-        privacyStatus: 'unlisted',
-        selfDeclaredMadeForKids: false,
-      },
-      contentDetails: {
-        enableAutoStart: true,
-        enableAutoStop: false,
-        enableEmbed: true,
-        enableDvr: true,
-        recordFromStart: true,
-        monitorStream: { enableMonitorStream: false },
-      },
-    },
-  });
-  const broadcast = apiData(broadcastRes);
-  const broadcastId = broadcast.id;
-  if (!broadcastId) {
-    const err = new Error('youtube_broadcast_missing_id');
-    err.statusCode = 502;
-    throw err;
-  }
 
-  const streamRes = await youtube.liveStreams.insert({
-    part: ['id', 'snippet', 'cdn', 'status'],
-    requestBody: {
-      snippet: { title: `${snippetTitle} stream`.slice(0, 100) },
-      cdn: {
-        frameRate: 'variable',
-        ingestionType: 'rtmp',
-        resolution: 'variable',
-      },
-    },
-  });
-  const stream = apiData(streamRes);
-  const streamId = stream.id;
-  if (!streamId) {
-    const err = new Error('youtube_stream_missing_id');
-    err.statusCode = 502;
-    throw err;
-  }
-
-  await youtube.liveBroadcasts.bind({
-    part: ['id', 'snippet', 'contentDetails', 'status'],
-    id: broadcastId,
-    streamId,
-  });
-
-  // Bind puts the broadcast in `ready`. Re-apply auto-start after bind so OBS
-  // can push RTMP without finishing setup in YouTube Studio.
-  if (typeof youtube.liveBroadcasts.update === 'function') {
-    await youtube.liveBroadcasts.update({
-      part: ['id', 'contentDetails', 'status'],
+  youtubeLog('Creating broadcast', { title: snippetTitle });
+  let broadcastRes;
+  try {
+    broadcastRes = await youtube.liveBroadcasts.insert({
+      part: ['id', 'snippet', 'contentDetails', 'status'],
       requestBody: {
-        id: broadcastId,
+        snippet: {
+          title: snippetTitle,
+          description: String(description || '').slice(0, 5000),
+          scheduledStartTime: scheduledStartIso(startTime),
+        },
         status: {
           privacyStatus: 'unlisted',
           selfDeclaredMadeForKids: false,
@@ -376,14 +441,109 @@ export async function insertBindYoutubeLive(youtube, { title, description, start
         },
       },
     });
+  } catch (err) {
+    youtubeLog('Broadcast response', { ok: false, ...describeYoutubeApiError(err) });
+    throw wrapYoutubeError(err, 'liveBroadcasts.insert');
+  }
+  const broadcast = apiData(broadcastRes);
+  const broadcastId = broadcast.id;
+  youtubeLog('Broadcast response', { ok: true, broadcastId: broadcastId || '' });
+  if (!broadcastId) {
+    const err = new Error('youtube_broadcast_missing_id');
+    err.statusCode = 502;
+    throw wrapYoutubeError(err, 'liveBroadcasts.insert');
+  }
+  youtubeLog('Final video ID', { broadcastId });
+
+  youtubeLog('Creating stream');
+  let streamRes;
+  try {
+    streamRes = await youtube.liveStreams.insert({
+      part: ['id', 'snippet', 'cdn', 'status'],
+      requestBody: {
+        snippet: { title: `${snippetTitle} stream`.slice(0, 100) },
+        cdn: {
+          frameRate: 'variable',
+          ingestionType: 'rtmp',
+          resolution: 'variable',
+        },
+      },
+    });
+  } catch (err) {
+    youtubeLog('Stream response', { ok: false, ...describeYoutubeApiError(err) });
+    throw wrapYoutubeError(err, 'liveStreams.insert');
+  }
+  const stream = apiData(streamRes);
+  const streamId = stream.id;
+  youtubeLog('Stream response', { ok: true, streamId: streamId || '' });
+  if (!streamId) {
+    const err = new Error('youtube_stream_missing_id');
+    err.statusCode = 502;
+    throw wrapYoutubeError(err, 'liveStreams.insert');
+  }
+  youtubeLog('Final stream ID', { streamId });
+
+  youtubeLog('Binding broadcast and stream', { broadcastId, streamId });
+  try {
+    await youtube.liveBroadcasts.bind({
+      part: ['id', 'snippet', 'contentDetails', 'status'],
+      id: broadcastId,
+      streamId,
+    });
+  } catch (err) {
+    youtubeLog('Binding broadcast and stream', { ok: false, ...describeYoutubeApiError(err) });
+    throw wrapYoutubeError(err, 'liveBroadcasts.bind');
   }
 
-  const ingest = stream.cdn?.ingestionInfo || {};
-  const streamKey = String(ingest.streamName || '').trim();
+  // Bind puts the broadcast in `ready`. Re-apply auto-start after bind so OBS
+  // can push RTMP without finishing setup in YouTube Studio.
+  if (typeof youtube.liveBroadcasts.update === 'function') {
+    try {
+      await youtube.liveBroadcasts.update({
+        part: ['id', 'contentDetails', 'status'],
+        requestBody: {
+          id: broadcastId,
+          status: {
+            privacyStatus: 'unlisted',
+            selfDeclaredMadeForKids: false,
+          },
+          contentDetails: {
+            enableAutoStart: true,
+            enableAutoStop: false,
+            enableEmbed: true,
+            enableDvr: true,
+            recordFromStart: true,
+            monitorStream: { enableMonitorStream: false },
+          },
+        },
+      });
+    } catch (err) {
+      youtubeLog('Broadcast update after bind', { ok: false, ...describeYoutubeApiError(err) });
+      throw wrapYoutubeError(err, 'liveBroadcasts.update');
+    }
+  }
+
+  let ingest = stream.cdn?.ingestionInfo || {};
+  let streamKey = String(ingest.streamName || '').trim();
+  if (!streamKey && typeof youtube.liveStreams.list === 'function') {
+    try {
+      const listed = await youtube.liveStreams.list({
+        part: ['id', 'cdn'],
+        id: [streamId],
+        maxResults: 1,
+      });
+      const item = apiData(listed)?.items?.[0] || {};
+      ingest = item.cdn?.ingestionInfo || ingest;
+      streamKey = String(ingest.streamName || '').trim();
+    } catch (err) {
+      youtubeLog('Stream list for ingest key', { ok: false, ...describeYoutubeApiError(err) });
+    }
+  }
+  youtubeLog('Stream key available: ' + Boolean(streamKey));
   if (!streamKey) {
     const err = new Error('youtube_stream_missing_key');
     err.statusCode = 502;
-    throw err;
+    throw wrapYoutubeError(err, 'liveStreams.insert');
   }
 
   return {
@@ -438,10 +598,26 @@ export async function provisionYoutubeLiveIfNeeded(
   }
 
   if (!shouldAutoCreateYoutubeLive({ ...fields, streamType, youtubeLiveUrl: payload?.youtubeLiveUrl })) {
+    youtubeLog('Create live request started', { skipped: 'already_has_youtube_or_not_youtube_dest' });
     return null;
   }
+  youtubeLog('Create live request started', {
+    userId: String(user?._id || ''),
+    title: payload?.title || '',
+    streamType: streamType || '',
+  });
   const cred = await loadUserCredential(user?._id);
-  if (!cred?.connected) return null;
+  youtubeLog('OAuth token found: ' + Boolean(cred?.connected), {
+    connected: Boolean(cred?.connected),
+    channelId: cred?.channelId || '',
+    channelTitle: cred?.channelTitle || '',
+  });
+  if (!cred?.connected) {
+    const err = new Error('YouTube is not connected for this account');
+    err.code = 'youtube_not_connected';
+    err.statusCode = 400;
+    throw err;
+  }
 
   try {
     const live = await createBoundYoutubeLive(user._id, {
@@ -449,15 +625,18 @@ export async function provisionYoutubeLiveIfNeeded(
       description: payload.description,
       startTime: payload.startTime,
     });
+    youtubeLog('Saving YouTube data to event', {
+      broadcastId: live.broadcastId || '',
+      streamId: live.streamId || '',
+      watchUrl: live.watchUrl || '',
+      streamKeyAvailable: Boolean(live.streamKey),
+    });
     applyYoutubeLiveFields(payload, live);
+    youtubeLog('Creation completed', { broadcastId: live.broadcastId || '', watchUrl: live.watchUrl || '' });
     return publicYoutubeIngest(live);
   } catch (err) {
-    if (err.code === 'youtube_not_connected') return null;
-    const safe = new Error(
-      'Could not create the YouTube live broadcast. Paste a YouTube Live URL or reconnect YouTube.'
-    );
-    safe.statusCode = err.statusCode && err.statusCode >= 400 ? err.statusCode : 502;
-    throw safe;
+    youtubeLog('Creation failed', describeYoutubeApiError(err));
+    throw wrapYoutubeError(err);
   }
 }
 

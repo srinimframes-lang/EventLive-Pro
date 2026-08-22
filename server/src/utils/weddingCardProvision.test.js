@@ -63,6 +63,13 @@ test('shouldRetryYoutubeProvision is false once a broadcast exists', () => {
     }),
     true
   );
+  assert.equal(
+    shouldRetryYoutubeProvision({
+      youtubeVideoId: '',
+      youtubeProvisionStatus: 'failed',
+    }),
+    false
+  );
 });
 
 test('YouTube provisioning failure keeps extracted details and does not throw', async () => {
@@ -87,8 +94,9 @@ test('YouTube provisioning failure keeps extracted details and does not throw', 
   assert.equal(event.title, 'Sai Kumar Reddy Weds Pranathi Reddy');
   assert.equal(event.youtubeProvisionStatus, 'failed');
   const status = weddingCardLiveStatus(event, { error });
-  assert.equal(status.status, 'provisioning');
-  assert.match(status.message, /Wedding details saved/i);
+  assert.equal(status.status, 'failed');
+  assert.match(status.message, /YouTube Live creation failed/i);
+  assert.match(status.reason, /youtube down/i);
 });
 
 test('provisioning is skipped when a YouTube broadcast already exists', async () => {
