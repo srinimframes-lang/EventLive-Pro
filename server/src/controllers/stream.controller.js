@@ -416,12 +416,8 @@ function mediaSecretOk(req) {
 }
 
 /**
- * @route GET /api/events/:id/stream
- * @desc  Public streaming configuration for the player
- * @access Public
- */
- * Public stream config must not call YouTube Data API on every player poll.
- * Use the EventLivePro database IDs created during provisioning.
+ * Public stream config uses stored EventLivePro YouTube IDs only.
+ * Do not call YouTube Data API on every player poll.
  */
 function resolveYoutubePlaybackForPublicEvent(event) {
   const storedId = eventYoutubeLookupId(event);
@@ -440,6 +436,11 @@ function resolveYoutubePlaybackForPublicEvent(event) {
   };
 }
 
+/**
+ * @route GET /api/events/:id/stream
+ * @desc  Public streaming configuration for the player
+ * @access Public
+ */
 export const getStreamConfig = asyncHandler(async (req, res) => {
   let event = await findEventOr404(req.params.id, res);
   const io = req.app.get('io');
