@@ -51,7 +51,9 @@ import {
   parseByteRange,
   recordingMediaHeaders,
   recordingPlaybackStatus,
+  recordingLifecycleStatus,
   resolveRecordingPlaybackSource,
+  shouldDelegateMissingSourceToRecordingHost,
 } from '../utils/recordingPlayback.js';
 import {
   applyEmergencyAction,
@@ -218,7 +220,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
           : Boolean(event.isLive);
   }
   const rec = getRecordingState(event);
-  const playbackParts = Array.isArray(playableParts) && playableParts.length > 0
+  const playbackParts = Array.isArray(playableParts)
     ? playableParts.map((p, index) => ({
         id: String(p._id || p.id || rec.parts[index]?.id || ''),
         part: index + 1,
@@ -233,7 +235,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     ? ''
     : firstPlayableId
       ? `/api/events/${event.id}/stream/recording?part=${firstPlayableId}`
-      : buildPublicRecordingUrl(event);
+      : '';
   const playbackMode = isLive
     ? reconnecting
       ? 'reconnecting'
@@ -241,6 +243,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     : recordingUrl
       ? 'recorded'
       : 'offline';
+  const playable = Boolean(recordingUrl);
 
   const base = {
     eventId: event.id,
@@ -301,6 +304,16 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
       publiclyVisible: rec.publiclyVisible,
       mergeStatus: event.recordingMergeStatus || '',
       storage: rec.recordingStorage,
+      playable,
+    }),
+    recordingLifecycle: recordingLifecycleStatus({
+      isLive,
+      reconnecting,
+      hasRecording: rec.hasRecording,
+      publiclyVisible: rec.publiclyVisible,
+      mergeStatus: event.recordingMergeStatus || '',
+      storage: rec.recordingStorage,
+      playable,
     }),
     // Lightweight part list for the player (no R2 URLs — resolve per part on demand).
     // After a successful merge only one part remains active — Parts UI stays hidden.
@@ -1224,9 +1237,7 @@ export const playRecording = asyncHandler(async (req, res) => {
 
   const partId = String(req.query.part || '').trim();
   const playable = await persistPlayableRecordingParts(event);
-  const part =
-    findPartInList(playable, partId || undefined) ||
-    resolveRecordingPartForPlayback(event, partId || undefined);
+  const part = findPartInList(playable, partId || undefined);
   if (!part) {
     res.status(404);
     throw new Error(partId ? 'Recording part not found' : 'Recording file missing');
@@ -1244,7 +1255,10 @@ export const playRecording = asyncHandler(async (req, res) => {
   });
 
   if (source.kind === 'missing') {
-    if (!isOnRecordingFallbackHost(req)) {
+    if (
+      !isOnRecordingFallbackHost(req) &&
+      shouldDelegateMissingSourceToRecordingHost({ sourceKind: source.kind, r2Key: source.r2Key })
+    ) {
       const fallback = fallbackRecordingPlayUrl(event.id, part);
       if (fallback) return res.redirect(302, fallback);
     }
@@ -1300,9 +1314,7 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
 
   const partId = String(req.query.part || '').trim();
   const playable = await persistPlayableRecordingParts(event);
-  const part =
-    findPartInList(playable, partId || undefined) ||
-    resolveRecordingPartForPlayback(event, partId || undefined);
+  const part = findPartInList(playable, partId || undefined);
   if (!part) {
     res.status(404);
     throw new Error(partId ? 'Recording part not found' : 'Recording file missing');
@@ -1326,14 +1338,17 @@ export const getRecordingPlayUrl = asyncHandler(async (req, res) => {
   });
 
   if (source.kind === 'missing') {
-    if (!isOnRecordingFallbackHost(req)) {
+    if (
+      !isOnRecordingFallbackHost(req) &&
+      shouldDelegateMissingSourceToRecordingHost({ sourceKind: source.kind, r2Key: source.r2Key })
+    ) {
       const fallback = fallbackRecordingPlayUrl(event.id, part);
       if (fallback) {
         return res.status(200).json({
           success: true,
           data: {
             url: fallback,
-            storage: 'local',
+            storage: 'r2',
             expiresInSec: null,
             filename,
             durationSec,

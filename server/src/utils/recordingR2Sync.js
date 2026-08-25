@@ -69,7 +69,9 @@ export function shouldUnlinkLocalAfterR2({
   head,
   localSize,
   mapped = true,
+  mergedValidated = true,
 } = {}) {
+  if (mergedValidated === false) return { ok: false, reason: 'merge-unvalidated' };
   if (!mapped) return { ok: false, reason: 'unmapped' };
   if (storage !== 'r2') return { ok: false, reason: 'storage-local' };
   if (!r2Key) return { ok: false, reason: 'no-r2-key' };

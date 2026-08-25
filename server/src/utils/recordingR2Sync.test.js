@@ -41,6 +41,16 @@ test('shouldUnlinkLocalAfterR2 requires r2 + HEAD + matching size', () => {
   assert.equal(shouldUnlinkLocalAfterR2({ storage: 'r2', r2Key: 'k', head: { exists: true, size: 9 }, localSize: 10 }).ok, false);
   assert.equal(shouldUnlinkLocalAfterR2({ mapped: false, storage: 'r2', r2Key: 'k', head: { exists: true, size: 10 }, localSize: 10 }).ok, false);
   assert.equal(shouldUnlinkLocalAfterR2({ storage: 'r2', r2Key: 'k', head: { exists: true, size: 10 }, localSize: 10 }).ok, true);
+  assert.equal(
+    shouldUnlinkLocalAfterR2({
+      storage: 'r2',
+      r2Key: 'k',
+      head: { exists: true, size: 10 },
+      localSize: 10,
+      mergedValidated: false,
+    }).ok,
+    false
+  );
 });
 
 test('isUnsafeRecordingRelPath skips temp and merge-work files', () => {

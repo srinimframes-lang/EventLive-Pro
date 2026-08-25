@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
-import { restoreSoftDeletedPlayableParts } from './recordingPlayable.js';
+import { RECORDINGS_ROOT } from './recording.js';
+import { partSourceExists, restoreSoftDeletedPlayableParts } from './recordingPlayable.js';
 
 test('restoreSoftDeletedPlayableParts clears deletedAt on leftover originals only', () => {
   const orig = {
@@ -37,4 +39,19 @@ test('restoreSoftDeletedPlayableParts never touches merged files or empty lists'
   assert.equal(restoreSoftDeletedPlayableParts(event, [merged]), false);
   assert.ok(merged.deletedAt instanceof Date);
   assert.equal(restoreSoftDeletedPlayableParts({ recordings: [] }, []), false);
+});
+
+test('stale localPath + sizeBytes is not proof the file exists', async () => {
+  const missing = path.join(RECORDINGS_ROOT, '6a81adf1ce2dbab2249f08cd', '2026-08-16_18-26-15-800755.mp4');
+  const exists = await partSourceExists(
+    {
+      filename: '2026-08-16_18-26-15-800755.mp4',
+      localPath: missing,
+      storage: 'local',
+      r2Key: '',
+      sizeBytes: 59656804,
+    },
+    '6a81adf1ce2dbab2249f08cd'
+  );
+  assert.equal(exists, false);
 });

@@ -49,6 +49,18 @@ else
   mv -f "$SEGMENT" "$OUT"
 fi
 
+# Quarantine audio-only / empty OBS connect blips. Do not register them —
+# ffmpeg concat demuxer would copy their stream layout and drop later video.
+if command -v ffprobe >/dev/null 2>&1 && ! has_video "$OUT"; then
+  REJECT_DIR="${DEST_DIR}/.rejected"
+  mkdir -p "$REJECT_DIR"
+  mv -f "$OUT" "${REJECT_DIR}/${BASE}"
+  echo "finalize-recording: quarantined no-video blip ${REJECT_DIR}/${BASE}" >&2
+  PARENT="$(dirname "$SEGMENT")"
+  rmdir -p --ignore-fail-on-non-empty "$PARENT" 2>/dev/null || true
+  exit 0
+fi
+
 PARENT="$(dirname "$SEGMENT")"
 rmdir -p --ignore-fail-on-non-empty "$PARENT" 2>/dev/null || true
 

@@ -339,7 +339,7 @@ const eventSchema = new Schema(
     ],
     recordingMergeStatus: {
       type: String,
-      enum: ['', 'pending', 'merged', 'failed', 'skipped'],
+      enum: ['', 'pending', 'uploading', 'merged', 'failed', 'skipped'],
       default: '',
     },
     recordingMergeError: { type: String, trim: true, default: '' },

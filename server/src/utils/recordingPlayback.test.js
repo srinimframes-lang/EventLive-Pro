@@ -5,11 +5,14 @@ import {
   isSignedUrlExpired,
   parseByteRange,
   recordingPlaybackStatus,
+  recordingLifecycleStatus,
   resolveRecordingPlaybackSource,
   sameOriginRecordingPlayUrl,
   RECORDING_SIGNED_URL_EXPIRES_SEC,
   inspectMp4Init,
   selectPlayableRecordingParts,
+  shouldPreferMergedRecording,
+  shouldDelegateMissingSourceToRecordingHost,
   candidateRecordingR2Keys,
 } from './recordingPlayback.js';
 
@@ -176,13 +179,21 @@ test('selectPlayableRecordingParts falls back from unplayable merged MP4', () =>
   });
   assert.equal(keepMerged[0]._id, 'm1');
 
-  const incompleteStillFallsBack = selectPlayableRecordingParts({
+  const largeMoovPrefersMerged = selectPlayableRecordingParts({
     active: [merged],
+    all: [orig, merged],
+    inspect: { incomplete: true, browserPlayable: false, hasVideo: true, videoCodec: 'avc1', moovSize: 26402771 },
+    existingIds: new Set(['o1', orig.r2Key]),
+  });
+  assert.equal(largeMoovPrefersMerged[0]._id, 'm1');
+
+  const incompleteNoProofPrefersMerged = selectPlayableRecordingParts({
+    active: [{ ...merged, storage: 'r2', r2Key: 'recordings/e/merged_1.mp4' }],
     all: [orig, merged],
     inspect: { incomplete: true, browserPlayable: false },
     existingIds: new Set(['o1', orig.r2Key]),
   });
-  assert.equal(incompleteStillFallsBack[0]._id, 'o1');
+  assert.equal(incompleteNoProofPrefersMerged[0]._id, 'm1');
 });
 
 test('unplayable merged plus restored originals prefers originals (production Prudhvi shape)', () => {
@@ -209,6 +220,14 @@ test('unplayable merged plus restored originals prefers originals (production Pr
   assert.equal(parts.length, 1);
   assert.equal(parts[0]._id, orig._id);
   assert.equal(parts[0].filename, orig.filename);
+
+  const noOriginals = selectPlayableRecordingParts({
+    active: [merged],
+    all: [merged],
+    inspect: { hasVideo: false, hasAudio: true, audioCodec: 'mp4a', browserPlayable: false, incomplete: false },
+    existingIds: new Set(),
+  });
+  assert.equal(noOriginals.length, 0);
 });
 
 test('candidateRecordingR2Keys includes filename key when storage is local', () => {
@@ -264,3 +283,86 @@ test('expired signed URL is detected from X-Amz-Expires', () => {
   assert.equal(isSignedUrlExpired('/api/events/e/stream/recording'), false);
   assert.equal(RECORDING_SIGNED_URL_EXPIRES_SEC, 24 * 3600);
 });
+
+test('shouldPreferMergedRecording: valid H.264 and large-moov incomplete prefer R2', () => {
+  assert.equal(
+    shouldPreferMergedRecording({ browserPlayable: true, hasVideo: true, videoCodec: 'avc1' }),
+    true
+  );
+  assert.equal(
+    shouldPreferMergedRecording({
+      incomplete: true,
+      browserPlayable: false,
+      hasVideo: true,
+      videoCodec: 'avc1',
+      moovSize: 18648421,
+      ftypBrands: ['isom', 'iso2', 'avc1', 'mp41'],
+    }),
+    true
+  );
+  assert.equal(
+    shouldPreferMergedRecording({
+      incomplete: false,
+      hasVideo: false,
+      hasAudio: true,
+      audioCodec: 'mp4a',
+      browserPlayable: false,
+    }),
+    false
+  );
+});
+
+test('stale localPath without R2 key must not be delegated to the VPS', () => {
+  assert.equal(
+    shouldDelegateMissingSourceToRecordingHost({ sourceKind: 'missing', r2Key: '' }),
+    false
+  );
+  assert.equal(
+    shouldDelegateMissingSourceToRecordingHost({
+      sourceKind: 'missing',
+      r2Key: 'recordings/e/merged_1.mp4',
+    }),
+    true
+  );
+});
+
+test('audio-only merged is not ready; valid recording is ready/replay', () => {
+  assert.equal(
+    recordingLifecycleStatus({
+      isLive: false,
+      hasRecording: true,
+      publiclyVisible: true,
+      mergeStatus: 'merged',
+      storage: 'r2',
+      playable: false,
+    }),
+    'unavailable'
+  );
+  assert.equal(
+    recordingLifecycleStatus({
+      isLive: false,
+      hasRecording: true,
+      publiclyVisible: true,
+      mergeStatus: 'merged',
+      storage: 'r2',
+      playable: true,
+    }),
+    'ready'
+  );
+  assert.equal(
+    recordingPlaybackStatus({
+      isLive: false,
+      hasRecording: true,
+      publiclyVisible: true,
+      playable: true,
+    }),
+    'replay'
+  );
+  assert.equal(recordingLifecycleStatus({ isLive: false, mergeStatus: 'pending' }), 'finalizing');
+  assert.equal(recordingLifecycleStatus({ isLive: false, mergeStatus: 'uploading' }), 'uploading');
+  assert.equal(
+    recordingLifecycleStatus({ isLive: false, mergeStatus: 'failed', playable: false }),
+    'failed'
+  );
+});
+

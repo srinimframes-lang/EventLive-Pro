@@ -15,6 +15,7 @@ import {
   inspectMp4Init,
   isMergedRecordingFilename,
   selectPlayableRecordingParts,
+  shouldPreferMergedRecording,
 } from './recordingPlayback.js';
 
 const inspectCache = new Map();
@@ -81,7 +82,7 @@ export async function inspectRecordingInit(part, eventId = '') {
   return result;
 }
 
-async function partSourceExists(part, eventId = '') {
+export async function partSourceExists(part, eventId = '') {
   const abs = resolveRecordingAbsolutePath(part?.localPath);
   if (abs && fs.existsSync(abs)) {
     try {
@@ -99,9 +100,8 @@ async function partSourceExists(part, eventId = '') {
       /* try next key */
     }
   }
-  // Render cannot see VPS disks. Keep sizable local leftovers so the
-  // recording fallback host (stream.eventlivepro.com) can serve them.
-  return Boolean(part?.localPath && Number(part.sizeBytes || 0) > 200000);
+  // Render cannot see VPS disks. Mongo localPath + sizeBytes is NOT proof.
+  return false;
 }
 
 export async function probeRecordingR2Source(part, { eventId = '', rec = null } = {}) {
@@ -137,7 +137,7 @@ export async function loadPlayableRecordingParts(event) {
     } catch {
       inspect = { incomplete: true, browserPlayable: false };
     }
-    if (inspect?.browserPlayable) return merged;
+    if (shouldPreferMergedRecording(inspect, merged[0])) return merged;
   }
   if (!merged.length) return active;
 

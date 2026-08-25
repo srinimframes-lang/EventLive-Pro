@@ -32,14 +32,42 @@ export function recordingPlaybackStatus({
   publiclyVisible = false,
   mergeStatus = '',
   storage = 'local',
+  playable = true,
 } = {}) {
   if (isLive && reconnecting) return 'reconnecting';
   if (isLive) return 'live';
-  if (hasRecording && (publiclyVisible || storage === 'r2' || storage === 'local')) {
+  const merge = String(mergeStatus || '');
+  if (merge === 'failed' && !hasRecording) return 'failed';
+  if (hasRecording && playable && (publiclyVisible || storage === 'r2' || storage === 'local')) {
     return 'replay';
   }
+  if (merge === 'pending' || merge === 'uploading') return 'processing';
+  if (merge === 'failed') return 'failed';
+  return 'unavailable';
+}
+
+/**
+ * Explicit lifecycle for admin/UI: recording | finalizing | uploading |
+ * ready | failed | unavailable. "ready" is never used for audio-only MP4s.
+ */
+export function recordingLifecycleStatus({
+  isLive = false,
+  reconnecting = false,
+  hasRecording = false,
+  publiclyVisible = false,
+  mergeStatus = '',
+  storage = 'local',
+  playable = true,
+} = {}) {
+  if (isLive) return 'recording';
   const merge = String(mergeStatus || '');
-  if (merge === 'pending') return 'processing';
+  if (merge === 'pending') return 'finalizing';
+  if (merge === 'uploading') return 'uploading';
+  if (merge === 'failed' && !playable) return 'failed';
+  if (hasRecording && playable && (publiclyVisible || storage === 'r2' || storage === 'local')) {
+    return 'ready';
+  }
+  if (merge === 'failed') return 'failed';
   return 'unavailable';
 }
 
@@ -286,6 +314,7 @@ export function inspectMp4Init(buf) {
     moovSize: 0,
     trackCount: 0,
     handlers: [],
+    ftypBrands: [],
     browserPlayable: false,
   };
   if (!buf || buf.length < 8) {
@@ -310,6 +339,13 @@ export function inspectMp4Init(buf) {
     }
     if (size === 0) size = b.length - off;
     if (size < 8) break;
+    if (type === 'ftyp') {
+      const boxEnd = Math.min(off + size, b.length);
+      if (off + hdr + 4 <= boxEnd) result.ftypBrands.push(readAscii(b, off + hdr, 4));
+      for (let i = off + hdr + 8; i + 4 <= boxEnd; i += 4) {
+        result.ftypBrands.push(readAscii(b, i, 4));
+      }
+    }
     if (type === 'moov') {
       moovStart = off;
       result.moovSize = size;
@@ -337,10 +373,43 @@ export function isMergedRecordingFilename(filename) {
   return /^merged_/i.test(String(filename || '').trim());
 }
 
+function ftypLooksAvc(inspect) {
+  return (inspect?.ftypBrands || []).some((b) => /avc/i.test(String(b || '')));
+}
+
+/**
+ * Prefer a merged R2 MP4 when it is proven H.264, OR when inspection is
+ * incomplete (large moov) so we do not fall back to deleted local leftovers.
+ * Only reject when we fully parsed the file and it has no video track.
+ */
+export function shouldPreferMergedRecording(inspect, mergedPart = null) {
+  if (inspect?.browserPlayable) return true;
+  const provenAudioOnly = Boolean(
+    inspect &&
+      inspect.incomplete !== true &&
+      inspect.hasVideo === false &&
+      (inspect.hasAudio || (inspect.handlers || []).includes('soun') || Number(inspect.trackCount) === 1)
+  );
+  if (provenAudioOnly) return false;
+  if (inspect?.hasVideo && (!inspect.videoCodec || inspect.videoCodec === 'unknown' || isBrowserVideoCodec(inspect.videoCodec))) {
+    return true;
+  }
+  if (ftypLooksAvc(inspect)) return true;
+  if (inspect?.incomplete) return true;
+  if (mergedPart?.storage === 'r2' && mergedPart?.r2Key) return true;
+  return false;
+}
+
+/** Delegate to the VPS recording host only when an R2 object key is known. */
+export function shouldDelegateMissingSourceToRecordingHost({ sourceKind = '', r2Key = '' } = {}) {
+  return Boolean(String(r2Key || '').trim()) && (sourceKind === 'r2' || sourceKind === 'missing');
+}
+
 /**
  * If the active replay is a merged MP4 that Chrome cannot play (no H.264
  * video track), fall back to original timestamped parts that still exist.
  * Never invent parts; existingIds must be verified by HEAD / local stat.
+ * Incomplete moov inspect must NOT discard a merged R2 object.
  */
 export function selectPlayableRecordingParts({
   active = [],
@@ -349,9 +418,12 @@ export function selectPlayableRecordingParts({
   existingIds = new Set(),
 } = {}) {
   const activeList = (Array.isArray(active) ? active : []).filter(Boolean);
-  const hasMerged = activeList.some((p) => isMergedRecordingFilename(p.filename));
-  const playableMerged = Boolean(inspect && inspect.browserPlayable);
-  if (!hasMerged || playableMerged) return activeList;
+  const mergedPart = activeList.find((p) => isMergedRecordingFilename(p.filename));
+  const hasMerged = Boolean(mergedPart);
+  if (!hasMerged) return activeList;
+  if (shouldPreferMergedRecording(inspect, mergedPart)) {
+    return activeList.filter((p) => isMergedRecordingFilename(p.filename));
+  }
 
   const originals = (Array.isArray(all) ? all : []).filter((p) => {
     if (!p) return false;
@@ -370,5 +442,5 @@ export function selectPlayableRecordingParts({
     const tb = new Date(b.startedAt || b.createdAt || 0).getTime();
     return ta - tb;
   });
-  return originals.length ? originals : activeList;
+  return originals;
 }

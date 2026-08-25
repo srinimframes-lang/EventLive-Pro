@@ -19,6 +19,14 @@ import {
   safeUnlinkLocalAfterR2,
   unlinkOriginalsReplacedByMergedR2,
 } from './recordingR2Sync.js';
+import { inspectMp4Init } from './recordingPlayback.js';
+import {
+  concatInputsNeedReencode,
+  isFfprobeMergedVideoOk,
+  isValidatedMergedOutput,
+  mayDeleteOriginalsAfterValidatedMerge,
+  selectConcatVideoInputs,
+} from './mergeRecordingsLogic.js';
 import { Event } from '../models/Event.js';
 
 function runCmd(bin, args, { timeoutMs = 30 * 60 * 1000 } = {}) {
@@ -143,58 +151,128 @@ async function ensureLocalPartFile(part, workDir) {
   throw new Error(`missing local file for part ${part.filename || part.id}`);
 }
 
-async function ffmpegConcat(inputs, outputPath) {
+async function inspectLocalMp4Init(filePath) {
+  let size = 0;
+  try {
+    size = fs.statSync(filePath).size;
+  } catch {
+    return inspectMp4Init(Buffer.alloc(0));
+  }
+  const need = Math.min(8 * 1024 * 1024, size);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(need);
+    const { bytesRead } = fs.readSync(fd, buf, 0, need, 0);
+    return inspectMp4Init(buf.subarray(0, bytesRead));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+async function probePartForMerge(part, workDir) {
+  const file = await ensureLocalPartFile(part, workDir);
+  const streams = await probeMp4Streams(file);
+  let sizeBytes = Number(part.sizeBytes) || 0;
+  try {
+    sizeBytes = fs.statSync(file).size;
+  } catch {
+    /* keep stored size */
+  }
+  return {
+    part,
+    file,
+    hasVideo: Boolean(streams.hasVideo),
+    hasAudio: Boolean(streams.hasAudio),
+    videoCodec: streams.videoCodec || '',
+    audioCodec: streams.audioCodec || '',
+    durationSec: Number(streams.durationSec || part.durationSec || 0),
+    sizeBytes,
+  };
+}
+
+async function ffmpegConcat(inputs, outputPath, { forceReencode = false } = {}) {
   const listFile = `${outputPath}.txt`;
   const body = inputs.map((f) => `file '${String(f).replace(/'/g, `'\\''`)}'`).join('\n');
   fs.writeFileSync(listFile, body, 'utf8');
   try {
-    await runCmd('ffmpeg', [
-      '-y',
-      '-f',
-      'concat',
-      '-safe',
-      '0',
-      '-i',
-      listFile,
-      '-c',
-      'copy',
-      '-map',
-      '0',
-      '-movflags',
-      '+faststart',
-      outputPath,
-    ]);
-    const copied = await probeMp4Streams(outputPath);
-    if (!copied.hasVideo) {
-      throw new Error('concat copy produced no video track');
-    }
-  } catch (copyErr) {
-    // Fallback re-encode when codecs differ across OBS reconnect segments.
-    await runCmd('ffmpeg', [
-      '-y',
-      '-f',
-      'concat',
-      '-safe',
-      '0',
-      '-i',
-      listFile,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '23',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      '-movflags',
-      '+faststart',
-      outputPath,
-    ]);
-    const encoded = await probeMp4Streams(outputPath);
-    if (!encoded.hasVideo) {
-      throw new Error(`concat re-encode produced no video track (${copyErr?.message || copyErr})`);
+    if (!forceReencode) {
+      try {
+        await runCmd('ffmpeg', [
+          '-y',
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          listFile,
+          '-c',
+          'copy',
+          '-map',
+          '0',
+          '-movflags',
+          '+faststart',
+          outputPath,
+        ]);
+        const copied = await probeMp4Streams(outputPath);
+        if (isFfprobeMergedVideoOk(copied)) return copied;
+        throw new Error('concat copy produced no H.264 video track');
+      } catch (copyErr) {
+        await runCmd('ffmpeg', [
+          '-y',
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          listFile,
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '23',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '128k',
+          '-movflags',
+          '+faststart',
+          outputPath,
+        ]);
+        const encoded = await probeMp4Streams(outputPath);
+        if (!isFfprobeMergedVideoOk(encoded)) {
+          throw new Error(`concat re-encode produced no H.264 video track (${copyErr?.message || copyErr})`);
+        }
+        return encoded;
+      }
+    } else {
+      await runCmd('ffmpeg', [
+        '-y',
+        '-f',
+        'concat',
+        '-safe',
+        '0',
+        '-i',
+        listFile,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '23',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-movflags',
+        '+faststart',
+        outputPath,
+      ]);
+      const encoded = await probeMp4Streams(outputPath);
+      if (!isFfprobeMergedVideoOk(encoded)) {
+        throw new Error('concat re-encode produced no H.264 video track');
+      }
+      return encoded;
     }
   } finally {
     try {
@@ -237,29 +315,54 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
   fs.mkdirSync(workDir, { recursive: true });
 
   const downloaded = [];
+  let outPath = '';
   try {
-    const inputs = [];
+    const probedParts = [];
     for (const part of parts) {
-      const file = await ensureLocalPartFile(part, workDir);
-      inputs.push(file);
-      if (file.startsWith(workDir)) downloaded.push(file);
+      const row = await probePartForMerge(part, workDir);
+      probedParts.push(row);
+      if (row.file.startsWith(workDir)) downloaded.push(row.file);
+    }
+
+    const videoInputs = selectConcatVideoInputs(probedParts);
+    if (videoInputs.length === 0) {
+      throw new Error('no H.264 video segments to merge (audio-only or empty blips skipped)');
+    }
+    if (videoInputs.length === 1) {
+      event.recordingMergeStatus = 'skipped';
+      event.recordingMergeError = '';
+      event.recordingMergedAt = new Date();
+      await event.save();
+      return { ok: true, reason: 'single_video_part' };
     }
 
     const outName = `merged_${Date.now()}.mp4`;
-    const outPath = path.join(RECORDINGS_ROOT, String(event.id), outName);
+    outPath = path.join(RECORDINGS_ROOT, String(event.id), outName);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
-    await ffmpegConcat(inputs, outPath);
+    const files = videoInputs.map((row) => row.file);
+    await ffmpegConcat(files, outPath, {
+      forceReencode: concatInputsNeedReencode(videoInputs),
+    });
     const probed = await probeMp4Streams(outPath);
-    if (!probed.hasVideo) {
-      throw new Error('merged MP4 has no video track');
+    const init = await inspectLocalMp4Init(outPath);
+    if (!isFfprobeMergedVideoOk(probed) || !isValidatedMergedOutput(init, probed)) {
+      throw new Error(
+        `merged MP4 failed validation (ffprobe video=${probed.videoCodec || 'none'} ` +
+          `inspect video=${init.videoCodec || 'none'} tracks=${init.trackCount} ` +
+          `duration=${init.durationSec || probed.durationSec || 0})`
+      );
     }
     const durationSec =
       probed.durationSec ||
+      init.durationSec ||
       (await probeDurationSec(outPath)) ||
-      parts.reduce((sum, p) => sum + (Number(p.durationSec) || 0), 0);
-    const startedAt = parts[0]?.startedAt || new Date();
-    const endedAt = parts[parts.length - 1]?.endedAt || new Date();
+      videoInputs.reduce((sum, row) => sum + (Number(row.durationSec) || 0), 0);
+    const startedAt = videoInputs[0]?.part?.startedAt || parts[0]?.startedAt || new Date();
+    const endedAt =
+      videoInputs[videoInputs.length - 1]?.part?.endedAt ||
+      parts[parts.length - 1]?.endedAt ||
+      new Date();
 
     const oldR2Keys = parts.map((p) => p.r2Key).filter(Boolean);
     const originalLocalPaths = parts.map((p) => p.localPath).filter(Boolean);
@@ -270,7 +373,7 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
       startedAt,
       endedAt,
     });
-    event.recordingMergeStatus = 'merged';
+    event.recordingMergeStatus = isR2Configured() ? 'uploading' : 'merged';
     event.recordingMergeError = '';
     event.recordingMergedAt = new Date();
     await event.save();
@@ -281,9 +384,14 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
         console.log(`[r2] upload started ${outPath} -> ${key}`);
         const { url, size } = await uploadRecordingToR2(outPath, key);
         const head = await headR2Object(key);
-        if (!head?.exists || Number(head.size || 0) !== Number(size || 0) || head.size <= 0) {
+        const cleanupOk = mayDeleteOriginalsAfterValidatedMerge({
+          validated: true,
+          r2Head: head,
+          expectedSize: size,
+        });
+        if (!cleanupOk.ok) {
           throw new Error(
-            `R2 HEAD mismatch for ${key}: remote ${head?.size || 0} vs uploaded ${size}`
+            `R2 HEAD mismatch for ${key}: remote ${head?.size || 0} vs uploaded ${size} (${cleanupOk.reason})`
           );
         }
         console.log(`[r2] upload verified (${size} bytes): ${key}`);
@@ -294,6 +402,7 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
           r2Url: url,
           sizeBytes: size,
         });
+        event.recordingMergeStatus = 'merged';
         await event.save();
         await safeUnlinkLocalAfterR2({
           localPath: outPath,
@@ -315,6 +424,9 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`[r2] upload failed after merge: ${err.message}`);
+        event.recordingMergeStatus = 'merged';
+        event.recordingMergeError = String(err?.message || err).slice(0, 500);
+        await event.save();
       }
     }
 
@@ -341,6 +453,13 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
 
     return { ok: true, mergedPath: outPath };
   } catch (err) {
+    if (outPath) {
+      try {
+        fs.unlinkSync(outPath);
+      } catch {
+        /* keep disk if unlink fails; originals are untouched */
+      }
+    }
     event.recordingMergeStatus = 'failed';
     event.recordingMergeError = String(err?.message || err).slice(0, 500);
     event.recordingMergedAt = new Date();
