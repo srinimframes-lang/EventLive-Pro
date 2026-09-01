@@ -101,6 +101,7 @@ test('sanitizeStreamingSecrets never returns the key', () => {
       youtubeStreamKey: 'secret',
       facebookStreamKey: 'fb-secret',
       rtmpStreamKey: 'id',
+      cfStreamRtmpsKey: 'cf-secret',
       title: 'T',
     },
     { hasYoutubeStreamKey: true, hasFacebookStreamKey: true }
@@ -108,6 +109,7 @@ test('sanitizeStreamingSecrets never returns the key', () => {
   assert.equal(data.youtubeStreamKey, undefined);
   assert.equal(data.facebookStreamKey, undefined);
   assert.equal(data.rtmpStreamKey, undefined);
+  assert.equal(data.cfStreamRtmpsKey, undefined);
   assert.equal(data.youtubeStreamKeySet, true);
   assert.equal(data.facebookStreamKeySet, true);
   assert.equal(data.title, 'T');

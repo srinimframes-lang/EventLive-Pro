@@ -47,6 +47,11 @@ export function mediamtxPathName(streamKey) {
   return `live/${streamKey}`;
 }
 
+/** True when this event uses Cloudflare Stream Live ingest (not MediaMTX). */
+export function isCloudflareStreamLive(event = {}) {
+  return String(event.liveIngestProvider || '') === 'cloudflare_stream';
+}
+
 export function resolveStreamKey(event) {
   return event.rtmpStreamKey || streamKeyFromEventId(event._id || event.id);
 }
@@ -101,6 +106,9 @@ export function normalizePlaybackUrl(url) {
  * Prefer rebuilding from stream key so the CDN + adaptive toggles apply.
  */
 export function deriveHlsPlaybackUrl(event) {
+  if (isCloudflareStreamLive(event)) {
+    return String(event.cfStreamHlsUrl || '').trim();
+  }
   const key = resolveStreamKey(event);
   if (key) return buildHlsPlaybackUrl(key, event);
   if (event.hlsUrl) return normalizePlaybackUrl(event.hlsUrl);
@@ -141,6 +149,21 @@ export function deriveWebRtcPlaybackUrl(event) {
 }
 
 export function buildRtmpCredentials(event) {
+  if (isCloudflareStreamLive(event)) {
+    const ingestUrl = String(event.cfStreamRtmpsUrl || '').trim().replace(/\/+$/, '');
+    const streamKey = String(event.cfStreamRtmpsKey || '').trim();
+    return {
+      ingestUrl,
+      streamKey,
+      fullUrl: ingestUrl && streamKey ? `${ingestUrl}/${streamKey}` : ingestUrl,
+      playbackUrl: String(event.cfStreamHlsUrl || '').trim(),
+      webrtcUrl: '',
+      mediamtxPath: '',
+      hlsCdnEnabled: isHlsCdnEnabled(),
+      hlsPlaybackBase: getViewerHlsPlaybackBase(),
+      adaptiveStreaming: false,
+    };
+  }
   const streamKey = resolveStreamKey(event);
   const ingestUrl = normalizeRtmpIngestUrl(env.rtmpIngestUrl);
   const eventLike = { ...(event.toObject?.() || event), rtmpStreamKey: streamKey };
@@ -170,6 +193,7 @@ export function freshServerStreamUrls(event) {
  */
 export function syncServerStreamFields(event) {
   if (event.streamProvider !== 'rtmp') return null;
+  if (isCloudflareStreamLive(event)) return null;
   const key = streamKeyFromEventId(event._id || event.id);
   if (!key) return null;
   const eventLike = { ...(event.toObject?.() || event), rtmpStreamKey: key };
@@ -242,6 +266,9 @@ export async function findEventByStreamKey(rawKey) {
 }
 
 export async function ensureEventStreamKey(event) {
+  if (isCloudflareStreamLive(event)) {
+    return String(event.cfStreamRtmpsKey || '').trim();
+  }
   const creds = syncServerStreamFields(event);
   if (!creds) return '';
   await event.save();

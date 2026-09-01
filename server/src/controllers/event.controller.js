@@ -31,6 +31,7 @@ import {
   provisionYoutubeLiveIfNeeded,
   resolveYoutubeInput,
 } from '../services/youtubeLiveApi.js';
+import { createEventWithCloudflareLive } from '../services/cloudflareStream.js';
 import { loadUserCredential } from '../utils/youtubeOauth.js';
 
 const EDITABLE_FIELDS = [
@@ -380,6 +381,7 @@ export const getEvent = asyncHandler(async (req, res) => {
   delete data.rtmpStreamKey;
   delete data.youtubeStreamKey;
   delete data.facebookStreamKey;
+  delete data.cfStreamRtmpsKey;
   {
     const keyed = await Event.findById(event._id)
       .select('+youtubeStreamKey +facebookStreamKey')
@@ -536,7 +538,7 @@ export const createEvent = asyncHandler(async (req, res) => {
       payload.organizer = owners.organizer;
       payload.createdBy = owners.createdBy;
       payload.creditType = 'none';
-      const event = await Event.create(payload);
+      const event = await createEventWithCloudflareLive(payload);
       const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
       scheduleEventQrSync(event._id);
       // eslint-disable-next-line no-console
@@ -553,7 +555,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     // YouTube Live Link Generator: payment is optional and must not block creation.
     if (!chargeCredits) {
       payload.creditType = 'none';
-      const event = await Event.create(payload);
+      const event = await createEventWithCloudflareLive(payload);
       const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
       scheduleEventQrSync(event._id);
       // eslint-disable-next-line no-console
@@ -584,7 +586,7 @@ export const createEvent = asyncHandler(async (req, res) => {
 
     let event;
     try {
-      event = await Event.create(payload);
+      event = await createEventWithCloudflareLive(payload);
     } catch (err) {
       await changeBalance({
         userId: req.user._id,

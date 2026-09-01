@@ -150,6 +150,14 @@ export const env = {
       return Boolean(this.token && this.projectId);
     },
   },
+  // Cloudflare Stream Live (optional at boot; required when creating Server/RTMP events).
+  cloudflare: {
+    accountId: String(process.env.CLOUDFLARE_ACCOUNT_ID || '').trim(),
+    apiToken: String(process.env.CLOUDFLARE_STREAM_API_TOKEN || '').trim(),
+    get configured() {
+      return Boolean(this.accountId && this.apiToken);
+    },
+  },
   // YouTube OAuth (optional until Render env is set). Never expose to the client.
   youtube: {
     clientId: String(process.env.YOUTUBE_CLIENT_ID || '').trim(),

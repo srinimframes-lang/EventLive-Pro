@@ -264,6 +264,18 @@ const eventSchema = new Schema(
     rtmpStreamKey: { type: String, default: '', select: false },
     // Full OBS publish URL for Premium Server Live (rtmp://host:1935/live/<eventId>).
     rtmpPublishUrl: { type: String, trim: true, default: '' },
+    // Ingest backend for Premium Server Live. New Server/RTMP events set
+    // cloudflare_stream at create time; existing docs stay on MediaMTX.
+    liveIngestProvider: {
+      type: String,
+      enum: ['mediamtx', 'cloudflare_stream'],
+      default: 'mediamtx',
+    },
+    cfStreamLiveInputId: { type: String, trim: true, default: '' },
+    cfStreamHlsUrl: { type: String, trim: true, default: '' },
+    cfStreamRtmpsUrl: { type: String, trim: true, default: '' },
+    // Cloudflare Live Input RTMPS key — never returned unless explicitly selected.
+    cfStreamRtmpsKey: { type: String, default: '', select: false },
     // Private-server controls (Phase 2). Additive — defaults keep prior behaviour.
     streamDisabled: { type: Boolean, default: false }, // admin can block publishing
     autoRecord: { type: Boolean, default: false }, // record the private-server stream
@@ -529,6 +541,8 @@ eventSchema.pre('validate', async function ensureSlugAndShortCode() {
 // Premium Server Live: persist RTMP URL, stream key, and playback URL from event id.
 eventSchema.pre('save', function ensureServerStreamFields() {
   if (this.streamProvider !== 'rtmp') return;
+  // Cloudflare Stream Live events keep their stored Live Input fields as-is.
+  if (this.liveIngestProvider === 'cloudflare_stream') return;
   syncServerStreamFields(this);
 });
 
@@ -570,6 +584,7 @@ eventSchema.set('toJSON', {
     delete ret.rtmpStreamKey;
     delete ret.youtubeStreamKey;
     delete ret.facebookStreamKey;
+    delete ret.cfStreamRtmpsKey;
     delete ret.youtubeProvisionError;
     return ret;
   },

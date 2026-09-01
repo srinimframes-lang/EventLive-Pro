@@ -9,14 +9,27 @@
  * CDN ON  → https://cdn.eventlivepro.com/live/...
  */
 const ORIGIN_HLS_PLAYBACK_BASE = (
-  import.meta.env.VITE_HLS_PLAYBACK_BASE || 'https://stream.eventlivepro.com'
+  import.meta.env?.VITE_HLS_PLAYBACK_BASE || 'https://stream.eventlivepro.com'
 ).replace(/\/+$/, '');
 
 const CDN_HLS_PLAYBACK_BASE = (
-  import.meta.env.VITE_HLS_CDN_PLAYBACK_BASE || 'https://cdn.eventlivepro.com'
+  import.meta.env?.VITE_HLS_CDN_PLAYBACK_BASE || 'https://cdn.eventlivepro.com'
 ).replace(/\/+$/, '');
 
 const HLS_PLAYLIST_RE = /\/live\/[^/]+\/(?:index|master)\.m3u8/i;
+const CF_STREAM_MANIFEST_RE = /\/manifest\/video\.m3u8/i;
+
+function isCloudflareStreamHlsUrl(url) {
+  const trimmed = String(url || '').trim();
+  if (!/^https:\/\//i.test(trimmed)) return false;
+  if (CF_STREAM_MANIFEST_RE.test(trimmed)) return true;
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase();
+    return host === 'cloudflarestream.com' || host.endsWith('.cloudflarestream.com');
+  } catch {
+    return false;
+  }
+}
 
 function viewerBaseFromConfig(config) {
   const fromApi = String(config?.hlsPlaybackBase || '').trim().replace(/\/+$/, '');
@@ -47,6 +60,7 @@ export function resolveServerPlaybackUrl(config) {
   if (!config) return '';
 
   const serverUrl = String(config.playbackUrl || config.hlsUrl || '').trim();
+  if (isCloudflareStreamHlsUrl(serverUrl)) return serverUrl;
   if (/^https:\/\//i.test(serverUrl) && HLS_PLAYLIST_RE.test(serverUrl)) {
     return serverUrl;
   }
@@ -65,6 +79,7 @@ export function resolveServerPlaybackUrl(config) {
 export function securePlaybackUrl(url, config = null) {
   const trimmed = String(url || '').trim();
   if (!trimmed) return '';
+  if (isCloudflareStreamHlsUrl(trimmed)) return trimmed;
 
   const base = viewerBaseFromConfig(config);
   if (trimmed.startsWith(`${base}/`)) return trimmed;

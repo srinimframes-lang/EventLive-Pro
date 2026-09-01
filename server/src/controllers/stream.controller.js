@@ -14,12 +14,14 @@ import {
   ensureEventStreamKey,
   findEventByStreamKey,
   isAdaptiveStreamingEnabled,
+  isCloudflareStreamLive,
   normalizePlaybackUrl,
   parseMediaMtxPath,
   probeMediaMtxPublishing,
   resolveStreamKey,
   streamKeyFromEventId,
 } from '../utils/mediaStream.js';
+import { getLiveInputStatus } from '../services/cloudflareStream.js';
 import { getViewerHlsPlaybackBase, isHlsCdnEnabled } from '../utils/hlsCdn.js';
 import {
   addDays,
@@ -142,7 +144,7 @@ function isOnRecordingFallbackHost(req) {
 
 async function findEventOr404(id, res, { withKey = false } = {}) {
   const query = Event.findById(id);
-  if (withKey) query.select('+rtmpStreamKey');
+  if (withKey) query.select('+rtmpStreamKey +cfStreamRtmpsKey');
   const event = await query;
   if (!event) {
     res.status(404);
@@ -193,7 +195,9 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
 
   const isServer = provider === 'rtmp' || provider === 'hls';
   const playbackUrl = isServer
-    ? normalizePlaybackUrl(deriveHlsPlaybackUrl(event))
+    ? isCloudflareStreamLive(event)
+      ? deriveHlsPlaybackUrl(event)
+      : normalizePlaybackUrl(deriveHlsPlaybackUrl(event))
     : event.hlsUrl;
   const webrtcUrl = isServer ? deriveWebRtcPlaybackUrl(event) : event.webrtcUrl;
   const liveFromProbe = isPublishing === true;
@@ -347,9 +351,21 @@ function adminRecordingConfig(event) {
   };
 }
 
-async function publishingStatusForEvent(event) {
+export async function publishingStatusForEvent(event, deps = {}) {
+  if (isCloudflareStreamLive(event)) {
+    const uid = String(event.cfStreamLiveInputId || '').trim();
+    if (!uid) return null;
+    const getStatus = deps.getLiveInputStatus || getLiveInputStatus;
+    try {
+      const info = await getStatus(uid);
+      return info?.isPublishing ?? null;
+    } catch {
+      return null;
+    }
+  }
   if (event.streamProvider !== 'rtmp' && event.streamProvider !== 'hls') return null;
-  return probeMediaMtxPublishing(resolveStreamKey(event));
+  const probe = deps.probeMediaMtxPublishing || probeMediaMtxPublishing;
+  return probe(resolveStreamKey(event));
 }
 
 function emitLiveStatus(io, event, extra = {}) {
@@ -669,8 +685,9 @@ export const getStreamHealth = asyncHandler(async (req, res) => {
 
   const event = await findEventOr404(req.params.id, res);
   const playbackUrl = deriveOriginHlsPlaybackUrl(event);
+  const skipMediaMtxProbe = isCloudflareStreamLive(event);
   const [playlistOk, publishing] = await Promise.all([
-    event.streamProvider === 'rtmp' || event.streamProvider === 'hls'
+    !skipMediaMtxProbe && (event.streamProvider === 'rtmp' || event.streamProvider === 'hls')
       ? probeHlsPlaylist(playbackUrl)
       : Promise.resolve(null),
     publishingStatusForEvent(event),
