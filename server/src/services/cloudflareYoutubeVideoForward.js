@@ -279,9 +279,13 @@ function adoptOrStart({
   }
 
   const secrets = [streamKey, rtmpTarget];
+  let stderrBuf = '';
   if (child.stderr && typeof child.stderr.on === 'function') {
     child.stderr.on('data', (buf) => {
-      const msg = redactForwardSecrets(String(buf), secrets).trim();
+      const chunk = String(buf);
+      stderrBuf += chunk;
+      if (stderrBuf.length > 16_384) stderrBuf = stderrBuf.slice(-16_384);
+      const msg = redactForwardSecrets(chunk, secrets).trim();
       if (msg) {
         // eslint-disable-next-line no-console
         console.warn(`[cf-yt-video] ffmpeg event=${eventId} ${msg}`);
@@ -289,7 +293,21 @@ function adoptOrStart({
     });
   }
   if (typeof child.on === 'function') {
-    child.on('exit', () => {
+    child.on('error', (err) => {
+      logForward('ffmpeg error', {
+        eventId,
+        pid,
+        error: redactForwardSecrets(String(err?.message || err), secrets),
+      });
+    });
+    child.on('exit', (code, signal) => {
+      logForward('ffmpeg exited', {
+        eventId,
+        pid,
+        code: code == null ? null : code,
+        signal: signal || '',
+        stderr: redactForwardSecrets(stderrBuf, secrets).trim(),
+      });
       const current = forwards.get(eventId);
       if (current && current.pid === pid) {
         forwards.delete(eventId);

@@ -209,6 +209,60 @@ test('tick is idle when ffmpeg is missing', async () => {
   assert.equal(spawned.length, 0);
 });
 
+test('ffmpeg exit and error logs include code/signal and redact the stream key', async () => {
+  resetCloudflareYoutubeVideoForwardState();
+  const listeners = {};
+  const stderrListeners = {};
+  await runCloudflareYoutubeVideoForwardTick({
+    ffmpegAvailable: true,
+    ffmpegBin: 'ffmpeg',
+    listEvents: async () => [cfEvent()],
+    getLiveInputStatus: async () => ({ isPublishing: true }),
+    spawn: () => ({
+      pid: 9100,
+      stderr: {
+        on(event, fn) {
+          stderrListeners[event] = fn;
+        },
+      },
+      on(event, fn) {
+        listeners[event] = fn;
+      },
+      kill() {},
+    }),
+    killFn() {},
+  });
+  assert.equal(typeof listeners.exit, 'function');
+  assert.equal(typeof listeners.error, 'function');
+
+  const infos = [];
+  const originalInfo = console.info;
+  console.info = (...args) => {
+    infos.push(
+      args
+        .map((a) => (a && typeof a === 'object' ? JSON.stringify(a) : String(a)))
+        .join(' ')
+    );
+  };
+  try {
+    stderrListeners.data?.(
+      `Connection to rtmp://a.rtmp.youtube.com/live2/${YT_KEY} failed`
+    );
+    listeners.error?.(new Error(`EPIPE rtmp://a.rtmp.youtube.com/live2/${YT_KEY}`));
+    listeners.exit?.(1, null);
+  } finally {
+    console.info = originalInfo;
+  }
+
+  const joined = infos.join('\n');
+  assert.match(joined, /ffmpeg error/);
+  assert.match(joined, /ffmpeg exited/);
+  assert.match(joined, /"code":1/);
+  assert.equal(joined.includes(YT_KEY), false);
+  assert.match(joined, /\[redacted\]/);
+  resetCloudflareYoutubeVideoForwardState({ killFn() {} });
+});
+
 test.after(() => {
   resetCloudflareYoutubeVideoForwardState({ killFn() {} });
   try {
