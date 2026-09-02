@@ -165,7 +165,7 @@ export const getSeoPreview = asyncHandler(async (req, res) => {
   const canonicalPath = watchPath(event);
   const url = absoluteUrl(siteUrl, canonicalPath);
   const title = buildShareEventTitle(event, settings);
-  const description = buildShareEventDescription();
+  const description = buildShareEventDescription(event);
   const image = resolveOgImage(event, settings, API_ORIGIN);
   const robots = shouldNoIndexEvent(event) ? 'noindex,nofollow' : 'index,follow';
   const jsonLd = [
@@ -282,7 +282,7 @@ export const getEventSeoMeta = asyncHandler(async (req, res) => {
     success: true,
     data: {
       title: buildShareEventTitle(event, settings),
-      description: buildShareEventDescription(),
+      description: buildShareEventDescription(event),
       canonical: url,
       image: resolveOgImage(event, settings, API_ORIGIN),
       noindex: shouldNoIndexEvent(event),

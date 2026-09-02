@@ -26,7 +26,7 @@ export default function EventSeo({ event, pageType = 'watch' }) {
     if (!event) return null;
     const siteUrl = getSiteOrigin(settings);
     const title = buildShareEventTitle(event, settings);
-    const description = buildShareEventDescription();
+    const description = buildShareEventDescription(event);
     const canonical = buildEventCanonical(event, settings);
     const image = resolveEventOgImage(event, settings);
     const couple =

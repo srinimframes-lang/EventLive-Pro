@@ -20,10 +20,32 @@ export function coupleTitle(event) {
 }
 
 const GENERIC_SHARE_TITLE = 'EventLive Pro — Premium Wedding Live Streaming';
-const SHARE_DESCRIPTION = 'Wedding Live Streaming';
+const SHARE_DESCRIPTION_FALLBACK = 'Live Streaming';
+
+/** WhatsApp / OG description by event.category (then themeSnapshot.category). */
+const SHARE_CATEGORY_DESCRIPTIONS = {
+  wedding: 'Wedding Live Streaming',
+  engagement: 'Engagement Live Streaming',
+  reception: 'Reception Live Streaming',
+  sangeet: 'Sangeet Live Streaming',
+  haldi: 'Haldi Live Streaming',
+  mehendi: 'Mehendi Live Streaming',
+  birthday: 'Birthday Live Streaming',
+  house_warming: 'House Warming Live Streaming',
+  housewarming: 'House Warming Live Streaming',
+  corporate: 'Corporate Live Streaming',
+  temple: 'Temple Live Streaming',
+  memorial: 'Memorial Live Streaming',
+  other: 'Live Streaming',
+};
 
 function trimField(value) {
   return String(value || '').trim();
+}
+
+function shareCategoryKey(event) {
+  const raw = trimField(event?.category) || trimField(event?.themeSnapshot?.category);
+  return raw.toLowerCase();
 }
 
 /**
@@ -49,8 +71,10 @@ export function buildShareEventTitle(event, settings) {
   return GENERIC_SHARE_TITLE;
 }
 
-export function buildShareEventDescription() {
-  return SHARE_DESCRIPTION;
+export function buildShareEventDescription(event) {
+  const key = shareCategoryKey(event);
+  if (!key) return SHARE_DESCRIPTION_FALLBACK;
+  return SHARE_CATEGORY_DESCRIPTIONS[key] || SHARE_DESCRIPTION_FALLBACK;
 }
 
 export function eventDetailPath(event) {

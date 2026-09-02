@@ -200,8 +200,21 @@ test('buildShareEventTitle falls back to generic platform title', () => {
   );
 });
 
-test('buildShareEventDescription is Wedding Live Streaming', () => {
-  assert.equal(buildShareEventDescription(), 'Wedding Live Streaming');
+test('buildShareEventDescription uses event category', () => {
+  assert.equal(buildShareEventDescription({ category: 'wedding' }), 'Wedding Live Streaming');
+  assert.equal(buildShareEventDescription({ category: 'engagement' }), 'Engagement Live Streaming');
+  assert.equal(buildShareEventDescription({ category: 'reception' }), 'Reception Live Streaming');
+  assert.equal(buildShareEventDescription({ category: 'other' }), 'Live Streaming');
+});
+
+test('buildShareEventDescription falls back to themeSnapshot then generic Live Streaming', () => {
+  assert.equal(
+    buildShareEventDescription({ category: '', themeSnapshot: { category: 'engagement' } }),
+    'Engagement Live Streaming'
+  );
+  assert.equal(buildShareEventDescription({ category: 'wedding' }), 'Wedding Live Streaming');
+  assert.equal(buildShareEventDescription({}), 'Live Streaming');
+  assert.equal(buildShareEventDescription(), 'Live Streaming');
 });
 
 test('buildOgHtml emits og/twitter tags without bouncing crawlers to the SPA', () => {
