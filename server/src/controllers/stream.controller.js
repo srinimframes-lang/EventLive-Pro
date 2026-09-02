@@ -214,6 +214,9 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     if (ended) isLive = Boolean(event.isLive);
     else if (playbackMatchesStored && youtubePlayback?.isLive === true) isLive = true;
     else isLive = event.status === 'live' || Boolean(event.isLive);
+  } else if (isCloudflareStreamLive(event)) {
+    // Cloudflare ingest: live flag comes from Live Input status, not Mongo isLive.
+    isLive = liveFromProbe ? true : offlineFromProbe ? false : Boolean(event.isLive);
   } else {
     isLive = liveFromProbe
       ? true
@@ -252,6 +255,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
   const base = {
     eventId: event.id,
     provider,
+    liveIngestProvider: event.liveIngestProvider || undefined,
     streamingDestination: event.streamingDestination || undefined,
     // Public watch page must use YouTube embed for this destination (never HLS).
     viewerPlayback: youtubePlusServer
@@ -800,6 +804,7 @@ export const restartStream = asyncHandler(async (req, res) => {
 function publishAllowed(event) {
   if (!event || event.streamDisabled) return false;
   if (event.status === 'cancelled') return false;
+  if (isCloudflareStreamLive(event)) return false;
   return true;
 }
 
@@ -869,6 +874,9 @@ export const youtubeForwardConfig = asyncHandler(async (req, res) => {
   if (!event) {
     return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
   }
+  if (isCloudflareStreamLive(event)) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'cloudflare_ingest' });
+  }
 
   // Only forward when explicitly configured for simultaneous Server↔YouTube modes.
   const allowForward =
@@ -931,6 +939,9 @@ export const facebookForwardConfig = asyncHandler(async (req, res) => {
   if (!event) {
     return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
   }
+  if (isCloudflareStreamLive(event)) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'cloudflare_ingest' });
+  }
 
   if (!event.facebookForwardEnabled) {
     return res.status(200).json({ ok: true, enabled: false, reason: 'forward_disabled' });
@@ -991,6 +1002,14 @@ export const streamForwardsConfig = asyncHandler(async (req, res) => {
       reason: 'event_not_found',
     });
   }
+  if (isCloudflareStreamLive(event)) {
+    return res.status(200).json({
+      ok: true,
+      enabled: false,
+      targets: [],
+      reason: 'cloudflare_ingest',
+    });
+  }
 
   const targets = listEnabledForwardTargets(event);
   const diagnostics = describeForwardEligibility(event);
@@ -1038,6 +1057,9 @@ export const abrStreamConfig = asyncHandler(async (req, res) => {
   const event = await findEventByStreamKey(streamKey);
   if (!event) {
     return res.status(200).json({ ok: true, enabled: false, reason: 'event_not_found' });
+  }
+  if (isCloudflareStreamLive(event)) {
+    return res.status(200).json({ ok: true, enabled: false, reason: 'cloudflare_ingest' });
   }
 
   const dest = String(event.streamingDestination || '').toLowerCase();

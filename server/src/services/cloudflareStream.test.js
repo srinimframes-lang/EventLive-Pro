@@ -118,7 +118,8 @@ test('createLiveInput POSTs a dedicated input and never logs the stream key', as
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, 'POST');
   assert.match(calls[0].url, /\/stream\/live_inputs$/);
-  assert.equal(calls[0].body.recording.mode, 'off');
+  assert.equal(calls[0].body.recording.mode, 'automatic');
+  assert.equal(calls[0].body.recording.timeoutSeconds, 0);
   assert.match(calls[0].body.meta.name, /cccccccccccccccccccccccc/);
   assert.equal(created.uid, 'live-uid-new');
   assert.equal(created.rtmpsKey, SECRET_KEY);

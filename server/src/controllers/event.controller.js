@@ -21,7 +21,7 @@ import {
 } from '../utils/streamType.js';
 import { applyYoutubeForwardFields, sanitizeStreamingSecrets } from '../utils/youtubeForward.js';
 import { applyFacebookForwardFields } from '../utils/streamForward.js';
-import { freshServerStreamUrls } from '../utils/mediaStream.js';
+import { freshServerStreamUrls, isCloudflareStreamLive } from '../utils/mediaStream.js';
 import { adminEventListFilter, canManageEvent, resolveEventCreateOwners } from '../utils/ownership.js';
 import { isAdminPanelUser } from '../utils/tenantScope.js';
 import { cacheGet, cacheSet } from '../utils/apiCache.js';
@@ -31,7 +31,7 @@ import {
   provisionYoutubeLiveIfNeeded,
   resolveYoutubeInput,
 } from '../services/youtubeLiveApi.js';
-import { createEventWithCloudflareLive } from '../services/cloudflareStream.js';
+import { createEventWithCloudflareLive, deleteCloudflareLiveInputForEvent, syncCloudflareSimulcastOutputs } from '../services/cloudflareStream.js';
 import { loadUserCredential } from '../utils/youtubeOauth.js';
 
 const EDITABLE_FIELDS = [
@@ -725,6 +725,20 @@ export const updateEvent = asyncHandler(async (req, res) => {
 
   try {
     await event.save();
+    if (isCloudflareStreamLive(event)) {
+      const keyed = await Event.findById(event._id).select('+youtubeStreamKey +facebookStreamKey');
+      if (keyed) {
+        try {
+          await syncCloudflareSimulcastOutputs(keyed);
+        } catch (syncErr) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[events] cloudflare simulcast sync failed id=${event._id}:`,
+            syncErr.message,
+          );
+        }
+      }
+    }
     const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
     scheduleEventQrSync(event._id);
     // eslint-disable-next-line no-console
@@ -813,6 +827,7 @@ export const deleteEvent = asyncHandler(async (req, res) => {
   }
 
   assertCanModify(event, req.user, res);
+  await deleteCloudflareLiveInputForEvent(event);
   await event.deleteOne();
 
   res.status(200).json({ success: true, message: 'Event deleted', id: req.params.id });

@@ -4,6 +4,7 @@
  */
 import mongoose from 'mongoose';
 import { Event } from '../models/Event.js';
+import { isCloudflareStreamLive } from '../utils/mediaStream.js';
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 const REQUEST_TIMEOUT_MS = 15000;
@@ -161,7 +162,7 @@ export async function createLiveInput({ eventId, slug, title } = {}, { fetchImpl
     method: 'POST',
     body: {
       meta: { name, eventId: String(eventId || ''), slug: String(slug || ''), title: String(title || '') },
-      recording: { mode: 'off' },
+      recording: { mode: 'automatic', timeoutSeconds: 0 },
     },
     fetchImpl,
     config,
@@ -202,9 +203,24 @@ const LIVE_INPUT_OFFLINE_STATUSES = new Set([
   'offline',
 ]);
 
+/**
+ * Cloudflare Live Input GET returns `status` as:
+ *   { current: { state, reason, ... }, history: [] }
+ * Older/string payloads are still accepted. Never use String(status) on an object
+ * (that becomes "[object Object]" and never matches a real state).
+ */
+export function extractLiveInputStatusState(status) {
+  if (status == null) return '';
+  if (typeof status === 'string') return status.trim().toLowerCase();
+  if (typeof status !== 'object') return '';
+  const nested = status.current?.state ?? status.state;
+  if (typeof nested !== 'string') return '';
+  return nested.trim().toLowerCase();
+}
+
 /** Map Cloudflare Live Input status → publishing (true/false) or unknown (null). */
 export function mapLiveInputStatusToPublishing(status) {
-  const raw = String(status || '').trim().toLowerCase();
+  const raw = extractLiveInputStatusState(status);
   if (!raw) return null;
   if (LIVE_INPUT_PUBLISHING_STATUSES.has(raw)) return true;
   if (LIVE_INPUT_OFFLINE_STATUSES.has(raw)) return false;
@@ -225,7 +241,7 @@ export async function getLiveInputStatus(uid, { fetchImpl = fetch, config } = {}
       fetchImpl,
       config,
     });
-    const status = String(result?.status || '').trim();
+    const status = extractLiveInputStatusState(result?.status);
     const out = {
       uid: String(result?.uid || id).trim(),
       status,
@@ -253,6 +269,178 @@ export async function deleteLiveInput(uid, { fetchImpl = fetch } = {}) {
   });
   cloudflareLog('deleted live input', { uid: id });
   return true;
+}
+
+/** Pilot / manually attached inputs — never auto-deleted by lifecycle hooks. */
+export const PROTECTED_CF_LIVE_INPUT_IDS = new Set([
+  'f175154f728840ce4408e98c13c24302',
+]);
+
+/**
+ * True when this app may DELETE the Live Input after the Event is removed.
+ * Requires exclusive ownership and a non-protected uid.
+ */
+export function shouldDeleteCloudflareLiveInputForEvent(event, { otherEventsUsingInput = 0 } = {}) {
+  if (!event || String(event.liveIngestProvider || '') !== 'cloudflare_stream') return false;
+  const uid = String(event.cfStreamLiveInputId || '').trim();
+  if (!uid) return false;
+  if (PROTECTED_CF_LIVE_INPUT_IDS.has(uid)) return false;
+  if (otherEventsUsingInput > 0) return false;
+  return true;
+}
+
+/**
+ * Best-effort delete of a dedicated Live Input when its Event is removed.
+ * Never deletes protected or shared inputs.
+ */
+export async function deleteCloudflareLiveInputForEvent(event, deps = {}) {
+  const EventModel = deps.EventModel || Event;
+  const removeInput = deps.deleteLiveInput || deleteLiveInput;
+  const uid = String(event?.cfStreamLiveInputId || '').trim();
+  if (!uid) return { deleted: false, reason: 'no_live_input' };
+
+  const otherEventsUsingInput = await EventModel.countDocuments({
+    _id: { $ne: event._id },
+    cfStreamLiveInputId: uid,
+  });
+
+  if (!shouldDeleteCloudflareLiveInputForEvent(event, { otherEventsUsingInput })) {
+    return {
+      deleted: false,
+      reason: PROTECTED_CF_LIVE_INPUT_IDS.has(uid)
+        ? 'protected_live_input'
+        : otherEventsUsingInput > 0
+          ? 'shared_live_input'
+          : 'not_cloudflare_event',
+    };
+  }
+
+  try {
+    await removeInput(uid);
+    return { deleted: true, uid };
+  } catch (err) {
+    cloudflareLog('delete live input failed', { uid, error: err.message || 'unknown' });
+    return { deleted: false, reason: 'cloudflare_delete_failed', uid };
+  }
+}
+
+function splitRtmpTarget(target) {
+  const value = String(target || '').trim();
+  if (!value) return null;
+  const slash = value.lastIndexOf('/');
+  if (slash <= value.indexOf('://') + 2) return null;
+  return {
+    url: value.slice(0, slash + 1).replace(/\/+$/, '/'),
+    streamKey: value.slice(slash + 1),
+  };
+}
+
+/** List simulcast outputs for a Live Input (no stream keys in return beyond API). */
+export async function listLiveInputOutputs(liveInputUid, { fetchImpl = fetch } = {}) {
+  const id = String(liveInputUid || '').trim();
+  if (!id) return [];
+  const result = await cloudflareRequest(
+    `/stream/live_inputs/${encodeURIComponent(id)}/outputs`,
+    { fetchImpl },
+  );
+  return Array.isArray(result) ? result : [];
+}
+
+/** Create a simulcast output on a Live Input (YouTube / Facebook RTMPS). */
+export async function createLiveInputOutput(
+  liveInputUid,
+  { url, streamKey, enabled = true } = {},
+  { fetchImpl = fetch } = {},
+) {
+  const id = String(liveInputUid || '').trim();
+  const outUrl = String(url || '').trim();
+  const outKey = String(streamKey || '').trim();
+  if (!id || !outUrl || !outKey) {
+    throw new CloudflareStreamError('Simulcast output requires url and streamKey', {
+      statusCode: 400,
+      code: 'cloudflare_output_incomplete',
+    });
+  }
+  return cloudflareRequest(`/stream/live_inputs/${encodeURIComponent(id)}/outputs`, {
+    method: 'POST',
+    body: { url: outUrl, streamKey: outKey, enabled: Boolean(enabled) },
+    fetchImpl,
+  });
+}
+
+export async function deleteLiveInputOutput(liveInputUid, outputUid, { fetchImpl = fetch } = {}) {
+  const inputId = String(liveInputUid || '').trim();
+  const outId = String(outputUid || '').trim();
+  if (!inputId || !outId) return false;
+  await cloudflareRequest(
+    `/stream/live_inputs/${encodeURIComponent(inputId)}/outputs/${encodeURIComponent(outId)}`,
+    { method: 'DELETE', fetchImpl },
+  );
+  return true;
+}
+
+/**
+ * Sync Cloudflare simulcast outputs for a Cloudflare Stream event.
+ * MediaMTX ffmpeg forward is skipped for cloudflare_stream events.
+ */
+export async function syncCloudflareSimulcastOutputs(event, deps = {}) {
+  if (!isCloudflareStreamLive(event)) return { synced: false, reason: 'not_cloudflare' };
+  const liveInputUid = String(event.cfStreamLiveInputId || '').trim();
+  if (!liveInputUid) return { synced: false, reason: 'missing_live_input' };
+
+  const listOutputs = deps.listLiveInputOutputs || listLiveInputOutputs;
+  const createOutput = deps.createLiveInputOutput || createLiveInputOutput;
+  const deleteOutput = deps.deleteLiveInputOutput || deleteLiveInputOutput;
+  const { buildYoutubeForwardTarget } = await import('../utils/youtubeForward.js');
+  const { buildForwardTarget, DEFAULT_FACEBOOK_RTMP } = await import('../utils/streamForward.js');
+
+  const desired = [];
+  if (event.youtubeForwardEnabled) {
+    const target = buildYoutubeForwardTarget(
+      event.youtubeRtmpUrl,
+      event.youtubeStreamKey,
+    );
+    const parts = splitRtmpTarget(target);
+    if (parts) desired.push({ id: 'youtube', ...parts, enabled: true });
+  }
+  if (event.facebookForwardEnabled) {
+    const target = buildForwardTarget(event.facebookRtmpUrl, event.facebookStreamKey, {
+      fallbackUrl: DEFAULT_FACEBOOK_RTMP,
+    });
+    const parts = splitRtmpTarget(target);
+    if (parts) desired.push({ id: 'facebook', ...parts, enabled: true });
+  }
+
+  const existing = await listOutputs(liveInputUid);
+  const created = [];
+  for (const spec of desired) {
+    const match = existing.find(
+      (o) => String(o.url || '').replace(/\/+$/, '/') === spec.url.replace(/\/+$/, '/'),
+    );
+    if (!match) {
+      // eslint-disable-next-line no-await-in-loop
+      const out = await createOutput(liveInputUid, spec);
+      created.push(String(out?.uid || ''));
+    }
+  }
+
+  for (const out of existing) {
+    const stillWanted = desired.some(
+      (d) => String(out.url || '').replace(/\/+$/, '/') === d.url.replace(/\/+$/, '/'),
+    );
+    if (!stillWanted && out.uid) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteOutput(liveInputUid, out.uid);
+    }
+  }
+
+  cloudflareLog('simulcast outputs synced', {
+    eventId: String(event._id || event.id || ''),
+    liveInputUid,
+    desiredCount: desired.length,
+    createdCount: created.length,
+  });
+  return { synced: true, desiredCount: desired.length, createdCount: created.length };
 }
 
 function stripClientSuppliedCloudflareFields(payload) {

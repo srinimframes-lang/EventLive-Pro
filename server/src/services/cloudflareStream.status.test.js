@@ -11,6 +11,7 @@ process.env.CLOUDFLARE_STREAM_API_TOKEN = 'test-cloudflare-stream-token';
 const {
   getLiveInputStatus,
   mapLiveInputStatusToPublishing,
+  extractLiveInputStatusState,
 } = await import('../services/cloudflareStream.js');
 const { publishingStatusForEvent } = await import('../controllers/stream.controller.js');
 
@@ -25,12 +26,24 @@ function jsonResponse(body, status = 200) {
   };
 }
 
+function cfStatusObject(state) {
+  return {
+    current: {
+      state,
+      reason: state,
+    },
+    history: [],
+  };
+}
+
 function cfLiveInputBody(status) {
+  const statusPayload =
+    status && typeof status === 'object' ? status : cfStatusObject(status);
   return {
     success: true,
     result: {
       uid: LIVE_INPUT_UID,
-      status,
+      status: statusPayload,
       enabled: true,
       rtmps: { url: 'rtmps://live.cloudflare.com:443/live/', streamKey: SECRET_KEY },
       playback: {
@@ -48,6 +61,17 @@ function assertNoSecrets(value) {
   assert.equal(Object.prototype.hasOwnProperty.call(value, 'streamKey'), false);
 }
 
+test('extractLiveInputStatusState reads status.current.state from the real API shape', () => {
+  assert.equal(extractLiveInputStatusState(cfStatusObject('connected')), 'connected');
+  assert.equal(extractLiveInputStatusState(cfStatusObject('reconnected')), 'reconnected');
+  assert.equal(extractLiveInputStatusState('reconnecting'), 'reconnecting');
+  assert.equal(extractLiveInputStatusState({ current: { state: 'connected' }, history: [] }), 'connected');
+  assert.equal(extractLiveInputStatusState(null), '');
+  assert.equal(extractLiveInputStatusState({ foo: 'bar' }), '');
+  assert.equal(extractLiveInputStatusState({ current: { state: 1 } }), '');
+  assert.equal(extractLiveInputStatusState({ current: {} }), '');
+});
+
 test('mapLiveInputStatusToPublishing uses official Cloudflare status strings', () => {
   assert.equal(mapLiveInputStatusToPublishing('connected'), true);
   assert.equal(mapLiveInputStatusToPublishing('reconnected'), true);
@@ -61,6 +85,70 @@ test('mapLiveInputStatusToPublishing uses official Cloudflare status strings', (
   assert.equal(mapLiveInputStatusToPublishing('offline'), false);
   assert.equal(mapLiveInputStatusToPublishing(''), null);
   assert.equal(mapLiveInputStatusToPublishing('unknown-future-status'), null);
+  assert.equal(mapLiveInputStatusToPublishing(cfStatusObject('connected')), true);
+  assert.equal(mapLiveInputStatusToPublishing(cfStatusObject('reconnected')), true);
+  assert.equal(mapLiveInputStatusToPublishing(cfStatusObject('reconnecting')), true);
+  assert.equal(mapLiveInputStatusToPublishing(cfStatusObject('disconnected')), false);
+  assert.equal(mapLiveInputStatusToPublishing(cfStatusObject('offline')), false);
+  assert.equal(mapLiveInputStatusToPublishing(cfStatusObject('mystery')), null);
+  assert.equal(mapLiveInputStatusToPublishing({ current: { state: 'connected' }, history: [] }), true);
+  assert.equal(mapLiveInputStatusToPublishing({ foo: 'bar' }), null);
+});
+
+test('getLiveInputStatus: nested connected object → publishing, never "[object Object]"', async () => {
+  const info = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody({ current: { state: 'connected' }, history: [] })),
+  });
+  assert.equal(info.uid, LIVE_INPUT_UID);
+  assert.equal(info.status, 'connected');
+  assert.notEqual(info.status, '[object Object]');
+  assert.equal(info.isPublishing, true);
+  assertNoSecrets(info);
+});
+
+test('getLiveInputStatus: nested reconnected/reconnecting → publishing', async () => {
+  const reconnected = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody(cfStatusObject('reconnected'))),
+  });
+  assert.equal(reconnected.status, 'reconnected');
+  assert.equal(reconnected.isPublishing, true);
+
+  const reconnecting = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody(cfStatusObject('reconnecting'))),
+  });
+  assert.equal(reconnecting.status, 'reconnecting');
+  assert.equal(reconnecting.isPublishing, true);
+});
+
+test('getLiveInputStatus: nested disconnected/offline → not publishing', async () => {
+  const disconnected = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody(cfStatusObject('disconnected'))),
+  });
+  assert.equal(disconnected.status, 'disconnected');
+  assert.equal(disconnected.isPublishing, false);
+
+  const offline = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody(cfStatusObject('offline'))),
+  });
+  assert.equal(offline.isPublishing, false);
+  assertNoSecrets(disconnected);
+});
+
+test('getLiveInputStatus: unknown nested state → isPublishing null', async () => {
+  const info = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody(cfStatusObject('not-a-real-state'))),
+  });
+  assert.equal(info.status, 'not-a-real-state');
+  assert.equal(info.isPublishing, null);
+});
+
+test('getLiveInputStatus: malformed status object → isPublishing null', async () => {
+  const info = await getLiveInputStatus(LIVE_INPUT_UID, {
+    fetchImpl: async () => jsonResponse(cfLiveInputBody({ current: { reason: 'connected' }, history: [] })),
+  });
+  assert.equal(info.status, '');
+  assert.equal(info.isPublishing, null);
+  assertNoSecrets(info);
 });
 
 test('getLiveInputStatus: connected → publishing, no secrets returned', async () => {
@@ -109,6 +197,43 @@ test('getLiveInputStatus: Cloudflare API failure → isPublishing null', async (
   assert.equal(info.uid, LIVE_INPUT_UID);
   assert.equal(info.isPublishing, null);
   assertNoSecrets(info);
+});
+
+test('publishingStatusForEvent connected stays live even when Mongo isLive is false', async () => {
+  const event = {
+    liveIngestProvider: 'cloudflare_stream',
+    cfStreamLiveInputId: LIVE_INPUT_UID,
+    streamProvider: 'rtmp',
+    isLive: false,
+  };
+  const isPublishing = await publishingStatusForEvent(event, {
+    getLiveInputStatus: async () => ({
+      uid: LIVE_INPUT_UID,
+      status: 'connected',
+      isPublishing: true,
+    }),
+    probeMediaMtxPublishing: async () => {
+      throw new Error('MediaMTX must not be probed for Cloudflare events');
+    },
+  });
+  assert.equal(isPublishing, true);
+});
+
+test('publishingStatusForEvent disconnected is not live even when Mongo isLive is true', async () => {
+  const event = {
+    liveIngestProvider: 'cloudflare_stream',
+    cfStreamLiveInputId: LIVE_INPUT_UID,
+    streamProvider: 'rtmp',
+    isLive: true,
+  };
+  const isPublishing = await publishingStatusForEvent(event, {
+    getLiveInputStatus: async () => ({
+      uid: LIVE_INPUT_UID,
+      status: 'client_disconnect',
+      isPublishing: false,
+    }),
+  });
+  assert.equal(isPublishing, false);
 });
 
 test('publishingStatusForEvent uses Cloudflare status for cloudflare_stream events', async () => {
