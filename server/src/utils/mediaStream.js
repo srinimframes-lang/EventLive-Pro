@@ -102,12 +102,34 @@ export function normalizePlaybackUrl(url) {
 }
 
 /**
+ * Append Cloudflare Stream Live DVR (`dvrEnabled=true`) without dropping
+ * existing query params. No-op for empty URLs. Idempotent if already set.
+ */
+function withCloudflareLiveDvr(hlsUrl) {
+  const raw = String(hlsUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.set('dvrEnabled', 'true');
+    return parsed.toString();
+  } catch {
+    if (/(?:^|[?&])dvrEnabled=true(?:&|#|$)/.test(raw)) return raw;
+    const hashIdx = raw.indexOf('#');
+    const beforeHash = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+    const hash = hashIdx >= 0 ? raw.slice(hashIdx) : '';
+    const joiner = beforeHash.includes('?') ? '&' : '?';
+    return `${beforeHash}${joiner}dvrEnabled=true${hash}`;
+  }
+}
+
+/**
  * Viewer-facing MediaMTX / ABR HLS URL (CDN-aware).
  * Prefer rebuilding from stream key so the CDN + adaptive toggles apply.
+ * Cloudflare Stream Live: same stored manifest URL plus DVR query param.
  */
 export function deriveHlsPlaybackUrl(event) {
   if (isCloudflareStreamLive(event)) {
-    return String(event.cfStreamHlsUrl || '').trim();
+    return withCloudflareLiveDvr(event.cfStreamHlsUrl);
   }
   const key = resolveStreamKey(event);
   if (key) return buildHlsPlaybackUrl(key, event);

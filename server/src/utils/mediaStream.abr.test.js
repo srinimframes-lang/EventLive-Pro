@@ -74,7 +74,7 @@ test('isCloudflareStreamLive is opt-in only', () => {
   assert.equal(isCloudflareStreamLive({ liveIngestProvider: 'cloudflare_stream' }), true);
 });
 
-test('deriveHlsPlaybackUrl returns Cloudflare HLS unchanged', () => {
+test('deriveHlsPlaybackUrl appends dvrEnabled=true to Cloudflare HLS', () => {
   const url = deriveHlsPlaybackUrl({
     _id: EVENT_ID,
     streamProvider: 'rtmp',
@@ -82,7 +82,31 @@ test('deriveHlsPlaybackUrl returns Cloudflare HLS unchanged', () => {
     cfStreamHlsUrl: CF_HLS,
     rtmpStreamKey: EVENT_ID,
   });
-  assert.equal(url, CF_HLS);
+  assert.equal(url, `${CF_HLS}?dvrEnabled=true`);
+});
+
+test('deriveHlsPlaybackUrl preserves existing Cloudflare HLS query params', () => {
+  const url = deriveHlsPlaybackUrl({
+    _id: EVENT_ID,
+    streamProvider: 'rtmp',
+    liveIngestProvider: 'cloudflare_stream',
+    cfStreamHlsUrl: `${CF_HLS}?clientBandwidthHint=10`,
+  });
+  const parsed = new URL(url);
+  assert.equal(`${parsed.origin}${parsed.pathname}`, CF_HLS);
+  assert.equal(parsed.searchParams.get('clientBandwidthHint'), '10');
+  assert.equal(parsed.searchParams.get('dvrEnabled'), 'true');
+  assert.equal(parsed.searchParams.getAll('dvrEnabled').length, 1);
+});
+
+test('deriveHlsPlaybackUrl does not duplicate dvrEnabled on Cloudflare HLS', () => {
+  const url = deriveHlsPlaybackUrl({
+    _id: EVENT_ID,
+    streamProvider: 'rtmp',
+    liveIngestProvider: 'cloudflare_stream',
+    cfStreamHlsUrl: `${CF_HLS}?dvrEnabled=true`,
+  });
+  assert.equal(url, `${CF_HLS}?dvrEnabled=true`);
 });
 
 test('deriveHlsPlaybackUrl still rebuilds MediaMTX URLs for other events', () => {
@@ -95,6 +119,7 @@ test('deriveHlsPlaybackUrl still rebuilds MediaMTX URLs for other events', () =>
   });
   assert.match(url, /\/live\/aaaaaaaaaaaaaaaaaaaaaaaa\/index\.m3u8$/);
   assert.equal(url.includes('cloudflarestream.com'), false);
+  assert.equal(url.includes('dvrEnabled'), false);
 });
 
 test('buildRtmpCredentials uses Cloudflare RTMPS for opted-in events', () => {
