@@ -96,6 +96,26 @@ test('shouldAutoCreateYoutubeLive does not run for server-only', () => {
   );
 });
 
+test('shouldAutoCreateYoutubeLive runs for new Cloudflare server creates when flagged', () => {
+  assert.equal(
+    shouldAutoCreateYoutubeLive({
+      streamType: 'server',
+      isOnline: true,
+      cloudflareVideoOnlyYoutube: true,
+    }),
+    true
+  );
+  assert.equal(
+    shouldAutoCreateYoutubeLive({
+      streamType: 'server',
+      isOnline: true,
+      cloudflareVideoOnlyYoutube: true,
+      youtubeStreamKey: 'aaaa-bbbb-cccc-dddd',
+    }),
+    false
+  );
+});
+
 test('youtubeWatchUrl builds a public watch URL from the broadcast id', () => {
   assert.equal(youtubeWatchUrl('abc123xyz01'), 'https://www.youtube.com/watch?v=abc123xyz01');
 });
@@ -173,6 +193,28 @@ test('insertBindYoutubeLive creates, binds, and returns ingest (no tokens)', asy
   assert.equal(persisted[0]?.broadcastId, 'bcastLive1');
   const json = JSON.stringify(publicYoutubeIngest(live));
   assert.equal(/access_token|refresh_token|client_secret/i.test(json), false);
+});
+
+test('applyYoutubeLiveFields ingestCredentialsOnly keeps EventLive watch URLs empty', () => {
+  const payload = { streamProvider: 'rtmp', streamingDestination: 'server' };
+  applyYoutubeLiveFields(
+    payload,
+    {
+      broadcastId: 'bcastLive1',
+      streamId: 'streamLive1',
+      watchUrl: 'https://www.youtube.com/watch?v=bcastLive1',
+      rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+      streamKey: 'aaaa-bbbb-cccc-dddd',
+    },
+    { ingestCredentialsOnly: true }
+  );
+  assert.equal(payload.youtubeStreamKey, 'aaaa-bbbb-cccc-dddd');
+  assert.equal(payload.youtubeRtmpUrl, 'rtmp://a.rtmp.youtube.com/live2');
+  assert.equal(payload.youtubeBroadcastId, 'bcastLive1');
+  assert.equal(payload.youtubeLiveStreamId, 'streamLive1');
+  assert.equal(payload.youtubeVideoId, undefined);
+  assert.equal(payload.streamUrl, undefined);
+  assert.equal(payload.youtubeWatchUrl, undefined);
 });
 
 test('applyYoutubeLiveFields stores watch URL and ids on the event payload', () => {

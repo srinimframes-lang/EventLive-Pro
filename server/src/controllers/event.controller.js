@@ -465,7 +465,9 @@ export const createEvent = asyncHandler(async (req, res) => {
   let youtubeIngest = null;
   if (!manualVideoId) {
     try {
-      youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, payload, streamType);
+      youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, payload, streamType, {
+        cloudflareVideoOnlyYoutube: streamType === 'server',
+      });
     } catch (err) {
       res.status(err.statusCode || 502);
       throw err;
@@ -498,11 +500,18 @@ export const createEvent = asyncHandler(async (req, res) => {
   } else if (!manualVideoId && youtubeIngest) {
     payload.youtubeRtmpUrl = youtubeIngest.rtmpUrl || payload.youtubeRtmpUrl;
     payload.youtubeStreamKey = youtubeIngest.streamKey || payload.youtubeStreamKey;
-    payload.youtubeVideoId = youtubeIngest.broadcastId || payload.youtubeVideoId;
-    payload.streamUrl = youtubeIngest.watchUrl || payload.streamUrl;
-    payload.youtubeWatchUrl = youtubeIngest.watchUrl || payload.youtubeWatchUrl;
     payload.youtubeBroadcastId = youtubeIngest.broadcastId || payload.youtubeBroadcastId;
     payload.youtubeLiveStreamId = youtubeIngest.streamId || payload.youtubeLiveStreamId;
+    if (streamType === 'server') {
+      // EventLive website stays Cloudflare HLS. Do not attach a YouTube watch URL.
+      payload.youtubeVideoId = '';
+      payload.streamUrl = '';
+      payload.youtubeWatchUrl = '';
+    } else {
+      payload.youtubeVideoId = youtubeIngest.broadcastId || payload.youtubeVideoId;
+      payload.streamUrl = youtubeIngest.watchUrl || payload.streamUrl;
+      payload.youtubeWatchUrl = youtubeIngest.watchUrl || payload.youtubeWatchUrl;
+    }
   }
   const fbForwardErr = applyFacebookForwardFields(payload, req.body, { isCreate: true });
   if (fbForwardErr) {

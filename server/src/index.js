@@ -7,6 +7,7 @@ import { runSeed } from './config/seed.js';
 import { startFailoverHealthWorker } from './services/failoverHealthWorker.js';
 import { startBackupWorker } from './services/backupWorker.js';
 import { startRecordingCleanupWorker } from './services/recordingCleanupWorker.js';
+import { startCloudflareYoutubeVideoForwardWorker } from './services/cloudflareYoutubeVideoForward.js';
 import { syncHlsCdnFromSettings } from './controllers/settings.controller.js';
 
 async function start() {
@@ -42,6 +43,9 @@ async function start() {
 
   // Hourly R2 recording sync + verified local cleanup (no-op without R2 / recordings root).
   startRecordingCleanupWorker();
+
+  // Cloudflare Server Live → YouTube video-only (no MediaMTX, no simulcast audio copy).
+  startCloudflareYoutubeVideoForwardWorker();
 
   server.listen(env.port, () => {
     // eslint-disable-next-line no-console

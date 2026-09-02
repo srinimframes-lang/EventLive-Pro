@@ -232,7 +232,7 @@ export function publicYoutubeIngest(live) {
   };
 }
 
-export function applyYoutubeLiveFields(target, live) {
+export function applyYoutubeLiveFields(target, live, { ingestCredentialsOnly = false } = {}) {
   if (!target || !live) return target;
   const fields = youtubeDocFields(target);
   const manualId =
@@ -242,20 +242,22 @@ export function applyYoutubeLiveFields(target, live) {
     extractYouTubeId(fields.streamUrl) ||
     extractYouTubeId(fields.youtubeLiveUrl) ||
     '';
+  if (live.rtmpUrl) target.youtubeRtmpUrl = live.rtmpUrl;
+  if (live.streamKey) target.youtubeStreamKey = live.streamKey;
+  if (live.streamId) target.youtubeLiveStreamId = live.streamId;
+  if (ingestCredentialsOnly) {
+    // Cloudflare Server website playback stays CF HLS — do not write YouTube watch URLs.
+    if (live.broadcastId) target.youtubeBroadcastId = live.broadcastId;
+    return target;
+  }
   if (manualId) {
     // Manual URL / video ID has absolute priority over a generated broadcast.
-    if (live.rtmpUrl) target.youtubeRtmpUrl = live.rtmpUrl;
-    if (live.streamKey) target.youtubeStreamKey = live.streamKey;
-    if (live.streamId) target.youtubeLiveStreamId = live.streamId;
     return target;
   }
   target.youtubeVideoId = live.broadcastId || target.youtubeVideoId;
   target.streamUrl = live.watchUrl || target.streamUrl;
   target.youtubeWatchUrl = live.watchUrl || '';
   target.youtubeBroadcastId = live.broadcastId || '';
-  target.youtubeLiveStreamId = live.streamId || '';
-  if (live.rtmpUrl) target.youtubeRtmpUrl = live.rtmpUrl;
-  if (live.streamKey) target.youtubeStreamKey = live.streamKey;
   return target;
 }
 
@@ -412,6 +414,11 @@ export function shouldAutoCreateYoutubeLive(input = {}) {
   if (String(fields.youtubeBroadcastId || input.youtubeBroadcastId || '').trim()) return false;
   if (streamType === 'youtube' || streamType === 'youtube_server') return true;
   if (streamType === 'server_youtube') {
+    return !String(fields.youtubeStreamKey || input.youtubeStreamKey || '').trim();
+  }
+  // New Cloudflare Server/RTMP creates only (createEvent passes this flag).
+  // Existing MediaMTX / Anil Geetha updates must not auto-create a broadcast.
+  if (streamType === 'server' && input.cloudflareVideoOnlyYoutube === true) {
     return !String(fields.youtubeStreamKey || input.youtubeStreamKey || '').trim();
   }
   return false;
@@ -635,7 +642,7 @@ export async function provisionYoutubeLiveIfNeeded(
   user,
   payload,
   streamType,
-  { existingVideoId = '' } = {}
+  { existingVideoId = '', cloudflareVideoOnlyYoutube = false } = {}
 ) {
   const fields = youtubeDocFields(payload);
   const manual = resolveYoutubeInput({
@@ -662,7 +669,14 @@ export async function provisionYoutubeLiveIfNeeded(
     return null;
   }
 
-  if (!shouldAutoCreateYoutubeLive({ ...fields, streamType, youtubeLiveUrl: payload?.youtubeLiveUrl })) {
+  if (
+    !shouldAutoCreateYoutubeLive({
+      ...fields,
+      streamType,
+      youtubeLiveUrl: payload?.youtubeLiveUrl,
+      cloudflareVideoOnlyYoutube,
+    })
+  ) {
     youtubeLog('Create live request started', { skipped: 'already_has_youtube_or_not_youtube_dest' });
     return null;
   }
@@ -678,6 +692,11 @@ export async function provisionYoutubeLiveIfNeeded(
     channelTitle: cred?.channelTitle || '',
   });
   if (!cred?.connected) {
+    // Cloudflare Server website live still works without YouTube OAuth.
+    if (cloudflareVideoOnlyYoutube && streamType === 'server') {
+      youtubeLog('Create live request started', { skipped: 'youtube_not_connected_cloudflare_server' });
+      return null;
+    }
     const err = new Error('YouTube is not connected for this account');
     err.code = 'youtube_not_connected';
     err.statusCode = 400;
@@ -692,7 +711,9 @@ export async function provisionYoutubeLiveIfNeeded(
       startTime: payload.startTime,
       eventId,
       persist: async (partial) => {
-        applyYoutubeLiveFields(payload, partial);
+        applyYoutubeLiveFields(payload, partial, {
+          ingestCredentialsOnly: cloudflareVideoOnlyYoutube,
+        });
         if (typeof payload.save === 'function') await payload.save();
       },
     });
@@ -700,10 +721,12 @@ export async function provisionYoutubeLiveIfNeeded(
       eventId,
       broadcastId: live.broadcastId || '',
       streamId: live.streamId || '',
-      watchUrl: live.watchUrl || '',
+      watchUrl: cloudflareVideoOnlyYoutube ? '' : live.watchUrl || '',
       streamKeyAvailable: Boolean(live.streamKey),
     });
-    applyYoutubeLiveFields(payload, live);
+    applyYoutubeLiveFields(payload, live, {
+      ingestCredentialsOnly: cloudflareVideoOnlyYoutube,
+    });
     youtubeLog('Creation completed', { broadcastId: live.broadcastId || '', watchUrl: live.watchUrl || '' });
     return publicYoutubeIngest(live);
   } catch (err) {

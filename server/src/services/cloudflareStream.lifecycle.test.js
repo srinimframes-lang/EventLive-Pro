@@ -133,7 +133,7 @@ test('syncCloudflareSimulcastOutputs skips MediaMTX-only events', async () => {
   assert.equal(listCalled, false);
 });
 
-test('syncCloudflareSimulcastOutputs creates YouTube output for Cloudflare events', async () => {
+test('syncCloudflareSimulcastOutputs never creates a YouTube output', async () => {
   const created = [];
   const result = await syncCloudflareSimulcastOutputs(
     {
@@ -155,8 +155,60 @@ test('syncCloudflareSimulcastOutputs creates YouTube output for Cloudflare event
     },
   );
   assert.equal(result.synced, true);
+  assert.equal(created.length, 0);
+  assert.equal(result.desiredCount, 0);
+});
+
+test('syncCloudflareSimulcastOutputs still creates Facebook output', async () => {
+  const created = [];
+  const result = await syncCloudflareSimulcastOutputs(
+    {
+      _id: 'ffffffffffffffffffffffff',
+      liveIngestProvider: 'cloudflare_stream',
+      cfStreamLiveInputId: OTHER_INPUT,
+      youtubeForwardEnabled: true,
+      youtubeStreamKey: 'yt-key-123456',
+      facebookForwardEnabled: true,
+      facebookRtmpUrl: 'rtmps://live-api-s.facebook.com:443/rtmp',
+      facebookStreamKey: 'fb-key-123456',
+    },
+    {
+      listLiveInputOutputs: async () => [],
+      createLiveInputOutput: async (_uid, spec) => {
+        created.push(spec);
+        return { uid: 'out-fb-1' };
+      },
+      deleteLiveInputOutput: async () => true,
+    },
+  );
+  assert.equal(result.synced, true);
   assert.equal(created.length, 1);
-  assert.match(created[0].url, /youtube\.com/);
-  assert.equal(created[0].streamKey, 'yt-key-123456');
-  assert.equal(JSON.stringify(created).includes('yt-key-123456'), true);
+  assert.match(created[0].url, /facebook\.com/);
+  assert.equal(created[0].streamKey, 'fb-key-123456');
+});
+
+test('syncCloudflareSimulcastOutputs never touches Anil Geetha', async () => {
+  let listCalled = false;
+  const result = await syncCloudflareSimulcastOutputs(
+    {
+      _id: '6a927f90ff163d32dba6654d',
+      liveIngestProvider: 'cloudflare_stream',
+      cfStreamLiveInputId: ANIL_INPUT,
+      youtubeForwardEnabled: true,
+      youtubeStreamKey: 'yt-key-123456',
+      facebookForwardEnabled: true,
+      facebookStreamKey: 'fb-key-123456',
+    },
+    {
+      listLiveInputOutputs: async () => {
+        listCalled = true;
+        return [];
+      },
+      createLiveInputOutput: async () => ({ uid: 'nope' }),
+      deleteLiveInputOutput: async () => true,
+    },
+  );
+  assert.equal(result.synced, false);
+  assert.equal(result.reason, 'protected_live_input');
+  assert.equal(listCalled, false);
 });

@@ -387,22 +387,18 @@ export async function syncCloudflareSimulcastOutputs(event, deps = {}) {
   if (!isCloudflareStreamLive(event)) return { synced: false, reason: 'not_cloudflare' };
   const liveInputUid = String(event.cfStreamLiveInputId || '').trim();
   if (!liveInputUid) return { synced: false, reason: 'missing_live_input' };
+  if (PROTECTED_CF_LIVE_INPUT_IDS.has(liveInputUid)) {
+    return { synced: false, reason: 'protected_live_input' };
+  }
 
   const listOutputs = deps.listLiveInputOutputs || listLiveInputOutputs;
   const createOutput = deps.createLiveInputOutput || createLiveInputOutput;
   const deleteOutput = deps.deleteLiveInputOutput || deleteLiveInputOutput;
-  const { buildYoutubeForwardTarget } = await import('../utils/youtubeForward.js');
   const { buildForwardTarget, DEFAULT_FACEBOOK_RTMP } = await import('../utils/streamForward.js');
 
   const desired = [];
-  if (event.youtubeForwardEnabled) {
-    const target = buildYoutubeForwardTarget(
-      event.youtubeRtmpUrl,
-      event.youtubeStreamKey,
-    );
-    const parts = splitRtmpTarget(target);
-    if (parts) desired.push({ id: 'youtube', ...parts, enabled: true });
-  }
+  // Never attach YouTube as a Cloudflare Live Input Output: that copies original
+  // ingest audio. YouTube video-only restream is handled by the CF HLS worker.
   if (event.facebookForwardEnabled) {
     const target = buildForwardTarget(event.facebookRtmpUrl, event.facebookStreamKey, {
       fallbackUrl: DEFAULT_FACEBOOK_RTMP,
