@@ -19,7 +19,7 @@ const CDN_HLS_PLAYBACK_BASE = (
 const HLS_PLAYLIST_RE = /\/live\/[^/]+\/(?:index|master)\.m3u8/i;
 const CF_STREAM_MANIFEST_RE = /\/manifest\/video\.m3u8/i;
 
-function isCloudflareStreamHlsUrl(url) {
+export function isCloudflareStreamHlsUrl(url) {
   const trimmed = String(url || '').trim();
   if (!/^https:\/\//i.test(trimmed)) return false;
   if (CF_STREAM_MANIFEST_RE.test(trimmed)) return true;
@@ -28,6 +28,27 @@ function isCloudflareStreamHlsUrl(url) {
     return host === 'cloudflarestream.com' || host.endsWith('.cloudflarestream.com');
   } catch {
     return false;
+  }
+}
+
+/**
+ * Cloudflare Stream Live DVR is opt-in on the manifest URL.
+ * Idempotent; preserves other query params. MediaMTX URLs are never passed here.
+ */
+export function withCloudflareLiveDvr(hlsUrl) {
+  const raw = String(hlsUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.set('dvrEnabled', 'true');
+    return parsed.toString();
+  } catch {
+    if (/(?:^|[?&])dvrEnabled=true(?:&|#|$)/.test(raw)) return raw;
+    const hashIdx = raw.indexOf('#');
+    const beforeHash = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+    const hash = hashIdx >= 0 ? raw.slice(hashIdx) : '';
+    const joiner = beforeHash.includes('?') ? '&' : '?';
+    return `${beforeHash}${joiner}dvrEnabled=true${hash}`;
   }
 }
 
@@ -60,7 +81,7 @@ export function resolveServerPlaybackUrl(config) {
   if (!config) return '';
 
   const serverUrl = String(config.playbackUrl || config.hlsUrl || '').trim();
-  if (isCloudflareStreamHlsUrl(serverUrl)) return serverUrl;
+  if (isCloudflareStreamHlsUrl(serverUrl)) return withCloudflareLiveDvr(serverUrl);
   if (/^https:\/\//i.test(serverUrl) && HLS_PLAYLIST_RE.test(serverUrl)) {
     return serverUrl;
   }
@@ -79,7 +100,7 @@ export function resolveServerPlaybackUrl(config) {
 export function securePlaybackUrl(url, config = null) {
   const trimmed = String(url || '').trim();
   if (!trimmed) return '';
-  if (isCloudflareStreamHlsUrl(trimmed)) return trimmed;
+  if (isCloudflareStreamHlsUrl(trimmed)) return withCloudflareLiveDvr(trimmed);
 
   const base = viewerBaseFromConfig(config);
   if (trimmed.startsWith(`${base}/`)) return trimmed;

@@ -4,7 +4,7 @@ import {
   extractYouTubeId,
   resolveMediaUrl,
 } from '../../utils/format.js';
-import { resolveServerPlaybackUrl } from '../../utils/streamPlayback.js';
+import { resolveServerPlaybackUrl, isCloudflareStreamHlsUrl } from '../../utils/streamPlayback.js';
 import {
   failoverBackupVideoId,
   shouldPlayYoutubeBackup,
@@ -52,8 +52,8 @@ const OVERLAY = {
 };
 
 /** HLS tuned for low-bitrate / mobile stability (not LL-HLS). */
-function buildHlsConfig() {
-  return {
+function buildHlsConfig({ cloudflareDvr = false } = {}) {
+  const config = {
     enableWorker: true,
     lowLatencyMode: false,
     liveDurationInfinity: true,
@@ -80,6 +80,13 @@ function buildHlsConfig() {
     fragLoadingRetryDelay: 800,
     manifestLoadingRetryDelay: 800,
   };
+  if (cloudflareDvr) {
+    // Allow remaining behind live; do not snap DVR viewers forward after ~20s.
+    config.liveMaxLatencyDurationCount = Infinity;
+    config.backBufferLength = 1800;
+    config.maxMaxBufferLength = 120;
+  }
+  return config;
 }
 
 /** Quality menu labels for 2-rung ABR (and any extra levels). */
@@ -587,7 +594,19 @@ function PlayerChrome({
           </div>
         </div>
 
-        <div className="flex-1" onClick={chrome.togglePlay} onDoubleClick={chrome.toggleFullscreen} />
+        <div
+          className="flex-1"
+          onClick={
+            isLiveMode
+              ? (e) => {
+                  e.preventDefault();
+                  chrome.bumpControls();
+                }
+              : chrome.togglePlay
+          }
+          onTouchStart={chrome.bumpControls}
+          onDoubleClick={chrome.toggleFullscreen}
+        />
 
         <div className="elp-player-gradient-bottom">
           {showScrub && (
@@ -713,6 +732,9 @@ function HlsPlayer({
   const [playbackHealthy, setPlaybackHealthy] = useState(false);
   const [showOffline, setShowOffline] = useState(false);
   const [behindLive, setBehindLive] = useState(false);
+  const behindLiveRef = useRef(false);
+  const ignoreSurfaceClickRef = useRef(false);
+  const cloudflareDvr = isCloudflareStreamHlsUrl(src);
   const [lagSec, setLagSec] = useState(0);
   const [newLiveAvailable, setNewLiveAvailable] = useState(false);
   const [userStarted, setUserStarted] = useState(() => loadUserStarted(eventId));
@@ -727,6 +749,18 @@ function HlsPlayer({
     },
     [eventId]
   );
+
+  const isHoldingDvrPosition = useCallback((video, hls) => {
+    if (dvrIntentRef.current === 'dvr' || behindLiveRef.current) return true;
+    if (!video) return false;
+    let liveEdge = null;
+    if (hls && Number.isFinite(hls.liveSyncPosition)) {
+      liveEdge = hls.liveSyncPosition;
+    } else if (video.seekable && video.seekable.length > 0) {
+      liveEdge = video.seekable.end(video.seekable.length - 1);
+    }
+    return liveEdge != null && liveEdge - video.currentTime > BEHIND_LIVE_SEC;
+  }, []);
 
   const handleUserSeek = useCallback(() => {
     markDvrIntent('dvr');
@@ -763,13 +797,24 @@ function HlsPlayer({
       if (!video) return;
       intentionalPauseRef.current = false;
 
+      const hls = hlsRef.current;
+      if (isHoldingDvrPosition(video, hls)) {
+        await video.play();
+        hasPlayedRef.current = true;
+        markMediaPlayingRef.current?.();
+        setPlaybackHealthy(true);
+        setOverlay(OVERLAY.NONE);
+        syncFromVideoRef.current?.();
+        return;
+      }
+
       const wasMuted = video.muted;
       const wasVolume = video.volume;
-      const hls = hlsRef.current;
 
       markDvrIntent('live');
       clearPlaybackPosition(eventId, 'live');
       setBehindLive(false);
+      behindLiveRef.current = false;
       setLagSec(0);
       setNewLiveAvailable(false);
       setOverlay(OVERLAY.BUFFERING);
@@ -841,7 +886,7 @@ function HlsPlayer({
       setOverlay(OVERLAY.NONE);
       syncFromVideoRef.current?.();
     },
-    [eventId, src, markDvrIntent, seekVideoToLiveEdge]
+    [eventId, src, markDvrIntent, seekVideoToLiveEdge, isHoldingDvrPosition]
   );
 
   const chrome = usePlayerChrome(videoRef, shellRef, {
@@ -853,6 +898,30 @@ function HlsPlayer({
   });
   markMediaPlayingRef.current = chrome.markMediaPlaying;
   syncFromVideoRef.current = chrome.syncFromVideo;
+
+  const bumpLiveControls = chrome.bumpControls;
+
+  const onLiveVideoTouchStart = useCallback(
+    (e) => {
+      ignoreSurfaceClickRef.current = true;
+      bumpLiveControls();
+      // Swallow the following synthetic click so it cannot pause.
+      if (e.cancelable) e.preventDefault();
+    },
+    [bumpLiveControls]
+  );
+
+  const onLiveVideoClick = useCallback(
+    (e) => {
+      if (ignoreSurfaceClickRef.current) {
+        ignoreSurfaceClickRef.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      bumpLiveControls();
+    },
+    [bumpLiveControls]
+  );
 
   useEffect(() => {
     setUserStarted(loadUserStarted(eventId));
@@ -945,6 +1014,8 @@ function HlsPlayer({
     markDvrIntent('live');
     clearPlaybackPosition(eventId, 'live');
     setNewLiveAvailable(false);
+    setBehindLive(false);
+    behindLiveRef.current = false;
     try {
       hls?.startLoad?.();
     } catch {
@@ -1047,6 +1118,7 @@ function HlsPlayer({
         liveEdge = video.seekable.end(video.seekable.length - 1);
       }
       if (liveEdge == null || !Number.isFinite(liveEdge)) {
+        behindLiveRef.current = false;
         setBehindLive(false);
         setLagSec(0);
         return;
@@ -1054,6 +1126,7 @@ function HlsPlayer({
       const lag = Math.max(0, liveEdge - video.currentTime);
       setLagSec(lag);
       const behind = lag > BEHIND_LIVE_SEC;
+      behindLiveRef.current = behind;
       setBehindLive(behind);
       // Catching up to the live edge clears DVR intent automatically.
       if (!behind && dvrIntentRef.current === 'dvr' && !video.paused) {
@@ -1075,7 +1148,7 @@ function HlsPlayer({
       video.addEventListener('loadedmetadata', onMeta, { once: true });
       video.play?.().catch(() => {});
     } else if (Hls.isSupported()) {
-      hls = new Hls(buildHlsConfig());
+      hls = new Hls(buildHlsConfig({ cloudflareDvr }));
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
@@ -1167,6 +1240,15 @@ function HlsPlayer({
       if (!hasPlayedRef.current) return;
       setOverlay(OVERLAY.BUFFERING);
       const h = hlsRef.current;
+      if (isHoldingDvrPosition(video, h)) {
+        try {
+          h?.startLoad?.();
+        } catch {
+          /* ignore */
+        }
+        video.play?.().catch(() => {});
+        return;
+      }
       try {
         h?.startLoad?.();
       } catch {
@@ -1260,6 +1342,8 @@ function HlsPlayer({
     tryRestoreOrLive,
     markDvrIntent,
     seekVideoToLiveEdge,
+    isHoldingDvrPosition,
+    cloudflareDvr,
   ]);
 
   const pickLevel = (index) => {
@@ -1305,9 +1389,9 @@ function HlsPlayer({
         playsInline
         muted
         poster={poster || undefined}
-        onClick={chrome.togglePlay}
+        onClick={onLiveVideoClick}
         onMouseMove={chrome.bumpControls}
-        onTouchStart={chrome.bumpControls}
+        onTouchStart={onLiveVideoTouchStart}
       />
       <StatusOverlay show={showReconnecting} message={RECONNECTING_MSG} />
       <StatusOverlay show={showBuffering} />
