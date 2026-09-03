@@ -21,7 +21,13 @@ import {
   resolveStreamKey,
   streamKeyFromEventId,
 } from '../utils/mediaStream.js';
-import { getLiveInputStatus } from '../services/cloudflareStream.js';
+import {
+  captureCloudflareRecordedVideoUid,
+  cloudflareRecordedPlaybackFields,
+  getLiveInputStatus,
+  syncCloudflareLiveOfflineTransition,
+} from '../services/cloudflareStream.js';
+import { publicBackgroundMusicSlice } from '../utils/backgroundMusic.js';
 import { getViewerHlsPlaybackBase, isHlsCdnEnabled } from '../utils/hlsCdn.js';
 import {
   addDays,
@@ -243,14 +249,16 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     : firstPlayableId
       ? `/api/events/${event.id}/stream/recording?part=${firstPlayableId}`
       : '';
+  const cfRecorded = cloudflareRecordedPlaybackFields(event, { isLive });
   const playbackMode = isLive
     ? reconnecting
       ? 'reconnecting'
       : 'live'
-    : recordingUrl
+    : recordingUrl || cfRecorded
       ? 'recorded'
       : 'offline';
-  const playable = Boolean(recordingUrl);
+  const playable = Boolean(recordingUrl) || Boolean(cfRecorded);
+  const viewerHlsUrl = cfRecorded ? cfRecorded.hlsUrl : playbackUrl;
 
   const base = {
     eventId: event.id,
@@ -279,8 +287,8 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
       playbackMatchesStored ? youtubePlayback?.lifeCycleStatus || '' : '',
     youtubeIsLive: playbackMatchesStored && youtubePlayback?.isLive === true,
     // Never expose live HLS to the public player for YouTube + Server.
-    hlsUrl: youtubePlusServer ? '' : isServer ? playbackUrl : event.hlsUrl,
-    playbackUrl: youtubePlusServer ? '' : playbackUrl,
+    hlsUrl: youtubePlusServer ? '' : isServer ? viewerHlsUrl : event.hlsUrl,
+    playbackUrl: youtubePlusServer ? '' : viewerHlsUrl,
     hlsCdnEnabled: isHlsCdnEnabled(),
     hlsPlaybackBase: getViewerHlsPlaybackBase(),
     adaptiveStreaming: isServer ? isAdaptiveStreamingEnabled(event) : false,
@@ -299,7 +307,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     playbackMode,
     recordingUrl,
     hasRecording: rec.hasRecording,
-    recordingAvailable: Boolean(recordingUrl),
+    recordingAvailable: Boolean(recordingUrl) || Boolean(cfRecorded),
     recordingPublicUntil: rec.recordingPublicUntil,
     recordingRecordedAt: rec.recordingRecordedAt,
     recordingDurationSec: rec.recordingDurationSec,
@@ -341,6 +349,9 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
   // shape matches historical livestream config (no player behaviour change).
   const failover = publicFailoverSlice(event, { failoverEnabled: env.failoverEnabled });
   if (failover) Object.assign(base, failover);
+
+  const backgroundMusic = publicBackgroundMusicSlice(event);
+  if (backgroundMusic) Object.assign(base, backgroundMusic);
 
   return base;
 }
@@ -409,7 +420,7 @@ function scheduleRecordingMerge(eventId, io) {
 }
 
 /** Persist true offline after reconnect grace expires (or immediately when forced). */
-async function finalizeEventOffline(eventId, { io = null } = {}) {
+async function finalizeEventOffline(eventId, { io = null, captureCfVideoUid = captureCloudflareRecordedVideoUid } = {}) {
   const event = await Event.findById(eventId);
   if (!event) return null;
 
@@ -423,10 +434,22 @@ async function finalizeEventOffline(eventId, { io = null } = {}) {
   event.liveReconnectUntil = undefined;
   event.liveEndedAt = event.liveEndedAt || new Date();
   if (event.status === 'live') event.status = 'ended';
+
+  const cloudflareLive = isCloudflareStreamLive(event);
+  if (cloudflareLive) {
+    try {
+      await captureCfVideoUid(event);
+    } catch {
+      /* best-effort UID capture — still persist offline */
+    }
+  }
+
   await event.save();
 
   emitLiveStatus(io, event);
-  scheduleRecordingMerge(event.id, io);
+  if (!cloudflareLive) {
+    scheduleRecordingMerge(event.id, io);
+  }
   return event;
 }
 
@@ -469,6 +492,18 @@ function resolveYoutubePlaybackForPublicEvent(event) {
   };
 }
 
+async function persistCloudflareLiveFromProbe(event) {
+  if (event.isLive && event.status === 'live' && !event.liveReconnecting) return event;
+  event.isLive = true;
+  event.liveReconnecting = false;
+  event.liveReconnectUntil = undefined;
+  event.liveStartedAt = event.liveStartedAt || new Date();
+  event.liveEndedAt = undefined;
+  if (['draft', 'published', 'ended'].includes(event.status)) event.status = 'live';
+  await event.save();
+  return event;
+}
+
 /**
  * @route GET /api/events/:id/stream
  * @desc  Public streaming configuration for the player
@@ -480,6 +515,14 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
   event = (await resolveExpiredReconnect(event, io)) || event;
   const youtubePlayback = await resolveYoutubePlaybackForPublicEvent(event);
   const isPublishing = await publishingStatusForEvent(event);
+  if (isCloudflareStreamLive(event)) {
+    const synced = await syncCloudflareLiveOfflineTransition(event, isPublishing, {
+      io,
+      finalizeEventOffline,
+      persistCloudflareLive: persistCloudflareLiveFromProbe,
+    });
+    event = synced.event || event;
+  }
   const playableParts = isPublishing ? null : await persistPlayableRecordingParts(event);
   const data = publicStreamConfig(event, { isPublishing, youtubePlayback, playableParts });
   console.info('[youtube-embed] public stream config', {
