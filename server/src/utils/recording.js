@@ -47,6 +47,75 @@ export function recordingFileExists(filePath) {
   }
 }
 
+/** Skip OBS connect blips / empty remux leftovers. */
+export const MIN_PLAYABLE_RECORDING_BYTES = 200_000;
+
+function safeRecordingBasename(value) {
+  const name = path.basename(String(value || '').replace(/\\/g, '/'));
+  if (!name || name.startsWith('.') || !name.toLowerCase().endsWith('.mp4')) return '';
+  return name;
+}
+
+/**
+ * Candidate absolute paths for a recording part. Includes the current
+ * recordings/<eventId>/ layout and the older MediaMTX recordings/live/<eventId>/ layout.
+ * Does not check the filesystem.
+ */
+export function localRecordingCandidatePaths({
+  eventId = '',
+  filename = '',
+  localPath = '',
+  recordingPath = '',
+} = {}) {
+  const out = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const abs = resolveRecordingAbsolutePath(raw);
+    if (!abs || seen.has(abs)) return;
+    seen.add(abs);
+    out.push(abs);
+  };
+
+  add(localPath);
+  add(recordingPath);
+
+  const id = String(eventId || '').trim();
+  const names = [...new Set(
+    [filename, localPath, recordingPath].map(safeRecordingBasename).filter(Boolean)
+  )];
+  if (id) {
+    for (const name of names) {
+      add(path.join(RECORDINGS_ROOT, id, name));
+      add(path.join(RECORDINGS_ROOT, 'live', id, name));
+    }
+  }
+  return out;
+}
+
+/**
+ * First candidate that exists on disk as a non-trivial MP4.
+ * Never trusts Mongo localPath/filename without a stat. Never moves files.
+ */
+export function resolveExistingLocalRecordingFile(
+  opts = {},
+  { existsFn = fs.existsSync, statFn = fs.statSync, minBytes = MIN_PLAYABLE_RECORDING_BYTES } = {}
+) {
+  const min = Math.max(0, Number(minBytes) || 0);
+  for (const abs of localRecordingCandidatePaths(opts)) {
+    try {
+      if (!existsFn(abs)) continue;
+      const st = statFn(abs);
+      if (!st) continue;
+      if (typeof st.isFile === 'function' && !st.isFile()) continue;
+      if (Number(st.size || 0) < min) continue;
+      return abs;
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
+}
+
 /**
  * Parse MediaMTX segment filename timestamps:
  * `2026-07-19_12-04-17-209175.mp4` → Date (UTC components matching VPS naming).
@@ -89,12 +158,18 @@ export function hydrateLegacyRecordingPart(event) {
   if (parts.length > 0) return parts;
 
   const hasR2 = Boolean(event.recordingStorage === 'r2' && event.recordingR2Key);
-  const hasLocal = Boolean(event.recordingPath && recordingFileExists(event.recordingPath));
+  const resolvedLocal = resolveExistingLocalRecordingFile({
+    eventId: eventIdOf(event),
+    filename: event.recordingFilename,
+    localPath: event.recordingPath,
+    recordingPath: event.recordingPath,
+  });
+  const hasLocal = Boolean(resolvedLocal);
   if (!hasR2 && !hasLocal) return parts;
 
   const filename =
     event.recordingFilename ||
-    path.basename(event.recordingR2Key || event.recordingPath || '') ||
+    path.basename(event.recordingR2Key || resolvedLocal || event.recordingPath || '') ||
     '';
   const startedAt =
     parseRecordingFilenameTimestamp(filename) ||
@@ -104,7 +179,7 @@ export function hydrateLegacyRecordingPart(event) {
     r2Key: hasR2 ? event.recordingR2Key : '',
     r2Url: hasR2 ? event.recordingR2Url || '' : '',
     filename,
-    localPath: hasLocal ? event.recordingPath : '',
+    localPath: hasLocal ? resolvedLocal : '',
     storage: hasR2 ? 'r2' : 'local',
     startedAt,
     endedAt: event.recordingRecordedAt || startedAt,

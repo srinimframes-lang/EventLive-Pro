@@ -67,11 +67,24 @@ rmdir -p --ignore-fail-on-non-empty "$PARENT" 2>/dev/null || true
 echo "finalize-recording: ${PATH_NAME} (${DURATION_RAW}s) -> ${OUT}"
 
 # Notify backend so the event page can switch to recorded replay.
+# Prefer process env (MediaMTX/PM2). Fall back to server/.env. Never print the value.
 API_BASE="${EVENTLIVE_API_BASE:-http://127.0.0.1:5000}"
-SECRET_FILE="/root/EventLive-Pro/server/.env"
-MEDIA_SECRET=""
-if [[ -f "$SECRET_FILE" ]]; then
-  MEDIA_SECRET="$(grep -E '^MEDIA_SERVER_SECRET=' "$SECRET_FILE" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
+SECRET_FILE="${EVENTLIVE_ENV_FILE:-/root/EventLive-Pro/server/.env}"
+MEDIA_SECRET="${MEDIA_SERVER_SECRET:-}"
+if [[ -z "$MEDIA_SECRET" && -f "$SECRET_FILE" ]]; then
+  MEDIA_SECRET="$(
+    grep -E '^[[:space:]]*(export[[:space:]]+)?MEDIA_SERVER_SECRET=' "$SECRET_FILE" 2>/dev/null \
+      | head -1 \
+      | cut -d= -f2- \
+      | tr -d '\r' \
+      | sed 's/^["'\'']//;s/["'\'']$//' \
+      || true
+  )"
+fi
+if [[ -n "$MEDIA_SECRET" ]]; then
+  echo "finalize-recording: secret_loaded=yes secret_len=${#MEDIA_SECRET}" >&2
+else
+  echo "finalize-recording: secret_loaded=no secret_len=0" >&2
 fi
 DURATION_SEC="$(DURATION_RAW="$DURATION_RAW" OUT="$OUT" python3 - <<'PY'
 import os, re, subprocess

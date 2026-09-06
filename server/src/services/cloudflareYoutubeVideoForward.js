@@ -246,7 +246,15 @@ function adoptOrStart({
 }) {
   const eventId = eventIdOf(event);
   const tracked = forwards.get(eventId);
-  if (tracked && isPidAlive(tracked.pid, killFn)) return { action: 'already_running', pid: tracked.pid };
+  // ChildProcess handle is authoritative. process.kill(pid, 0) can throw EPERM on
+  // Render and look dead while ffmpeg is still running, which used to respawn every tick.
+  if (
+    tracked?.child &&
+    tracked.child.exitCode === null &&
+    tracked.child.signalCode === null
+  ) {
+    return { action: 'already_running', pid: tracked.pid };
+  }
 
   const filePid = readPidFile(eventId);
   if (filePid && isPidAlive(filePid, killFn)) {

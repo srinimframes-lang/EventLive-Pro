@@ -276,6 +276,13 @@ const eventSchema = new Schema(
     cfStreamRtmpsUrl: { type: String, trim: true, default: '' },
     // Cloudflare Live Input RTMPS key — never returned unless explicitly selected.
     cfStreamRtmpsKey: { type: String, default: '', select: false },
+    // Recorded Stream video UID after a Cloudflare live ends (optional).
+    cfStreamVideoUid: { type: String, trim: true, default: '' },
+    // Website-only live background music (Cloudflare Stream events). Does not
+    // mix into HLS or YouTube. Defaults keep existing events unchanged.
+    backgroundMusicEnabled: { type: Boolean, default: false },
+    backgroundMusicId: { type: String, default: null, trim: true },
+    backgroundMusicVolume: { type: Number, default: 0.35, min: 0, max: 1 },
     // Private-server controls (Phase 2). Additive — defaults keep prior behaviour.
     streamDisabled: { type: Boolean, default: false }, // admin can block publishing
     autoRecord: { type: Boolean, default: false }, // record the private-server stream

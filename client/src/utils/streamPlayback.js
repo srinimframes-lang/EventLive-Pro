@@ -95,6 +95,18 @@ export function resolveServerPlaybackUrl(config) {
 }
 
 /**
+ * Cloudflare Stream VOD HLS for recorded playback.
+ * Does not rewrite MediaMTX recordingUrl / MP4 parts.
+ */
+export function resolveCloudflareRecordedHlsUrl(config) {
+  if (!config || config.playbackMode !== 'recorded') return '';
+  if (String(config.recordingUrl || '').trim()) return '';
+  const url = String(config.playbackUrl || config.hlsUrl || '').trim();
+  if (!isCloudflareStreamHlsUrl(url)) return '';
+  return url;
+}
+
+/**
  * Upgrade any legacy http://IP:8888 (or other host) HLS URL to the active HTTPS base.
  */
 export function securePlaybackUrl(url, config = null) {

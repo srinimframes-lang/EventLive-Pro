@@ -577,6 +577,34 @@
   @apply fixed bottom-5 right-5 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-white/30 bg-black/40 text-lg backdrop-blur-md transition hover:bg-black/60;
 }
 
+.elp-live-stack {
+  @apply w-full;
+}
+
+.elp-live-bgm {
+  @apply mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-neutral-950/90 px-3 py-2 text-white;
+}
+
+.elp-live-bgm-toggle {
+  @apply shrink-0 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold tracking-wide transition hover:bg-white/25 sm:text-sm;
+}
+
+.elp-live-bgm-toggle.is-on {
+  @apply bg-emerald-500/90 text-white hover:bg-emerald-500;
+}
+
+.elp-live-bgm-volume {
+  @apply flex min-w-[7rem] flex-1 items-center sm:min-w-[9rem] sm:max-w-[12rem];
+}
+
+.elp-live-bgm-volume input[type='range'] {
+  @apply w-full accent-white;
+}
+
+.elp-live-bgm-title {
+  @apply w-full truncate text-[11px] font-medium text-white/70 sm:ml-auto sm:w-auto sm:text-xs;
+}
+
 @keyframes theme-loading-slide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }

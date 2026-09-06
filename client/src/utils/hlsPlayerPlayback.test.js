@@ -21,7 +21,8 @@ const MTX_HLS = 'https://stream.eventlivepro.com/live/aaaaaaaaaaaaaaaaaaaaaaaa/i
 
 function recordedConfig(overrides = {}) {
   return {
-    provider: 'hls',
+    provider: 'rtmp',
+    liveIngestProvider: 'cloudflare_stream',
     playbackMode: 'recorded',
     isLive: false,
     isPublishing: false,
@@ -35,7 +36,8 @@ function recordedConfig(overrides = {}) {
 
 function liveConfig(overrides = {}) {
   return {
-    provider: 'hls',
+    provider: 'rtmp',
+    liveIngestProvider: 'cloudflare_stream',
     playbackMode: 'live',
     isLive: true,
     isPublishing: true,
@@ -151,7 +153,7 @@ test('VOD starts at beginning', () => {
   assert.equal(props.recorded, true);
 });
 
-test('VOD end → Waiting for Live', () => {
+test('VOD end does not remount or show Waiting for live', () => {
   assert.equal(isRecordedVodAtNaturalEnd({ ended: true, duration: 60, currentTime: 60 }), true);
   assert.equal(
     isRecordedVodAtNaturalEnd({ ended: false, duration: 120, currentTime: 119.8 }),
@@ -160,15 +162,75 @@ test('VOD end → Waiting for Live', () => {
   assert.equal(shouldRetryOrRemountHls({ recorded: true, atNaturalEnd: true }), false);
   assert.equal(shouldRetryOrRemountHls({ recorded: true, atNaturalEnd: false }), false);
 
-  const waiting = selectCloudflareHlsPlayback({
+  const ended = selectCloudflareHlsPlayback({
     config: recordedConfig({ isLive: false }),
     hlsLiveResume: true,
     recordedVodEnded: true,
   });
-  assert.equal(waiting?.mode, 'waiting-for-live');
-  assert.equal(waiting.showWaitingForLive, true);
-  assert.equal(waiting.retryOrRemount, false);
-  assert.equal(waiting.continueLiveStatusPolling, true);
+  assert.equal(ended?.mode, 'recorded');
+  assert.equal(ended.showWaitingForLive, false);
+  assert.equal(ended.retryOrRemount, false);
+  assert.equal(ended.hlsPlayer.isLive, false);
+  assert.equal(ended.hlsPlayer.recorded, true);
+  assert.equal(ended.continueLiveStatusPolling, true);
+});
+
+test('existing cfStreamVideoUid uses recorded HLS and never waits for live', () => {
+  const vod = selectCloudflareHlsPlayback({
+    config: recordedConfig({ cfRecordingPreparing: false }),
+  });
+  assert.equal(vod?.mode, 'recorded');
+  assert.equal(vod.src, CF_VOD);
+  assert.equal(vod.showWaitingForLive, false);
+  assert.equal(vod.hlsPlayer.detectPublish, false);
+});
+
+test('offline Cloudflare HLS without liveIngestProvider prepares instead of waiting', () => {
+  const preparing = selectCloudflareHlsPlayback({
+    config: {
+      provider: 'rtmp',
+      playbackMode: 'offline',
+      isLive: false,
+      isPublishing: false,
+      playbackUrl: CF_LIVE,
+      hlsUrl: CF_LIVE,
+      recordingUrl: '',
+    },
+  });
+  assert.equal(preparing?.mode, 'recording-preparing');
+  assert.equal(preparing.showWaitingForLive, false);
+});
+
+test('recording still processing shows preparing, not Waiting for live', () => {
+  const preparing = selectCloudflareHlsPlayback({
+    config: {
+      provider: 'rtmp',
+      liveIngestProvider: 'cloudflare_stream',
+      playbackMode: 'offline',
+      isLive: false,
+      isPublishing: false,
+      playbackUrl: CF_LIVE,
+      hlsUrl: CF_LIVE,
+      recordingUrl: '',
+      cfRecordingPreparing: true,
+    },
+  });
+  assert.equal(preparing?.mode, 'recording-preparing');
+  assert.equal(preparing.showWaitingForLive, false);
+  assert.equal(preparing.retryOrRemount, false);
+  assert.equal(preparing.continueLiveStatusPolling, true);
+});
+
+test('offline two days later with recorded URL stays on VOD', () => {
+  const vod = selectCloudflareHlsPlayback({
+    config: recordedConfig({
+      status: 'ended',
+      liveEndedAt: '2026-09-04T10:00:00.000Z',
+    }),
+  });
+  assert.equal(vod?.mode, 'recorded');
+  assert.equal(vod.src, CF_VOD);
+  assert.doesNotMatch(vod.src, /dvrEnabled=true/);
 });
 
 test('next live → DVR live', () => {

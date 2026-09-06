@@ -55,3 +55,44 @@ test('stale localPath + sizeBytes is not proof the file exists', async () => {
   );
   assert.equal(exists, false);
 });
+
+test('old local recording exists under live/<eventId>/ -> playable', async () => {
+  const id = '6a81adf1ce2dbab2249f08cd';
+  const name = '2026-08-16_18-26-15-800755.mp4';
+  const live = path.join(RECORDINGS_ROOT, 'live', id, name);
+  const exists = await partSourceExists(
+    {
+      filename: name,
+      localPath: path.join(RECORDINGS_ROOT, id, name),
+      storage: 'local',
+      r2Key: '',
+      sizeBytes: 59656804,
+    },
+    id,
+    {
+      existsFn: (p) => p === path.resolve(live),
+      statFn: () => ({ isFile: () => true, size: 59656804 }),
+    }
+  );
+  assert.equal(exists, true);
+});
+
+test('local recording under recordings/<eventId>/ -> playable', async () => {
+  const id = '6a81adf1ce2dbab2249f08cd';
+  const name = '2026-08-19_04-00-00.mp4';
+  const current = path.join(RECORDINGS_ROOT, id, name);
+  const exists = await partSourceExists(
+    {
+      filename: name,
+      localPath: current,
+      storage: 'local',
+      r2Key: '',
+    },
+    id,
+    {
+      existsFn: (p) => p === path.resolve(current),
+      statFn: () => ({ isFile: () => true, size: 12_000_000 }),
+    }
+  );
+  assert.equal(exists, true);
+});

@@ -7,7 +7,7 @@ import fs from 'fs';
 import {
   ensureRecordingsArray,
   listActiveRecordingParts,
-  resolveRecordingAbsolutePath,
+  resolveExistingLocalRecordingFile,
 } from './recording.js';
 import { getR2ObjectRange, headR2Object } from './r2.js';
 import {
@@ -44,8 +44,12 @@ export async function inspectRecordingInit(part, eventId = '') {
 
   let result = inspectMp4Init(Buffer.alloc(0));
   try {
-    const abs = resolveRecordingAbsolutePath(part?.localPath);
-    const localOk = Boolean(abs && fs.existsSync(abs));
+    const abs = resolveExistingLocalRecordingFile({
+      eventId,
+      filename: part?.filename,
+      localPath: part?.localPath,
+    });
+    const localOk = Boolean(abs);
     const r2Keys = candidateRecordingR2Keys({ part, eventId });
     const readRange = async (start, end) => {
       if (localOk) return readLocalRange(abs, start, end);
@@ -82,15 +86,16 @@ export async function inspectRecordingInit(part, eventId = '') {
   return result;
 }
 
-export async function partSourceExists(part, eventId = '') {
-  const abs = resolveRecordingAbsolutePath(part?.localPath);
-  if (abs && fs.existsSync(abs)) {
-    try {
-      return fs.statSync(abs).size > 200000;
-    } catch {
-      return false;
-    }
-  }
+export async function partSourceExists(part, eventId = '', fsHooks = {}) {
+  const abs = resolveExistingLocalRecordingFile(
+    {
+      eventId,
+      filename: part?.filename,
+      localPath: part?.localPath,
+    },
+    fsHooks
+  );
+  if (abs) return true;
   const keys = candidateRecordingR2Keys({ part, eventId });
   for (const key of keys) {
     try {

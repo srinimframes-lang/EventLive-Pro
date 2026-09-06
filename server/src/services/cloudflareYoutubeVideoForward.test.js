@@ -44,9 +44,11 @@ function cfEvent(overrides = {}) {
   };
 }
 
-function fakeChild(pid = 4242) {
+function fakeChild(pid = 4242, { exitCode = null, signalCode = null } = {}) {
   return {
     pid,
+    exitCode,
+    signalCode,
     stderr: { on() {} },
     on() {},
     kill() {},
@@ -190,6 +192,91 @@ test('tick stops ffmpeg when Cloudflare goes offline', async () => {
   assert.equal(stopped.results.some((r) => r.action === 'stopped'), true);
   assert.equal(killed.includes(9002), true);
   assert.equal(getActiveCloudflareYoutubeVideoForwards().length, 0);
+  resetCloudflareYoutubeVideoForwardState({ killFn() {} });
+});
+
+test('running child is not respawned even when kill(0) reports dead', async () => {
+  resetCloudflareYoutubeVideoForwardState();
+  const spawned = [];
+  const child = fakeChild(9101);
+  const deps = {
+    ffmpegAvailable: true,
+    ffmpegBin: 'ffmpeg',
+    listEvents: async () => [cfEvent()],
+    getLiveInputStatus: async () => ({ isPublishing: true, status: 'connected' }),
+    spawn: () => {
+      spawned.push(child);
+      return child;
+    },
+    killFn() {
+      throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+    },
+  };
+  const first = await runCloudflareYoutubeVideoForwardTick(deps);
+  const second = await runCloudflareYoutubeVideoForwardTick(deps);
+  assert.equal(first.results[0].action, 'started');
+  assert.equal(second.results[0].action, 'already_running');
+  assert.equal(second.results[0].pid, 9101);
+  assert.equal(spawned.length, 1);
+  resetCloudflareYoutubeVideoForwardState({ killFn() {} });
+});
+
+test('exited child is replaced on the next publishing tick', async () => {
+  resetCloudflareYoutubeVideoForwardState();
+  const spawned = [];
+  const firstChild = fakeChild(9102);
+  const secondChild = fakeChild(9103);
+  const deps = {
+    ffmpegAvailable: true,
+    ffmpegBin: 'ffmpeg',
+    listEvents: async () => [cfEvent()],
+    getLiveInputStatus: async () => ({ isPublishing: true, status: 'connected' }),
+    spawn: () => {
+      const next = spawned.length === 0 ? firstChild : secondChild;
+      spawned.push(next);
+      return next;
+    },
+    killFn() {
+      throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+    },
+  };
+  const first = await runCloudflareYoutubeVideoForwardTick(deps);
+  firstChild.exitCode = 1;
+  const second = await runCloudflareYoutubeVideoForwardTick(deps);
+  assert.equal(first.results[0].action, 'started');
+  assert.equal(first.results[0].pid, 9102);
+  assert.equal(second.results[0].action, 'started');
+  assert.equal(second.results[0].pid, 9103);
+  assert.equal(spawned.length, 2);
+  resetCloudflareYoutubeVideoForwardState({ killFn() {} });
+});
+
+test('pid-file recovery still adopts a live pid without a ChildProcess handle', async () => {
+  resetCloudflareYoutubeVideoForwardState();
+  const event = cfEvent();
+  const recoveredPid = 9104;
+  const pidFile = path.join(process.env.CF_YT_VIDEO_FORWARD_PID_DIR, `${event._id}.pid`);
+  fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+  fs.writeFileSync(pidFile, String(recoveredPid), { encoding: 'utf8' });
+  const spawned = [];
+  const out = await runCloudflareYoutubeVideoForwardTick({
+    ffmpegAvailable: true,
+    ffmpegBin: 'ffmpeg',
+    listEvents: async () => [event],
+    getLiveInputStatus: async () => ({ isPublishing: true, status: 'connected' }),
+    spawn: () => {
+      spawned.push(true);
+      return fakeChild(1);
+    },
+    killFn(pid, signal) {
+      if (pid === recoveredPid && signal === 0) return;
+      throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+    },
+  });
+  assert.equal(out.results[0].action, 'adopted');
+  assert.equal(out.results[0].pid, recoveredPid);
+  assert.equal(spawned.length, 0);
+  assert.equal(getActiveCloudflareYoutubeVideoForwards()[0]?.pid, recoveredPid);
   resetCloudflareYoutubeVideoForwardState({ killFn() {} });
 });
 

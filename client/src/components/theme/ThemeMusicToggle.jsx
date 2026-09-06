@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LIVE_BACKGROUND_MUSIC_EVENT } from '../../utils/backgroundMusic.js';
 import { resolveMediaUrl } from '../../utils/format.js';
 
 /** Optional ambient background music with user toggle (muted by default). */
@@ -8,10 +9,18 @@ export default function ThemeMusicToggle({ musicUrl }) {
   const src = musicUrl ? resolveMediaUrl(musicUrl) : '';
 
   useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
+    const el = audioRef.current;
+    const pauseForLiveBgm = (event) => {
+      if (!event?.detail?.playing) return;
+      if (el && !el.paused) {
+        el.pause();
+        setPlaying(false);
       }
+    };
+    window.addEventListener(LIVE_BACKGROUND_MUSIC_EVENT, pauseForLiveBgm);
+    return () => {
+      window.removeEventListener(LIVE_BACKGROUND_MUSIC_EVENT, pauseForLiveBgm);
+      el?.pause();
     };
   }, []);
 

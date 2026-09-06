@@ -11,17 +11,19 @@ import {
 import { resolveLayoutVariant } from '../../utils/themeLayouts.js';
 import ThemeMusicToggle from './ThemeMusicToggle.jsx';
 import { getThemeLayoutComponent } from './layouts/index.js';
+import { shouldSuppressThemeMusic } from '../../utils/backgroundMusic.js';
 
 /**
  * Shared themed page shell: background, CSS variables, fonts, music.
  * Layout components render inside for structurally unique designs.
  */
 export default function ThemeLayoutShell({ ctx, children }) {
-  const { snap, style, event, coupleTitle, themeBg, hasBgImage, heroRead, surfaceRead, goldBorder } = ctx;
+  const { snap, style, themeBg, hasBgImage, heroRead, surfaceRead, goldBorder } = ctx;
   const vars = themeStyleVars(snap);
   const readVars = readabilityStyleVars(snap, hasBgImage);
   const fontsHref = googleFontsHref(snap);
   const layoutKey = resolveLayoutVariant(snap);
+  const hideThemeMusic = shouldSuppressThemeMusic(ctx.mergedConfig);
 
   useEffect(() => {
     if (!fontsHref) return undefined;
@@ -67,7 +69,7 @@ export default function ThemeLayoutShell({ ctx, children }) {
 
       {children}
 
-      <ThemeMusicToggle musicUrl={style.backgroundMusic} />
+      {hideThemeMusic ? null : <ThemeMusicToggle musicUrl={style.backgroundMusic} />}
     </div>
   );
 }

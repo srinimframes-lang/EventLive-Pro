@@ -11,6 +11,7 @@ import {
 } from '../utils/recordingR2Sync.js';
 
 let timer = null;
+let startupTimer = null;
 let running = false;
 
 async function tick() {
@@ -40,9 +41,21 @@ export function startRecordingCleanupWorker() {
     tick().catch(() => {});
   }, RECORDING_R2_SWEEP_MS);
   if (typeof timer.unref === 'function') timer.unref();
+
+  // One startup cycle (too-recent files are still deferred). Interval stays hourly.
+  // tick() is re-entrant via `running`, so this cannot overlap the interval.
+  startupTimer = setTimeout(() => {
+    startupTimer = null;
+    tick().catch(() => {});
+  }, 0);
+  if (typeof startupTimer.unref === 'function') startupTimer.unref();
 }
 
 export function stopRecordingCleanupWorker() {
+  if (startupTimer) {
+    clearTimeout(startupTimer);
+    startupTimer = null;
+  }
   if (timer) {
     clearInterval(timer);
     timer = null;

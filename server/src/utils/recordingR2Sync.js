@@ -108,16 +108,82 @@ export function matchPartForLocalFile(event, absPath) {
   return null;
 }
 
-export function listPendingLocalParts(event, { existsFn = fs.existsSync } = {}) {
+const EVENT_ID_SEGMENT_RE = /^[a-fA-F0-9]{24}$/;
+
+/** 24-hex Event ids in a recordings-relative path, first segment first. */
+export function extractEventIdsFromRecordingRelPath(rel) {
+  const parts = String(rel || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  const ids = [];
+  const seen = new Set();
+  for (const seg of parts) {
+    if (!EVENT_ID_SEGMENT_RE.test(seg)) continue;
+    const key = seg.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ids.push(seg);
+  }
+  return ids;
+}
+
+export function listPendingLocalParts(event, { existsFn = fs.existsSync, listFilesFn } = {}) {
   const parts = listActiveRecordingParts(event);
   const pending = [];
+  const seen = new Set();
+  const alreadyR2Names = new Set(
+    parts
+      .filter((p) => p && p.storage === 'r2' && p.r2Key)
+      .map((p) => p.filename || path.basename(p.r2Key || ''))
+      .filter(Boolean)
+  );
+
   for (const part of parts) {
     const abs = resolvePartLocalFile(event, part, existsFn);
     if (!abs) continue;
     if (part.storage === 'r2' && part.r2Key) continue;
     pending.push({ part, abs });
+    seen.add(abs);
+  }
+
+  for (const abs of extraDiskMp4sForEvent(event, { existsFn, listFilesFn })) {
+    if (seen.has(abs)) continue;
+    const filename = path.basename(abs);
+    if (alreadyR2Names.has(filename)) continue;
+    pending.push({
+      part: { filename, localPath: abs, storage: 'local', r2Key: '' },
+      abs,
+    });
+    seen.add(abs);
   }
   return pending;
+}
+
+function extraDiskMp4sForEvent(event, { existsFn = fs.existsSync, listFilesFn } = {}) {
+  const id = eventIdOf(event);
+  if (!id) return [];
+  const out = [];
+  const consider = (abs, rel) => {
+    const normRel = String(rel || '').replace(/\\/g, '/');
+    if (isUnsafeRecordingRelPath(normRel)) return;
+    if (!existsFn(abs)) return;
+    out.push(abs);
+  };
+
+  if (listFilesFn) {
+    for (const file of listFilesFn(RECORDINGS_ROOT) || []) {
+      const rel = String(file.rel || '').replace(/\\/g, '/');
+      if (!extractEventIdsFromRecordingRelPath(rel).some((seg) => seg.toLowerCase() === id.toLowerCase())) continue;
+      consider(file.abs, rel);
+    }
+    return out;
+  }
+
+  for (const file of collectMp4Files(path.join(RECORDINGS_ROOT, id))) {
+    consider(file.abs, `${id}/${file.rel}`);
+  }
+  for (const file of collectMp4Files(path.join(RECORDINGS_ROOT, 'live', id))) {
+    consider(file.abs, `live/${id}/${file.rel}`);
+  }
+  return out;
 }
 
 function resolvePartLocalFile(event, part, existsFn = fs.existsSync) {
@@ -130,9 +196,15 @@ function resolvePartLocalFile(event, part, existsFn = fs.existsSync) {
     if (abs && path.basename(abs) === part.filename && existsFn(abs)) return abs;
   }
   if (part?.filename && eventIdOf(event)) {
-    const candidate = path.join(RECORDINGS_ROOT, eventIdOf(event), part.filename);
-    const abs = resolveRecordingAbsolutePath(candidate);
-    if (abs && existsFn(abs)) return abs;
+    const id = eventIdOf(event);
+    const candidates = [
+      path.join(RECORDINGS_ROOT, id, part.filename),
+      path.join(RECORDINGS_ROOT, 'live', id, part.filename),
+    ];
+    for (const candidate of candidates) {
+      const abs = resolveRecordingAbsolutePath(candidate);
+      if (abs && existsFn(abs)) return abs;
+    }
   }
   return null;
 }
@@ -268,7 +340,7 @@ export async function uploadOneLocalPart(
     return { ok: false, skipped: true, reason: 'local-invalid' };
   }
   if (isRecentRecordingFile(st.mtimeMs, now)) {
-    console.log(`[r2] cleanup skipped too recent: ${abs}`);
+    console.log(`[r2] upload deferred too recent: ${abs}`);
     return { ok: false, skipped: true, reason: 'too-recent' };
   }
 
@@ -329,6 +401,7 @@ export async function uploadAllPendingLocalParts(
 
   const pending = listPendingLocalParts(event, {
     existsFn: hooks.existsFn || fs.existsSync,
+    listFilesFn: hooks.listFilesFn,
   });
   if (!pending.length) return { ok: true, reason: 'none-pending', uploaded: 0 };
 
@@ -402,10 +475,10 @@ function collectMp4Files(root) {
   return out;
 }
 
-async function loadEventForFile(rel, abs, { loadEventById, findEventByLocalPath }) {
-  const top = String(rel || '').replace(/\\/g, '/').split('/')[0] || '';
-  if (/^[a-fA-F0-9]{24}$/.test(top)) {
-    const event = loadEventById ? await loadEventById(top) : await Event.findById(top);
+export async function loadEventForFile(rel, abs, { loadEventById, findEventByLocalPath } = {}) {
+  const ids = extractEventIdsFromRecordingRelPath(rel);
+  for (const id of ids) {
+    const event = loadEventById ? await loadEventById(id) : await Event.findById(id);
     if (event) return event;
   }
   if (findEventByLocalPath) return findEventByLocalPath(abs);
@@ -521,8 +594,18 @@ export async function runRecordingR2SyncCycle(hooks = {}) {
   const events = hooks.listPendingEvents
     ? await hooks.listPendingEvents()
     : await listEventsNeedingUpload();
+  const ids = new Set();
   for (const row of events || []) {
     const id = String(row.id || row._id || '');
+    if (id) ids.add(id);
+  }
+  if (!hooks.listPendingEvents) {
+    const files = (hooks.listFilesFn || collectMp4Files)(RECORDINGS_ROOT);
+    for (const file of files || []) {
+      for (const id of extractEventIdsFromRecordingRelPath(file.rel)) ids.add(id);
+    }
+  }
+  for (const id of ids) {
     if (!id) continue;
     const result = await uploadAllPendingLocalParts(id, hooks);
     uploaded += Number(result.uploaded || 0);

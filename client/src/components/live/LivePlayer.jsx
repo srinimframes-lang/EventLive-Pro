@@ -50,6 +50,7 @@ const DVR_SCRUB_MIN_WINDOW_SEC = 2;
 const DVR_SKIP_SEC = 10;
 const OFFLINE_MSG = 'Live stream is currently offline.';
 const SERVER_WAITING_MSG = 'Waiting for live…';
+const RECORDING_PREPARING_MSG = 'Recording is processing…';
 const ENDED_MSG = 'This live stream has ended.';
 const RECONNECTING_MSG = 'Reconnecting…';
 const LIVE_INTERRUPTED_MSG = 'Live connection interrupted.\nTrying to reconnect…';
@@ -2069,7 +2070,10 @@ function LivePlayerView({ config, onLiveUiChange }) {
 
   const { provider } = config;
   const poster = config.poster || '';
-  const isMediaMtx = provider === 'rtmp' || provider === 'hls';
+  const isCloudflareIngest =
+    String(config.liveIngestProvider || '') === 'cloudflare_stream' ||
+    isCloudflareStreamHlsUrl(config.playbackUrl || config.hlsUrl);
+  const isMediaMtx = (provider === 'rtmp' || provider === 'hls') && !isCloudflareIngest;
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
   const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
@@ -2147,8 +2151,16 @@ function LivePlayerView({ config, onLiveUiChange }) {
     );
   }
 
+  if (cfHlsPlayback?.mode === 'recording-preparing') {
+    return <Offline message={RECORDING_PREPARING_MSG} />;
+  }
+
   if (cfHlsPlayback?.mode === 'waiting-for-live') {
     return <Offline message={SERVER_WAITING_MSG} />;
+  }
+
+  if (isCloudflareIngest && !live) {
+    return <Offline message={RECORDING_PREPARING_MSG} />;
   }
 
   if (isMediaMtx && live) {
@@ -2181,7 +2193,7 @@ function LivePlayerView({ config, onLiveUiChange }) {
   }
 
   if (isMediaMtx && mergePending) {
-    return <Offline message="Recording is processing…" />;
+    return <Offline message={RECORDING_PREPARING_MSG} />;
   }
 
   if (isMediaMtx) {
@@ -2213,7 +2225,7 @@ function LivePlayerView({ config, onLiveUiChange }) {
   }
 
   if (!live && mergePending) {
-    return <Offline message="Recording is processing…" />;
+    return <Offline message={RECORDING_PREPARING_MSG} />;
   }
 
   if (!live) {

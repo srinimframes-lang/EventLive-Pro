@@ -24,6 +24,10 @@ import { generateYoutubeThumbnail } from '../utils/generateYoutubeThumbnail.js';
 import BackupStreamSettings, {
   validateBackupStreamFields,
 } from '../components/live/BackupStreamSettings.jsx';
+import {
+  DEFAULT_BACKGROUND_MUSIC_VOLUME,
+  listBackgroundMusicCatalog,
+} from '../utils/backgroundMusic.js';
 
 const LINK_COSTS = { youtube: 1, server: 5, server_youtube: 5, youtube_server: 5 };
 
@@ -90,6 +94,10 @@ const EMPTY = {
   brandDomain: '',
   backupStreamEnabled: false,
   backupYoutubeVideoId: '',
+  liveIngestProvider: '',
+  backgroundMusicEnabled: false,
+  backgroundMusicId: 'ambient-soft',
+  backgroundMusicVolume: DEFAULT_BACKGROUND_MUSIC_VOLUME,
 };
 
 export default function EventForm() {
@@ -245,6 +253,13 @@ export default function EventForm() {
           brandDomain: event.brandDomain || '',
           backupStreamEnabled: Boolean(event.backupStreamEnabled),
           backupYoutubeVideoId: event.backupYoutubeVideoId || '',
+          liveIngestProvider: event.liveIngestProvider || '',
+          backgroundMusicEnabled: Boolean(event.backgroundMusicEnabled),
+          backgroundMusicId: event.backgroundMusicId || 'ambient-soft',
+          backgroundMusicVolume:
+            event.backgroundMusicVolume == null
+              ? DEFAULT_BACKGROUND_MUSIC_VOLUME
+              : Number(event.backgroundMusicVolume),
           youtubeRtmpUrl: event.youtubeRtmpUrl || 'rtmp://a.rtmp.youtube.com/live2',
           youtubeStreamKey: '',
           youtubeStreamKeySet: Boolean(event.youtubeStreamKeySet),
@@ -765,6 +780,16 @@ export default function EventForm() {
           payload.backupYoutubeVideoId = form.backupStreamEnabled
             ? extractYouTubeId(form.backupYoutubeVideoId) || ''
             : '';
+        }
+        const canSetLiveBgm =
+          streamType === 'server' &&
+          (!isEdit || form.liveIngestProvider === 'cloudflare_stream');
+        if (canSetLiveBgm) {
+          payload.backgroundMusicEnabled = Boolean(form.backgroundMusicEnabled);
+          payload.backgroundMusicId = form.backgroundMusicEnabled
+            ? form.backgroundMusicId || 'ambient-soft'
+            : null;
+          payload.backgroundMusicVolume = Number(form.backgroundMusicVolume);
         }
       }
       // Facebook is additive — never changes website playback destination.
@@ -1582,6 +1607,70 @@ export default function EventForm() {
                         }))
                       }
                     />
+                  ) : null}
+                  {streamType === 'server' &&
+                  (!isEdit || form.liveIngestProvider === 'cloudflare_stream') ? (
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.backgroundMusicEnabled)}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              backgroundMusicEnabled: e.target.checked,
+                              backgroundMusicId: f.backgroundMusicId || 'ambient-soft',
+                            }))
+                          }
+                        />
+                        Optional watch-page background music
+                      </label>
+                      <p className="text-xs text-slate-500">
+                        Plays separately from the live stream audio. Guests can turn it off.
+                        Does not change YouTube or the Cloudflare live soundtrack.
+                      </p>
+                      {form.backgroundMusicEnabled ? (
+                        <>
+                          <Field label="Music track" htmlFor="backgroundMusicId">
+                            <select
+                              id="backgroundMusicId"
+                              className="input"
+                              value={form.backgroundMusicId || 'ambient-soft'}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, backgroundMusicId: e.target.value }))
+                              }
+                            >
+                              {listBackgroundMusicCatalog().map((track) => (
+                                <option key={track.id} value={track.id}>
+                                  {track.title}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <Field
+                            label="Default volume"
+                            htmlFor="backgroundMusicVolume"
+                            hint="0–100%. Viewers can still adjust this on the watch page."
+                          >
+                            <input
+                              id="backgroundMusicVolume"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              className="w-full"
+                              value={form.backgroundMusicVolume ?? DEFAULT_BACKGROUND_MUSIC_VOLUME}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  backgroundMusicVolume: Number(e.target.value),
+                                }))
+                              }
+                            />
+                          </Field>
+                        </>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               )}

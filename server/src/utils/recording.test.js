@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 import {
   getRecordingState,
   listActiveRecordingParts,
+  localRecordingCandidatePaths,
   markRecordingPartUploaded,
+  MIN_PLAYABLE_RECORDING_BYTES,
   parseRecordingFilenameTimestamp,
+  RECORDINGS_ROOT,
   removeRecordingPart,
   replacePartsWithMergedRecording,
+  resolveExistingLocalRecordingFile,
   syncLegacyRecordingFields,
 } from './recording.js';
 
@@ -177,4 +182,55 @@ test('soft-deleted parts are hidden so merge can leave a single replay', () => {
   assert.equal(active[0].filename, 'merged.mp4');
   assert.equal(typeof replacePartsWithMergedRecording, 'function');
   assert.ok(parseRecordingFilenameTimestamp('2026-07-31_10-00-00-000000.mp4'));
+});
+
+const EVENT_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+const OLD_NAME = '2026-08-16_18-26-15-800755.mp4';
+
+test('localRecordingCandidatePaths includes recordings/<eventId>/ and live/<eventId>/', () => {
+  const paths = localRecordingCandidatePaths({
+    eventId: EVENT_ID,
+    filename: OLD_NAME,
+    localPath: path.join(RECORDINGS_ROOT, EVENT_ID, OLD_NAME),
+  });
+  assert.ok(paths.includes(path.resolve(RECORDINGS_ROOT, EVENT_ID, OLD_NAME)));
+  assert.ok(paths.includes(path.resolve(RECORDINGS_ROOT, 'live', EVENT_ID, OLD_NAME)));
+});
+
+test('old local recording under live/<eventId>/ is playable when Mongo path is stale', () => {
+  const stale = path.resolve(RECORDINGS_ROOT, EVENT_ID, OLD_NAME);
+  const live = path.resolve(RECORDINGS_ROOT, 'live', EVENT_ID, OLD_NAME);
+  const found = resolveExistingLocalRecordingFile(
+    { eventId: EVENT_ID, filename: OLD_NAME, localPath: stale },
+    {
+      existsFn: (p) => p === live,
+      statFn: (p) => (p === live ? { isFile: () => true, size: 5_000_000 } : { isFile: () => false, size: 0 }),
+    }
+  );
+  assert.equal(found, live);
+});
+
+test('local recording under recordings/<eventId>/ is still preferred when it exists', () => {
+  const current = path.resolve(RECORDINGS_ROOT, EVENT_ID, OLD_NAME);
+  const live = path.resolve(RECORDINGS_ROOT, 'live', EVENT_ID, OLD_NAME);
+  const found = resolveExistingLocalRecordingFile(
+    { eventId: EVENT_ID, filename: OLD_NAME, localPath: current },
+    {
+      existsFn: (p) => p === current || p === live,
+      statFn: () => ({ isFile: () => true, size: 5_000_000 }),
+    }
+  );
+  assert.equal(found, current);
+});
+
+test('trivial local files are not treated as playable recordings', () => {
+  const live = path.resolve(RECORDINGS_ROOT, 'live', EVENT_ID, OLD_NAME);
+  const found = resolveExistingLocalRecordingFile(
+    { eventId: EVENT_ID, filename: OLD_NAME },
+    {
+      existsFn: (p) => p === live,
+      statFn: () => ({ isFile: () => true, size: MIN_PLAYABLE_RECORDING_BYTES - 1 }),
+    }
+  );
+  assert.equal(found, null);
 });

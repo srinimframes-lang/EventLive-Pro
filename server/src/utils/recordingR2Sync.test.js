@@ -3,9 +3,13 @@ import path from 'path';
 import test from 'node:test';
 import { RECORDINGS_ROOT } from './recording.js';
 import {
+  extractEventIdsFromRecordingRelPath,
+  isRecentRecordingFile,
   isUnsafeRecordingRelPath,
   listPendingLocalParts,
+  loadEventForFile,
   matchPartForLocalFile,
+  RECORDING_R2_MIN_AGE_MS,
   safeUnlinkLocalAfterR2,
   shouldUnlinkLocalAfterR2,
   sweepVerifiedLocalRecordings,
@@ -82,7 +86,7 @@ test('listPendingLocalParts skips parts already on R2', () => {
       startedAt: new Date('2026-07-19T10:00:00Z'),
     },
   ]);
-  const pending = listPendingLocalParts(event, { existsFn: () => true });
+  const pending = listPendingLocalParts(event, { existsFn: () => true, listFilesFn: () => [] });
   assert.equal(pending.length, 0);
 });
 
@@ -256,4 +260,174 @@ test('matchPartForLocalFile maps leftover local file to r2 key by filename', () 
   assert.ok(part);
   assert.equal(part.storage, 'r2');
   assert.equal(part.r2Key, `recordings/${EVENT_ID}/solo.mp4`);
+});
+
+const UNKNOWN_ID = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+
+function livePath(name) {
+  return path.resolve(RECORDINGS_ROOT, 'live', EVENT_ID, name);
+}
+
+test('extractEventIdsFromRecordingRelPath reads first segment and live/<eventId>/', () => {
+  assert.deepEqual(extractEventIdsFromRecordingRelPath(`${EVENT_ID}/file.mp4`), [EVENT_ID]);
+  assert.deepEqual(extractEventIdsFromRecordingRelPath(`live/${EVENT_ID}/file.mp4`), [EVENT_ID]);
+  assert.deepEqual(extractEventIdsFromRecordingRelPath('live/orphan/file.mp4'), []);
+  assert.deepEqual(extractEventIdsFromRecordingRelPath(`live/${UNKNOWN_ID}/file.mp4`), [UNKNOWN_ID]);
+});
+
+test('loadEventForFile maps recordings/<eventId>/file.mp4', async () => {
+  const event = makeEvent([]);
+  const abs = recPath('file.mp4');
+  const found = await loadEventForFile(`${EVENT_ID}/file.mp4`, abs, {
+    loadEventById: async (id) => (id === EVENT_ID ? event : null),
+    findEventByLocalPath: async () => null,
+  });
+  assert.equal(found, event);
+});
+
+test('loadEventForFile maps recordings/live/<eventId>/file.mp4', async () => {
+  const event = makeEvent([]);
+  const abs = livePath('file.mp4');
+  const found = await loadEventForFile(`live/${EVENT_ID}/file.mp4`, abs, {
+    loadEventById: async (id) => (id === EVENT_ID ? event : null),
+    findEventByLocalPath: async () => null,
+  });
+  assert.equal(found, event);
+});
+
+test('loadEventForFile leaves live/orphan unmapped', async () => {
+  const abs = path.resolve(RECORDINGS_ROOT, 'live', 'orphan', 'file.mp4');
+  const found = await loadEventForFile('live/orphan/file.mp4', abs, {
+    loadEventById: async () => {
+      throw new Error('should not look up a non-hex folder as an event id');
+    },
+    findEventByLocalPath: async () => null,
+  });
+  assert.equal(found, null);
+});
+
+test('loadEventForFile leaves unknown 24-hex path unmapped when Mongo has no event', async () => {
+  const abs = path.resolve(RECORDINGS_ROOT, 'live', UNKNOWN_ID, 'file.mp4');
+  const found = await loadEventForFile(`live/${UNKNOWN_ID}/file.mp4`, abs, {
+    loadEventById: async () => null,
+    findEventByLocalPath: async () => null,
+  });
+  assert.equal(found, null);
+});
+
+test('listPendingLocalParts finds an unmapped file under live/<eventId>/', () => {
+  const abs = livePath('clip.mp4');
+  const event = makeEvent([]);
+  event.recordingPath = '';
+  const pending = listPendingLocalParts(event, {
+    existsFn: (p) => p === abs,
+    listFilesFn: () => [{ abs, rel: `live/${EVENT_ID}/clip.mp4` }],
+  });
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].abs, abs);
+});
+
+test('upload from live/<eventId>/ keeps R2 key recordings/<eventId>/<filename>', async () => {
+  const abs = livePath('clip.mp4');
+  const event = makeEvent([]);
+  event.recordingPath = '';
+  const uploads = [];
+  const result = await uploadAllPendingLocalParts(EVENT_ID, {
+    loadEvent: async () => event,
+    existsFn: (p) => p === abs,
+    listFilesFn: () => [{ abs, rel: `live/${EVENT_ID}/clip.mp4` }],
+    statFn: () => ({ size: 20, mtimeMs: Date.now() - 300_000 }),
+    sleepFn: async () => {},
+    retries: 1,
+    uploadFn: async (local, key) => {
+      uploads.push(key);
+      return { url: `https://r2/${key}`, size: 20 };
+    },
+    headFn: async () => ({ exists: true, size: 20 }),
+    unlinkFn: () => {},
+  });
+  assert.equal(result.uploaded, 1);
+  assert.deepEqual(uploads, [`recordings/${EVENT_ID}/clip.mp4`]);
+  assert.equal(event.recordings[0].r2Key, `recordings/${EVENT_ID}/clip.mp4`);
+});
+
+test('too-recent files are deferred and not uploaded', async () => {
+  assert.equal(isRecentRecordingFile(Date.now(), Date.now(), RECORDING_R2_MIN_AGE_MS), true);
+  assert.equal(isRecentRecordingFile(Date.now() - RECORDING_R2_MIN_AGE_MS - 1, Date.now(), RECORDING_R2_MIN_AGE_MS), false);
+
+  const abs = recPath('fresh.mp4');
+  const event = makeEvent([
+    { filename: 'fresh.mp4', localPath: abs, storage: 'local', r2Key: '', startedAt: new Date() },
+  ]);
+  const uploads = [];
+  const removed = [];
+  const result = await uploadAllPendingLocalParts(EVENT_ID, {
+    loadEvent: async () => event,
+    existsFn: (p) => p === abs,
+    listFilesFn: () => [],
+    statFn: () => ({ size: 20, mtimeMs: Date.now() }),
+    sleepFn: async () => {},
+    retries: 1,
+    uploadFn: async (_local, key) => {
+      uploads.push(key);
+      return { url: `https://r2/${key}`, size: 20 };
+    },
+    headFn: async () => ({ exists: true, size: 20 }),
+    unlinkFn: (p) => removed.push(p),
+  });
+  assert.equal(result.uploaded, 0);
+  assert.equal(uploads.length, 0);
+  assert.equal(removed.length, 0);
+  assert.equal(event.recordings[0].storage, 'local');
+});
+
+test('sweep maps live/<eventId>/ but still will not delete storage=local', async () => {
+  const mappedLive = livePath('kept-local.mp4');
+  const removed = [];
+  const event = makeEvent([
+    {
+      filename: 'kept-local.mp4',
+      localPath: mappedLive,
+      storage: 'local',
+      r2Key: '',
+      startedAt: new Date('2026-07-19T10:00:00Z'),
+    },
+  ]);
+  const sweep = await sweepVerifiedLocalRecordings({
+    root: RECORDINGS_ROOT,
+    now: Date.now(),
+    existsFn: () => true,
+    statFn: () => ({ size: 33, mtimeMs: Date.now() - 300_000 }),
+    headFn: async () => ({ exists: true, size: 33 }),
+    unlinkFn: (p) => removed.push(p),
+    loadEventById: async (id) => (id === EVENT_ID ? event : null),
+    findEventByLocalPath: async () => null,
+    listFilesFn: () => [{ abs: mappedLive, rel: `live/${EVENT_ID}/kept-local.mp4` }],
+  });
+  assert.equal(sweep.removed, 0);
+  assert.equal(removed.length, 0);
+  assert.ok(sweep.skipped >= 1);
+});
+
+test('sweep leaves live/orphan and unknown 24-hex folders unmapped', async () => {
+  const orphan = path.join(RECORDINGS_ROOT, 'live', 'orphan', 'file.mp4');
+  const unknown = path.join(RECORDINGS_ROOT, 'live', UNKNOWN_ID, 'file.mp4');
+  const removed = [];
+  const sweep = await sweepVerifiedLocalRecordings({
+    root: RECORDINGS_ROOT,
+    now: Date.now(),
+    existsFn: () => true,
+    statFn: () => ({ size: 33, mtimeMs: Date.now() - 300_000 }),
+    headFn: async () => ({ exists: true, size: 33 }),
+    unlinkFn: (p) => removed.push(p),
+    loadEventById: async () => null,
+    findEventByLocalPath: async () => null,
+    listFilesFn: () => [
+      { abs: orphan, rel: 'live/orphan/file.mp4' },
+      { abs: unknown, rel: `live/${UNKNOWN_ID}/file.mp4` },
+    ],
+  });
+  assert.equal(sweep.removed, 0);
+  assert.equal(removed.length, 0);
+  assert.equal(sweep.skipped, 2);
 });

@@ -158,12 +158,25 @@ function isCloudflareLiveSession(config) {
   return isCloudflareStreamHlsUrl(url);
 }
 
+function isCloudflareIngestConfig(config) {
+  if (String(config?.liveIngestProvider || '') === 'cloudflare_stream') return true;
+  return isCloudflareStreamHlsUrl(config?.playbackUrl || config?.hlsUrl);
+}
+
+function isCloudflareRecordingPreparing(config) {
+  if (!config || !isCloudflareIngestConfig(config)) return false;
+  if (isCloudflareLiveSession(config)) return false;
+  if (resolveCloudflareRecordedHlsUrl(config)) return false;
+  if (config.cfRecordingPreparing === true) return true;
+  return config.playbackMode === 'offline' || config.isLive === false;
+}
+
 /**
  * Cloudflare live DVR wins while the event is live.
  * Recorded VOD is used only after live ends.
  *
  * @returns {{
- *   mode: 'live' | 'recorded' | 'waiting-for-live',
+ *   mode: 'live' | 'recorded' | 'recording-preparing' | 'waiting-for-live',
  *   src?: string,
  *   isLive: boolean,
  *   cloudflareDvr?: boolean,
@@ -201,7 +214,7 @@ export function selectCloudflareHlsPlayback({
 
   const src = resolveCloudflareRecordedHlsUrl(config);
 
-  if (src && !recordedVodEnded) {
+  if (src) {
     return {
       mode: 'recorded',
       src,
@@ -214,16 +227,16 @@ export function selectCloudflareHlsPlayback({
       retryOrRemount: false,
       showWaitingForLive: false,
       ignoreLiveProbe: false,
-      ignoreHlsLiveResume: Boolean(hlsLiveResume),
+      ignoreHlsLiveResume: Boolean(hlsLiveResume) || recordedVodEnded,
       continueLiveStatusPolling: true,
     };
   }
 
-  if (src && recordedVodEnded) {
+  if (isCloudflareRecordingPreparing(config)) {
     return {
-      mode: 'waiting-for-live',
+      mode: 'recording-preparing',
       isLive: false,
-      showWaitingForLive: true,
+      showWaitingForLive: false,
       retryOrRemount: false,
       ignoreHlsLiveResume: true,
       continueLiveStatusPolling: true,
