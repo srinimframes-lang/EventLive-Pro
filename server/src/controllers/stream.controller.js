@@ -23,8 +23,8 @@ import {
 } from '../utils/mediaStream.js';
 import {
   captureCloudflareRecordedVideoUid,
-  cloudflareRecordedPlaybackFields,
   getLiveInputStatus,
+  publicCloudflareOfflinePlayback,
   syncCloudflareLiveOfflineTransition,
 } from '../services/cloudflareStream.js';
 import { publicBackgroundMusicSlice } from '../utils/backgroundMusic.js';
@@ -244,12 +244,15 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
       }))
     : rec.parts;
   const firstPlayableId = playbackParts[0]?.id || '';
-  const recordingUrl = isLive
+  const cfPublic = publicCloudflareOfflinePlayback(event, { isLive });
+  const cfRecorded = cfPublic?.playbackMode === 'recorded' ? cfPublic : null;
+  const recordingUrl = cfRecorded
     ? ''
-    : firstPlayableId
-      ? `/api/events/${event.id}/stream/recording?part=${firstPlayableId}`
-      : '';
-  const cfRecorded = cloudflareRecordedPlaybackFields(event, { isLive });
+    : isLive
+      ? ''
+      : firstPlayableId
+        ? `/api/events/${event.id}/stream/recording?part=${firstPlayableId}`
+        : '';
   const playbackMode = isLive
     ? reconnecting
       ? 'reconnecting'
@@ -306,6 +309,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     // Recorded replay
     playbackMode,
     recordingUrl,
+    cfRecordingPreparing: Boolean(cfPublic?.cfRecordingPreparing),
     hasRecording: rec.hasRecording,
     recordingAvailable: Boolean(recordingUrl) || Boolean(cfRecorded),
     recordingPublicUntil: rec.recordingPublicUntil,

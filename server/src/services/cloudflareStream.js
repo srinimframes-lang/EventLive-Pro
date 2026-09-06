@@ -170,13 +170,24 @@ async function cloudflareRequest(path, { method = 'GET', body, fetchImpl = fetch
   return json?.result;
 }
 
+/** Cloudflare Live Input recordings are kept at least this many days. */
+export const CF_RECORDING_RETENTION_DAYS = 30;
+
+/** Live Input create/update recording + retention payload. */
+export function cloudflareLiveInputRecordingPayload() {
+  return {
+    recording: { mode: 'automatic', timeoutSeconds: 0 },
+    deleteRecordingAfterDays: CF_RECORDING_RETENTION_DAYS,
+  };
+}
+
 export async function createLiveInput({ eventId, slug, title } = {}, { fetchImpl = fetch, config } = {}) {
   const name = liveInputMetaName({ eventId, slug });
   const result = await cloudflareRequest('/stream/live_inputs', {
     method: 'POST',
     body: {
       meta: { name, eventId: String(eventId || ''), slug: String(slug || ''), title: String(title || '') },
-      recording: { mode: 'automatic', timeoutSeconds: 0 },
+      ...cloudflareLiveInputRecordingPayload(),
     },
     fetchImpl,
     config,
@@ -349,19 +360,57 @@ export function isCompletedCloudflareVideo(video) {
  * Pick the completed recording from the latest broadcast.
  * Prefers the newest `created` (then `modified`) among ready videos.
  */
-export function selectLatestCompletedLiveInputVideo(videos = []) {
-  const ready = (Array.isArray(videos) ? videos : []).filter(isCompletedCloudflareVideo);
-  if (!ready.length) return null;
-  let latest = ready[0];
+function isErrorCloudflareVideo(video) {
+  const state = String(video?.status?.state ?? video?.status ?? '')
+    .trim()
+    .toLowerCase();
+  return state === 'error';
+}
+
+function pickLatestLiveInputVideo(videos = []) {
+  const list = (Array.isArray(videos) ? videos : []).filter((video) => {
+    if (!video || typeof video !== 'object') return false;
+    if (!String(video.uid || '').trim()) return false;
+    return !isErrorCloudflareVideo(video);
+  });
+  if (!list.length) return null;
+  let latest = list[0];
   let latestMs = videoCreatedMs(latest);
-  for (let i = 1; i < ready.length; i += 1) {
-    const ms = videoCreatedMs(ready[i]);
+  for (let i = 1; i < list.length; i += 1) {
+    const ms = videoCreatedMs(list[i]);
     if (ms >= latestMs) {
-      latest = ready[i];
+      latest = list[i];
       latestMs = ms;
     }
   }
   return latest;
+}
+
+export function selectLatestCompletedLiveInputVideo(videos = []) {
+  return pickLatestLiveInputVideo(
+    (Array.isArray(videos) ? videos : []).filter(isCompletedCloudflareVideo),
+  );
+}
+
+/**
+ * Exact recording for this broadcast: newest Live Input video, including
+ * still-processing ones. Never prefers an older ready VOD over a newer encode.
+ */
+export function selectBroadcastRecordingVideo(videos = [], { liveStartedAt } = {}) {
+  const all = Array.isArray(videos) ? videos : [];
+  const startMs = Date.parse(liveStartedAt);
+  let pool = all;
+  if (Number.isFinite(startMs)) {
+    const inWindow = all.filter((video) => videoCreatedMs(video) >= startMs - 120_000);
+    if (inWindow.length) pool = inWindow;
+  }
+  const video = pickLatestLiveInputVideo(pool) || pickLatestLiveInputVideo(all);
+  if (!video) return null;
+  return {
+    video,
+    uid: String(video.uid || '').trim(),
+    ready: isCompletedCloudflareVideo(video),
+  };
 }
 
 /**
@@ -390,9 +439,18 @@ export async function captureCloudflareRecordedVideoUid(event, deps = {}) {
     return { saved: false, reason: 'list_failed' };
   }
 
-  const selected = selectLatestCompletedLiveInputVideo(videos);
+  const selected = selectBroadcastRecordingVideo(videos, {
+    liveStartedAt: event.liveStartedAt,
+  });
   const uid = String(selected?.uid || '').trim();
   if (!uid) return { saved: false, reason: 'no_completed_video' };
+  if (!selected.ready) {
+    cloudflareLog('recorded video still processing', {
+      liveInputUid: liveInputId,
+      videoUid: uid,
+    });
+    return { saved: false, reason: 'processing', uid };
+  }
 
   event.cfStreamVideoUid = uid;
   cloudflareLog('captured recorded video uid', {
@@ -442,14 +500,42 @@ export function cloudflareRecordedPlaybackFields(event, { isLive = false } = {})
     recordingAvailable: true,
     hlsUrl,
     playbackUrl: hlsUrl,
+    recordingUrl: '',
+  };
+}
+
+/**
+ * Public watch-page playback for a Cloudflare event.
+ * UID present → recorded HLS. Offline without UID → preparing, not live-wait.
+ */
+export function publicCloudflareOfflinePlayback(event, { isLive = false } = {}) {
+  if (!isCloudflareStreamLive(event)) return null;
+  const recorded = cloudflareRecordedPlaybackFields(event, { isLive });
+  if (recorded) {
+    return {
+      ...recorded,
+      recordingUrl: '',
+      cfRecordingPreparing: false,
+    };
+  }
+  if (isLive) return null;
+  return {
+    playbackMode: 'offline',
+    recordingAvailable: false,
+    recordingUrl: '',
+    cfRecordingPreparing: true,
   };
 }
 
 /** Extra video-list attempts after the immediate capture in finalizeEventOffline. */
-export const CF_RECORDING_UID_RETRY_DELAYS_MS = [20_000, 40_000, 60_000, 90_000];
+export const CF_RECORDING_UID_RETRY_DELAYS_MS = [20_000, 40_000, 60_000, 90_000, 180_000, 300_000];
+
+/** Minimum gap between GET /stream reconcile video-list calls for the same event. */
+export const CF_UID_RECONCILE_MIN_INTERVAL_MS = 30_000;
 
 const cfOfflineFinalizeStarted = new Set();
 const cfRecordingRetryTimers = new Map();
+const cfUidReconcileLastAttemptMs = new Map();
 
 function eventIdOf(event) {
   return String(event?._id || event?.id || '').trim();
@@ -470,7 +556,34 @@ export function planCloudflareStreamConfigOffline(event, isPublishing) {
   if (isPublishing === false && (Boolean(event.isLive) || event.status === 'live')) {
     return { action: 'finalize_once' };
   }
+  if (isPublishing === false && !String(event.cfStreamVideoUid || '').trim()) {
+    return { action: 'reconcile_uid' };
+  }
   return { action: 'none' };
+}
+
+export function shouldReconcileCloudflareRecordingUid(eventId, deps = {}) {
+  const id = String(eventId || '').trim();
+  if (!id) return false;
+  if (cfRecordingRetryTimers.has(id)) return false;
+  const now = Number.isFinite(Number(deps.now)) ? Number(deps.now) : Date.now();
+  const minInterval = Number(deps.minIntervalMs) > 0
+    ? Number(deps.minIntervalMs)
+    : CF_UID_RECONCILE_MIN_INTERVAL_MS;
+  const last = cfUidReconcileLastAttemptMs.get(id) || 0;
+  return !last || now - last >= minInterval;
+}
+
+export function markCloudflareRecordingUidReconcileAttempt(eventId, deps = {}) {
+  const id = String(eventId || '').trim();
+  if (!id) return;
+  const now = Number.isFinite(Number(deps.now)) ? Number(deps.now) : Date.now();
+  cfUidReconcileLastAttemptMs.set(id, now);
+}
+
+export function clearCloudflareRecordingUidReconcileState(eventId) {
+  const id = String(eventId || '').trim();
+  if (id) cfUidReconcileLastAttemptMs.delete(id);
 }
 
 export function beginCloudflareOfflineFinalization(eventId) {
@@ -504,6 +617,7 @@ export function resetCloudflareOfflineFinalizationState() {
     cancelCloudflareRecordingUidRetry(id);
   }
   cfOfflineFinalizeStarted.clear();
+  cfUidReconcileLastAttemptMs.clear();
 }
 
 export function isCloudflareRecordingUidRetryInflight(eventId) {
@@ -574,9 +688,37 @@ export function scheduleCloudflareRecordingUidRetry(eventId, deps = {}) {
   return { scheduled: true, attempts: delays.length };
 }
 
+async function reconcileCloudflareRecordingUid(event, deps = {}) {
+  const id = eventIdOf(event);
+  if (String(event?.cfStreamVideoUid || '').trim()) {
+    return { action: 'none', event };
+  }
+  if (isCloudflareRecordingUidRetryInflight(id)) {
+    return { action: 'skipped_duplicate', event };
+  }
+  if (!shouldReconcileCloudflareRecordingUid(id, deps)) {
+    return { action: 'skipped_backoff', event };
+  }
+  markCloudflareRecordingUidReconcileAttempt(id, deps);
+
+  const capture = deps.captureCloudflareRecordedVideoUid || captureCloudflareRecordedVideoUid;
+  try {
+    const result = await capture(event, deps);
+    if (result?.saved && String(event.cfStreamVideoUid || '').trim()) {
+      if (typeof event.save === 'function') await event.save();
+      return { action: 'reconcile_uid', event };
+    }
+  } catch {
+    /* keep retrying in the background */
+  }
+  scheduleCloudflareRecordingUidRetry(id, deps);
+  return { action: 'reconcile_uid', event };
+}
+
 /**
  * Apply Cloudflare live/offline transition from a stream-config poll.
  * Finalization runs at most once per live session; VOD retries are async.
+ * Ended events missing a UID are reconciled with backoff (missed transition).
  */
 export async function syncCloudflareLiveOfflineTransition(event, isPublishing, deps = {}) {
   const plan = planCloudflareStreamConfigOffline(event, isPublishing);
@@ -584,9 +726,13 @@ export async function syncCloudflareLiveOfflineTransition(event, isPublishing, d
   if (plan.action === 'persist_live') {
     clearCloudflareOfflineFinalization(id);
     cancelCloudflareRecordingUidRetry(id);
+    clearCloudflareRecordingUidReconcileState(id);
     const persist = deps.persistCloudflareLive;
     const next = typeof persist === 'function' ? await persist(event) : event;
     return { action: 'persist_live', event: next };
+  }
+  if (plan.action === 'reconcile_uid') {
+    return reconcileCloudflareRecordingUid(event, deps);
   }
   if (plan.action !== 'finalize_once') {
     return { action: 'none', event };
