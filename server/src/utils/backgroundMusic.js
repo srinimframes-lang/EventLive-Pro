@@ -29,6 +29,7 @@ const PUBLIC_SLICE_KEYS = [
 ];
 
 function isCloudflareStreamEvent(source = {}) {
+  if (!source) return false;
   return String(source.liveIngestProvider || '') === 'cloudflare_stream';
 }
 

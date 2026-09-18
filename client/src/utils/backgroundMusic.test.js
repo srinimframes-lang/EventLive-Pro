@@ -27,6 +27,12 @@ test('BGM disabled when flag is false', () => {
   );
 });
 
+test('null stream config does not crash before the player loads', () => {
+  assert.equal(shouldActivateLiveBackgroundMusic(null), false);
+  assert.equal(shouldActivateLiveBackgroundMusic(undefined), false);
+  assert.equal(shouldSuppressThemeMusic(null), false);
+});
+
 test('non-Cloudflare event does not start BGM', () => {
   assert.equal(
     shouldActivateLiveBackgroundMusic({

@@ -27,6 +27,12 @@ test('isValidBackgroundMusicId only accepts catalog ids', () => {
   assert.equal(isValidBackgroundMusicId(null), false);
 });
 
+test('null stream config does not crash before the player loads', () => {
+  assert.equal(shouldActivateLiveBackgroundMusic(null), false);
+  assert.equal(shouldActivateLiveBackgroundMusic(undefined), false);
+  assert.equal(shouldSuppressThemeMusic(null), false);
+});
+
 test('BGM activates for Cloudflare events with enabled + valid id', () => {
   const event = {
     liveIngestProvider: 'cloudflare_stream',

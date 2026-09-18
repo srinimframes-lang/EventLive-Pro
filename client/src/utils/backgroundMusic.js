@@ -41,6 +41,7 @@ export function clampBackgroundMusicVolume(raw, fallback = DEFAULT_BACKGROUND_MU
 }
 
 export function shouldActivateLiveBackgroundMusic(config = {}) {
+  if (!config) return false;
   if (String(config.liveIngestProvider || '') !== 'cloudflare_stream') return false;
   if (config.backgroundMusicEnabled !== true) return false;
   if (!isValidBackgroundMusicId(config.backgroundMusicId)) return false;

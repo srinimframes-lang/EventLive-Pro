@@ -23,7 +23,7 @@ export default function ThemeLayoutShell({ ctx, children }) {
   const readVars = readabilityStyleVars(snap, hasBgImage);
   const fontsHref = googleFontsHref(snap);
   const layoutKey = resolveLayoutVariant(snap);
-  const hideThemeMusic = shouldSuppressThemeMusic(ctx.mergedConfig);
+  const hideThemeMusic = shouldSuppressThemeMusic(ctx?.mergedConfig);
 
   useEffect(() => {
     if (!fontsHref) return undefined;
