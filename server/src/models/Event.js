@@ -264,8 +264,9 @@ const eventSchema = new Schema(
     rtmpStreamKey: { type: String, default: '', select: false },
     // Full OBS publish URL for Premium Server Live (rtmp://host:1935/live/<eventId>).
     rtmpPublishUrl: { type: String, trim: true, default: '' },
-    // Ingest backend for Premium Server Live. New Server/RTMP events set
-    // cloudflare_stream at create time; existing docs stay on MediaMTX.
+    // Ingest backend for Premium Server Live. New Server / Server+YouTube /
+    // YouTube+Server events set cloudflare_stream at create time; existing
+    // MediaMTX documents keep liveIngestProvider=mediamtx.
     liveIngestProvider: {
       type: String,
       enum: ['mediamtx', 'cloudflare_stream'],

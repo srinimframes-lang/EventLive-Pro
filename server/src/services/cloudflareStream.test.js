@@ -63,18 +63,18 @@ function jsonResponse(body, status = 200) {
   };
 }
 
-test('shouldProvisionCloudflareLive only for new Server/RTMP events', () => {
+test('shouldProvisionCloudflareLive for all new Server-related destinations', () => {
   assert.equal(
     shouldProvisionCloudflareLive({ streamProvider: 'rtmp', streamingDestination: 'server' }),
     true,
   );
   assert.equal(
     shouldProvisionCloudflareLive({ streamProvider: 'rtmp', streamingDestination: 'server_youtube' }),
-    false,
+    true,
   );
   assert.equal(
     shouldProvisionCloudflareLive({ streamProvider: 'rtmp', streamingDestination: 'youtube_server' }),
-    false,
+    true,
   );
   assert.equal(
     shouldProvisionCloudflareLive({ streamProvider: 'youtube', streamingDestination: 'youtube' }),
@@ -232,16 +232,59 @@ test('createEventWithCloudflareLive provisions a dedicated input for Server/RTMP
   assert.equal(String(event.hlsUrl || '').includes('cloudflarestream.com'), false);
 });
 
-test('createEventWithCloudflareLive does not touch MediaMTX-only destinations', async () => {
+test('createEventWithCloudflareLive provisions Server+YouTube and YouTube+Server without dropping destination', async () => {
+  const created = [];
+  const EventModel = {
+    create: async (payload) => {
+      created.push(payload);
+      return payload;
+    },
+  };
+  let n = 0;
+  const createLiveInput = async () => mapLiveInputResult(cfApiResult(`combo-uid-${++n}`));
+
+  const serverYoutube = await createEventWithCloudflareLive(
+    {
+      title: 'Server + YouTube',
+      streamProvider: 'rtmp',
+      streamingDestination: 'server_youtube',
+      youtubeForwardEnabled: true,
+    },
+    { EventModel, createLiveInput, deleteLiveInput: async () => true },
+  );
+  assert.equal(serverYoutube.liveIngestProvider, 'cloudflare_stream');
+  assert.equal(serverYoutube.streamingDestination, 'server_youtube');
+  assert.equal(serverYoutube.youtubeForwardEnabled, true);
+  assert.equal(serverYoutube.cfStreamLiveInputId, 'combo-uid-1');
+
+  const youtubeServer = await createEventWithCloudflareLive(
+    {
+      title: 'YouTube + Server',
+      streamProvider: 'rtmp',
+      streamingDestination: 'youtube_server',
+      youtubeForwardEnabled: true,
+      youtubeVideoId: 'dQw4w9WgXcQ',
+    },
+    { EventModel, createLiveInput, deleteLiveInput: async () => true },
+  );
+  assert.equal(youtubeServer.liveIngestProvider, 'cloudflare_stream');
+  assert.equal(youtubeServer.streamingDestination, 'youtube_server');
+  assert.equal(youtubeServer.youtubeForwardEnabled, true);
+  assert.equal(youtubeServer.youtubeVideoId, 'dQw4w9WgXcQ');
+  assert.equal(youtubeServer.cfStreamLiveInputId, 'combo-uid-2');
+  assert.equal(created.length, 2);
+});
+
+test('createEventWithCloudflareLive does not provision YouTube-only events', async () => {
   let fetchCalled = false;
   const EventModel = {
     create: async (payload) => payload,
   };
   const event = await createEventWithCloudflareLive(
     {
-      title: 'Server + YouTube',
-      streamProvider: 'rtmp',
-      streamingDestination: 'server_youtube',
+      title: 'YouTube Only',
+      streamProvider: 'youtube',
+      streamingDestination: 'youtube',
     },
     {
       EventModel,
@@ -254,6 +297,7 @@ test('createEventWithCloudflareLive does not touch MediaMTX-only destinations', 
   assert.equal(fetchCalled, false);
   assert.equal(event.liveIngestProvider, undefined);
   assert.equal(event.cfStreamLiveInputId, undefined);
+  assert.equal(event.streamingDestination, 'youtube');
 });
 
 test('createEventWithCloudflareLive fails create when Live Input creation fails', async () => {

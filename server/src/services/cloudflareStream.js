@@ -29,10 +29,20 @@ export function getCloudflareStreamConfig() {
   };
 }
 
+const CLOUDFLARE_LIVE_DESTINATIONS = new Set([
+  'server',
+  'server_youtube',
+  'youtube_server',
+]);
+
+/**
+ * New Server-related events get a dedicated Cloudflare Live Input.
+ * YouTube-only stays YouTube. Existing MediaMTX docs are never updated here.
+ */
 export function shouldProvisionCloudflareLive(payload = {}) {
   return (
     String(payload.streamProvider || '') === 'rtmp' &&
-    String(payload.streamingDestination || '') === 'server'
+    CLOUDFLARE_LIVE_DESTINATIONS.has(String(payload.streamingDestination || ''))
   );
 }
 
@@ -1573,8 +1583,10 @@ function stripClientSuppliedCloudflareFields(payload) {
 }
 
 /**
- * Production Event.create wrapper: new Server/RTMP events get a dedicated
- * Cloudflare Live Input. Failure aborts create — no MediaMTX fallback.
+ * Production Event.create wrapper: new Server / Server+YouTube /
+ * YouTube+Server events get a dedicated Cloudflare Live Input.
+ * Failure aborts create — no MediaMTX fallback. Existing MediaMTX
+ * documents are never passed through this path.
  */
 export async function createEventWithCloudflareLive(payload, deps = {}) {
   const EventModel = deps.EventModel || Event;

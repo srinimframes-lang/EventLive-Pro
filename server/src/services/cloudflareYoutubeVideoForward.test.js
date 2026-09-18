@@ -83,6 +83,18 @@ test('resolveFfmpegBin uses ffmpeg-static when FFMPEG_PATH is unset', () => {
 test('candidate requires Cloudflare ingest, HLS, YouTube key, and skips Anil Geetha', () => {
   assert.equal(isCloudflareYoutubeVideoForwardCandidate(cfEvent()), true);
   assert.equal(
+    isCloudflareYoutubeVideoForwardCandidate(
+      cfEvent({ streamingDestination: 'server_youtube', youtubeForwardEnabled: true })
+    ),
+    true
+  );
+  assert.equal(
+    isCloudflareYoutubeVideoForwardCandidate(
+      cfEvent({ streamingDestination: 'youtube_server', youtubeForwardEnabled: true })
+    ),
+    true
+  );
+  assert.equal(
     isCloudflareYoutubeVideoForwardCandidate(cfEvent({ liveIngestProvider: 'mediamtx' })),
     false
   );
