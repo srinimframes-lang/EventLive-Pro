@@ -173,12 +173,127 @@ async function cloudflareRequest(path, { method = 'GET', body, fetchImpl = fetch
 /** Cloudflare Live Input recordings are kept at least this many days. */
 export const CF_RECORDING_RETENTION_DAYS = 30;
 
+/**
+ * Seconds Cloudflare waits after disconnect before closing the recording
+ * and creating a VOD. `0` waits indefinitely, so no Video UID is ever created.
+ */
+export const CF_RECORDING_DISCONNECT_TIMEOUT_SECONDS = 30;
+
 /** Live Input create/update recording + retention payload. */
 export function cloudflareLiveInputRecordingPayload() {
   return {
-    recording: { mode: 'automatic', timeoutSeconds: 0 },
+    recording: {
+      mode: 'automatic',
+      timeoutSeconds: CF_RECORDING_DISCONNECT_TIMEOUT_SECONDS,
+      requireSignedURLs: false,
+    },
+    timeoutSeconds: CF_RECORDING_DISCONNECT_TIMEOUT_SECONDS,
     deleteRecordingAfterDays: CF_RECORDING_RETENTION_DAYS,
   };
+}
+
+export function liveInputRecordingNeedsEnsure(liveInput = {}) {
+  const mode = String(liveInput?.recordingMode || liveInput?.recording?.mode || '')
+    .trim()
+    .toLowerCase();
+  const timeout = Number(
+    liveInput?.timeoutSeconds ?? liveInput?.recording?.timeoutSeconds,
+  );
+  const daysRaw = liveInput?.deleteRecordingAfterDays;
+  const days = daysRaw == null || daysRaw === '' ? NaN : Number(daysRaw);
+  if (mode !== 'automatic') return true;
+  if (!Number.isFinite(timeout) || timeout <= 0) return true;
+  if (!Number.isFinite(days) || days < CF_RECORDING_RETENTION_DAYS) return true;
+  return false;
+}
+
+/** Recording-config slice of a Live Input. Never returns RTMPS keys. */
+export async function getLiveInputRecordingConfig(uid, { fetchImpl = fetch, config } = {}) {
+  const id = String(uid || '').trim();
+  if (!id) {
+    throw new CloudflareStreamError('Cloudflare Live Input id is required', {
+      statusCode: 400,
+      code: 'cloudflare_live_input_id_required',
+    });
+  }
+  const result = await cloudflareRequest(`/stream/live_inputs/${encodeURIComponent(id)}`, {
+    fetchImpl,
+    config,
+  });
+  return {
+    uid: String(result?.uid || id).trim(),
+    recordingMode: String(result?.recording?.mode || '').trim().toLowerCase(),
+    timeoutSeconds: Number(result?.recording?.timeoutSeconds ?? result?.timeoutSeconds),
+    deleteRecordingAfterDays:
+      result?.deleteRecordingAfterDays == null ? null : Number(result.deleteRecordingAfterDays),
+  };
+}
+
+export async function updateLiveInputRecording(uid, { fetchImpl = fetch, config } = {}) {
+  const id = String(uid || '').trim();
+  if (!id) {
+    throw new CloudflareStreamError('Cloudflare Live Input id is required', {
+      statusCode: 400,
+      code: 'cloudflare_live_input_id_required',
+    });
+  }
+  await cloudflareRequest(`/stream/live_inputs/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: cloudflareLiveInputRecordingPayload(),
+    fetchImpl,
+    config,
+  });
+  cloudflareLog('ensured live input recording config', { liveInputUid: id });
+  return { updated: true, uid: id };
+}
+
+/**
+ * Make sure an existing Live Input records automatically and keeps VODs ≥ 30 days.
+ * Does not delete the input or rotate ingest keys.
+ */
+export async function ensureCloudflareLiveInputRecording(uid, deps = {}) {
+  const id = String(uid || '').trim();
+  if (!id) return { updated: false, reason: 'missing_live_input' };
+  const getConfig = deps.getLiveInputRecordingConfig || getLiveInputRecordingConfig;
+  const update = deps.updateLiveInputRecording || updateLiveInputRecording;
+  let current;
+  try {
+    current = await getConfig(id, deps);
+  } catch (err) {
+    cloudflareLog('live input recording config read failed', {
+      liveInputUid: id,
+      error: err.message || 'unknown',
+    });
+    return { updated: false, reason: 'read_failed' };
+  }
+  if (!liveInputRecordingNeedsEnsure(current)) {
+    return { updated: false, reason: 'already_configured' };
+  }
+  try {
+    await update(id, deps);
+    return { updated: true, uid: id };
+  } catch (err) {
+    cloudflareLog('live input recording config update failed', {
+      liveInputUid: id,
+      error: err.message || 'unknown',
+    });
+    return { updated: false, reason: 'update_failed' };
+  }
+}
+
+const cfRecordingEnsureDone = new Set();
+
+export async function ensureCloudflareLiveInputRecordingForEvent(event, deps = {}) {
+  const uid = String(event?.cfStreamLiveInputId || '').trim();
+  if (!uid) return { updated: false, reason: 'missing_live_input' };
+  if (cfRecordingEnsureDone.has(uid)) {
+    return { updated: false, reason: 'already_ensured' };
+  }
+  const result = await ensureCloudflareLiveInputRecording(uid, deps);
+  if (result?.updated || result?.reason === 'already_configured') {
+    cfRecordingEnsureDone.add(uid);
+  }
+  return result;
 }
 
 export async function createLiveInput({ eventId, slug, title } = {}, { fetchImpl = fetch, config } = {}) {
@@ -211,12 +326,36 @@ export async function getLiveInput(uid, { fetchImpl = fetch } = {}) {
   return mapLiveInputResult(result);
 }
 
+/** Cloudflare videos list may be an array or a wrapped object. */
+export function normalizeLiveInputVideosResult(result) {
+  if (Array.isArray(result)) return result.filter(Boolean);
+  if (!result || typeof result !== 'object') return [];
+  if (Array.isArray(result.videos)) return result.videos.filter(Boolean);
+  if (Array.isArray(result.result)) return result.result.filter(Boolean);
+  if (String(result.uid || '').trim()) return [result];
+  return [];
+}
+
+export function videoBelongsToLiveInput(video, liveInputId) {
+  const id = String(liveInputId || '').trim();
+  if (!id || !video || typeof video !== 'object') return false;
+  const from = String(
+    video.liveInput ||
+      video.liveInputUid ||
+      video.input?.uid ||
+      video.meta?.liveInputUid ||
+      '',
+  ).trim();
+  return from === id;
+}
+
 /**
  * List recorded videos for a Live Input.
  * GET /accounts/{account}/stream/live_inputs/{liveInputId}/videos
+ * Falls back to GET /stream filtered by liveInput when the scoped list is empty.
  * Returns the Cloudflare result with secret-bearing keys omitted.
  */
-export async function listLiveInputVideos(liveInputId, { fetchImpl = fetch, config } = {}) {
+export async function listLiveInputVideos(liveInputId, { fetchImpl = fetch, config, liveStartedAt } = {}) {
   const id = String(liveInputId || '').trim();
   if (!id) {
     throw new CloudflareStreamError('Cloudflare Live Input id is required', {
@@ -224,15 +363,49 @@ export async function listLiveInputVideos(liveInputId, { fetchImpl = fetch, conf
       code: 'cloudflare_live_input_id_required',
     });
   }
-  const result = await cloudflareRequest(
-    `/stream/live_inputs/${encodeURIComponent(id)}/videos`,
-    { fetchImpl, config },
-  );
-  const videos = Array.isArray(result) ? result : [];
+  let videos = [];
+  try {
+    const result = await cloudflareRequest(
+      `/stream/live_inputs/${encodeURIComponent(id)}/videos`,
+      { fetchImpl, config },
+    );
+    videos = normalizeLiveInputVideosResult(result);
+  } catch (err) {
+    cloudflareLog('live input videos list failed', {
+      liveInputUid: id,
+      error: err.message || 'unknown',
+    });
+  }
+  if (!videos.length) {
+    try {
+      const qs = new URLSearchParams();
+      const startMs = Date.parse(liveStartedAt);
+      if (Number.isFinite(startMs)) {
+        qs.set('start', new Date(startMs - 120_000).toISOString());
+        qs.set('end', new Date().toISOString());
+      }
+      const query = qs.toString();
+      const listed = await cloudflareRequest(`/stream${query ? `?${query}` : ''}`, {
+        fetchImpl,
+        config,
+      });
+      videos = normalizeLiveInputVideosResult(listed).filter((video) =>
+        videoBelongsToLiveInput(video, id),
+      );
+    } catch (err) {
+      cloudflareLog('stream videos fallback failed', {
+        liveInputUid: id,
+        error: err.message || 'unknown',
+      });
+    }
+  }
   const sanitized = omitSecretFields(videos);
   cloudflareLog('listed live input videos', {
     liveInputUid: id,
     count: sanitized.length,
+    candidates: sanitized.map((video) =>
+      describeCloudflareRecordingCandidate(video, { liveInputId: id }),
+    ),
   });
   return sanitized;
 }
@@ -343,6 +516,95 @@ function videoCreatedMs(video) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function videoDurationSec(video) {
+  const d = Number(video?.duration);
+  return Number.isFinite(d) && d > 0 ? d : 0;
+}
+
+/** Live Input UID is a live/DVR playlist, never the recorded VOD. */
+export function isCloudflareLiveInputVideoUid(uid, liveInputId) {
+  const videoUid = String(uid || '').trim();
+  const inputId = String(liveInputId || '').trim();
+  return Boolean(videoUid && inputId && videoUid === inputId);
+}
+
+export function isCloudflareRecordedVodHlsUrl(url, videoUid, liveInputId = '') {
+  const uid = String(videoUid || '').trim();
+  const inputId = String(liveInputId || '').trim();
+  const raw = String(url || '').trim();
+  if (!uid || !raw) return false;
+  if (isCloudflareLiveInputVideoUid(uid, inputId)) return false;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.searchParams.get('dvrEnabled') === 'true') return false;
+    if (!parsed.pathname.includes(uid)) return false;
+    if (inputId && parsed.pathname.includes(inputId)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Classify a Cloudflare HLS body. Master playlists have no ENDLIST;
+ * VOD media playlists use PLAYLIST-TYPE:VOD and EXT-X-ENDLIST.
+ */
+export function classifyCloudflareHlsManifest(text) {
+  const body = String(text || '');
+  if (!body.includes('#EXTM3U')) {
+    return { type: 'invalid', finite: false, hasEndlist: false, isMaster: false };
+  }
+  const isMaster = /#EXT-X-STREAM-INF/i.test(body);
+  const hasEndlist = /#EXT-X-ENDLIST/i.test(body);
+  const playlistType = String((body.match(/#EXT-X-PLAYLIST-TYPE:\s*(\w+)/i) || [])[1] || '')
+    .trim()
+    .toUpperCase();
+  if (playlistType === 'VOD' || hasEndlist) {
+    return { type: 'vod', finite: true, hasEndlist, isMaster };
+  }
+  if (playlistType === 'EVENT') {
+    return { type: 'event', finite: false, hasEndlist, isMaster };
+  }
+  if (isMaster) {
+    return { type: 'master', finite: null, hasEndlist, isMaster: true };
+  }
+  return { type: 'live', finite: false, hasEndlist, isMaster: false };
+}
+
+export function stripCloudflareLiveDvrParam(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.delete('dvrEnabled');
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return raw.replace(/([?&])dvrEnabled=[^&#]*/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+  }
+}
+
+export function cloudflareStreamOriginFromUrl(url) {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'cloudflarestream.com' || host.endsWith('.cloudflarestream.com')) {
+      return `${parsed.protocol}//${parsed.host}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return '';
+}
+
+/** Official Stream iframe URL. Origin comes from the stored Live Input HLS host. */
+export function buildCloudflareStreamIframeUrl(originOrHlsUrl, uid) {
+  const id = String(uid || '').trim();
+  const origin = cloudflareStreamOriginFromUrl(originOrHlsUrl);
+  if (!id || !origin) return '';
+  return `${origin}/${id}/iframe`;
+}
+
 /** True when a Live Input video is a completed, playable recording. */
 export function isCompletedCloudflareVideo(video) {
   if (!video || typeof video !== 'object') return false;
@@ -392,29 +654,248 @@ export function selectLatestCompletedLiveInputVideo(videos = []) {
   );
 }
 
-/**
- * Exact recording for this broadcast: newest Live Input video, including
- * still-processing ones. Never prefers an older ready VOD over a newer encode.
- */
-export function selectBroadcastRecordingVideo(videos = [], { liveStartedAt } = {}) {
-  const all = Array.isArray(videos) ? videos : [];
-  const startMs = Date.parse(liveStartedAt);
-  let pool = all;
-  if (Number.isFinite(startMs)) {
-    const inWindow = all.filter((video) => videoCreatedMs(video) >= startMs - 120_000);
-    if (inWindow.length) pool = inWindow;
+function isLiveInProgressCloudflareVideo(video) {
+  const state = String(video?.status?.state ?? video?.status ?? '')
+    .trim()
+    .toLowerCase();
+  return state === 'live-inprogress';
+}
+
+const CF_TRAILING_CLIP_MAX_SEC = 45;
+/** Cloudflare may finish the VOD a few minutes after EventLive-Pro marks liveEndedAt. */
+const CF_VOD_FINALIZE_LAG_MS = 10 * 60 * 1000;
+const CF_VOD_ENDED_EARLY_MS = 90 * 1000;
+
+function isProcessingCloudflareVideo(video) {
+  return !isCompletedCloudflareVideo(video) || isLiveInProgressCloudflareVideo(video);
+}
+
+export function cloudflareVideoPlaybackIsDvr(video) {
+  const hls = String(video?.playback?.hls || '').trim();
+  if (!hls) return false;
+  try {
+    return new URL(hls).searchParams.get('dvrEnabled') === 'true';
+  } catch {
+    return /(?:\?|&)dvrEnabled=true(?:&|$)/i.test(hls);
   }
-  const video = pickLatestLiveInputVideo(pool) || pickLatestLiveInputVideo(all);
-  if (!video) return null;
+}
+
+export function describeCloudflareRecordingCandidate(video, { liveInputId } = {}) {
+  const uid = String(video?.uid || '').trim();
   return {
+    uid,
+    durationSec: videoDurationSec(video) || 0,
+    createdAt: video?.created || null,
+    modifiedAt: video?.modified || null,
+    state: String(video?.status?.state ?? video?.status ?? ''),
+    readyToStream: video?.readyToStream === true,
+    equalsLiveInput: isCloudflareLiveInputVideoUid(uid, liveInputId),
+    dvrEnabled: cloudflareVideoPlaybackIsDvr(video),
+  };
+}
+
+function pickNewestLiveInputVideo(videos = []) {
+  const list = (Array.isArray(videos) ? videos : []).filter(
+    (video) => video && String(video.uid || '').trim(),
+  );
+  if (!list.length) return null;
+  return list.reduce((best, video) => {
+    const vc = videoCreatedMs(video);
+    const bc = videoCreatedMs(best);
+    if (vc > bc) return video;
+    if (bc > vc) return best;
+    return video;
+  });
+}
+
+function impliedRecordingEndMs(video) {
+  const created = videoCreatedMs(video);
+  const dur = videoDurationSec(video);
+  if (created && dur > 0) return created + dur * 1000;
+  const modified = Date.parse(video?.modified || '');
+  return Number.isFinite(modified) ? modified : created;
+}
+
+/**
+ * READY finite VOD for the just-ended broadcast.
+ * Matches created + duration against liveEndedAt.
+ * Does not pick an older test VOD just because it is longest or listed first.
+ */
+export function readyVodMatchesEndedBroadcast(video, { liveEndedAt } = {}) {
+  if (!isCompletedCloudflareVideo(video) || cloudflareVideoPlaybackIsDvr(video)) return false;
+  const dur = videoDurationSec(video);
+  if (dur > 0 && dur < CF_TRAILING_CLIP_MAX_SEC) return false;
+  const endedMs = Date.parse(liveEndedAt);
+  const created = videoCreatedMs(video);
+  if (!Number.isFinite(endedMs)) {
+    return dur >= CF_TRAILING_CLIP_MAX_SEC || dur === 0;
+  }
+  if (!created || created > endedMs + 60_000) return false;
+  if (dur < CF_TRAILING_CLIP_MAX_SEC) return false;
+  const gap = endedMs - impliedRecordingEndMs(video);
+  return gap >= -CF_VOD_ENDED_EARLY_MS && gap <= CF_VOD_FINALIZE_LAG_MS;
+}
+
+function processingMatchesEndedBroadcast(video, { liveEndedAt } = {}) {
+  if (!isProcessingCloudflareVideo(video) || cloudflareVideoPlaybackIsDvr(video)) return false;
+  const created = videoCreatedMs(video);
+  const endedMs = Date.parse(liveEndedAt);
+  if (!Number.isFinite(endedMs)) return true;
+  if (!created) return true;
+  if (created > endedMs + 120_000) return false;
+  if (endedMs - created > 8 * 60 * 60 * 1000) return false;
+  return true;
+}
+
+function pickReadyVodClosestToEndedAt(videos, liveEndedAt) {
+  const endedMs = Date.parse(liveEndedAt);
+  if (!Number.isFinite(endedMs)) return pickNewestLiveInputVideo(videos);
+  return videos.reduce((best, video) => {
+    const bestGap = Math.abs(impliedRecordingEndMs(best) - endedMs);
+    const videoGap = Math.abs(impliedRecordingEndMs(video) - endedMs);
+    return videoGap < bestGap ? video : best;
+  });
+}
+
+/**
+ * Exact recording for the just-ended broadcast.
+ * Never uses the Live Input UID or a dvrEnabled=true playlist.
+ * Never prefers a 10–30s trailing clip or an older test VOD.
+ * A READY session VOD wins over a leftover live-inprogress object.
+ */
+export function selectBroadcastRecordingVideo(
+  videos = [],
+  { liveStartedAt, liveEndedAt, liveInputId } = {},
+) {
+  const inputId = String(liveInputId || '').trim();
+  const all = (Array.isArray(videos) ? videos : []).filter((video) => {
+    if (!video || typeof video !== 'object') return false;
+    const uid = String(video.uid || '').trim();
+    if (!uid) return false;
+    if (isCloudflareLiveInputVideoUid(uid, inputId)) return false;
+    if (isErrorCloudflareVideo(video)) return false;
+    if (cloudflareVideoPlaybackIsDvr(video)) return false;
+    return true;
+  });
+  if (!all.length) return null;
+
+  const selected = (video, ready) => ({
     video,
     uid: String(video.uid || '').trim(),
-    ready: isCompletedCloudflareVideo(video),
-  };
+    ready,
+    durationSec: videoDurationSec(video),
+  });
+
+  const session = { liveStartedAt, liveEndedAt, liveInputId: inputId };
+  const endedMs = Date.parse(liveEndedAt);
+
+  if (!Number.isFinite(endedMs)) {
+    const newest = pickNewestLiveInputVideo(all);
+    if (newest && isProcessingCloudflareVideo(newest)) {
+      return selected(newest, false);
+    }
+    const ready = all.filter((video) => readyVodMatchesEndedBroadcast(video, session));
+    if (ready.length) return selected(pickNewestLiveInputVideo(ready), true);
+    if (newest) return selected(newest, false);
+    return null;
+  }
+
+  const matchingReady = all.filter((video) => readyVodMatchesEndedBroadcast(video, session));
+  if (matchingReady.length) {
+    return selected(pickReadyVodClosestToEndedAt(matchingReady, liveEndedAt), true);
+  }
+
+  const matchingProcessing = all.filter((video) => processingMatchesEndedBroadcast(video, session));
+  if (matchingProcessing.length) {
+    return selected(pickNewestLiveInputVideo(matchingProcessing), false);
+  }
+
+  const sessionReady = all.filter((video) => {
+    if (!isCompletedCloudflareVideo(video)) return false;
+    const dur = videoDurationSec(video);
+    if (dur > 0 && dur < CF_TRAILING_CLIP_MAX_SEC) return false;
+    const created = videoCreatedMs(video);
+    const started = Date.parse(liveStartedAt);
+    if (Number.isFinite(started) && created && created < started - 120_000) return false;
+    return true;
+  });
+  if (sessionReady.length) {
+    return selected(pickReadyVodClosestToEndedAt(sessionReady, liveEndedAt), true);
+  }
+
+  const newest = pickNewestLiveInputVideo(all);
+  if (newest && videoDurationSec(newest) > 0 && videoDurationSec(newest) < CF_TRAILING_CLIP_MAX_SEC) {
+    return selected(newest, false);
+  }
+
+  return null;
+}
+
+/**
+ * True when the stored Video UID belongs to a previous broadcast.
+ * An old UID must not be served or treated as this session's recording.
+ */
+export function isStaleCloudflareRecordedUid(event) {
+  const uid = String(event?.cfStreamVideoUid || '').trim();
+  if (!uid) return false;
+  const started = Date.parse(event?.liveStartedAt);
+  const captured = Date.parse(event?.cfStreamVideoCapturedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(captured)) return false;
+  return captured < started;
+}
+
+export function isIncompleteSavedCloudflareVod(event) {
+  const uid = String(event?.cfStreamVideoUid || '').trim();
+  const inputId = String(event?.cfStreamLiveInputId || '').trim();
+  if (!uid) return false;
+  if (isCloudflareLiveInputVideoUid(uid, inputId)) return true;
+  const saved = Number(event?.cfStreamVideoDurationSec);
+  if (!Number.isFinite(saved) || saved <= 0) return false;
+  return saved < CF_TRAILING_CLIP_MAX_SEC;
+}
+
+export function needsCloudflareRecordingUid(event) {
+  if (!isCloudflareStreamLive(event)) return false;
+  if (String(event?.cfStreamPendingVideoUid || '').trim()) return true;
+  if (!String(event?.cfStreamVideoUid || '').trim()) return true;
+  if (isStaleCloudflareRecordedUid(event)) return true;
+  return isIncompleteSavedCloudflareVod(event);
+}
+
+/**
+ * Start of a new Cloudflare broadcast (not an in-grace reconnect).
+ * Clears the previous VOD UID so it cannot be reused for this session.
+ */
+export function beginCloudflareLiveBroadcast(event, { now = new Date() } = {}) {
+  const wasReconnecting = Boolean(event?.liveReconnecting);
+  const wasLive = Boolean(event?.isLive) && event?.status === 'live';
+  const endedAtSet = Boolean(event?.liveEndedAt);
+  if (wasLive && !wasReconnecting && !endedAtSet) {
+    return { started: false, newSession: false, event };
+  }
+
+  const newSession = !wasLive || endedAtSet;
+  event.isLive = true;
+  event.liveReconnecting = false;
+  event.liveReconnectUntil = undefined;
+  event.liveEndedAt = undefined;
+  if (['draft', 'published', 'ended'].includes(event.status)) event.status = 'live';
+  if (newSession) {
+    event.liveStartedAt = now;
+    event.cfStreamVideoUid = '';
+    event.cfStreamPendingVideoUid = '';
+    event.cfStreamVideoCapturedAt = undefined;
+    event.cfStreamVideoDurationSec = undefined;
+    event.cfStreamPlaybackHlsUrl = '';
+  } else {
+    event.liveStartedAt = event.liveStartedAt || now;
+  }
+  return { started: true, newSession, event };
 }
 
 /**
  * After a Cloudflare live goes offline, persist the recorded Stream video UID.
+ * Does not change Live Input recording configuration.
  * Does not set MediaMTX/R2 recording fields (not "recorded" until a VOD UID exists).
  */
 export async function captureCloudflareRecordedVideoUid(event, deps = {}) {
@@ -423,61 +904,130 @@ export async function captureCloudflareRecordedVideoUid(event, deps = {}) {
   }
   const liveInputId = String(event.cfStreamLiveInputId || '').trim();
   if (!liveInputId) return { saved: false, reason: 'missing_live_input' };
-  if (PROTECTED_CF_LIVE_INPUT_IDS.has(liveInputId)) {
-    return { saved: false, reason: 'protected_live_input' };
-  }
 
   const listVideos = deps.listLiveInputVideos || listLiveInputVideos;
   let videos;
   try {
-    videos = await listVideos(liveInputId);
+    videos = await listVideos(liveInputId, {
+      liveStartedAt: event.liveStartedAt,
+      liveEndedAt: event.liveEndedAt,
+    });
   } catch (err) {
     cloudflareLog('list live input videos failed', {
       liveInputUid: liveInputId,
+      liveStartedAt: event.liveStartedAt || null,
+      liveEndedAt: event.liveEndedAt || null,
       error: err.message || 'unknown',
     });
     return { saved: false, reason: 'list_failed' };
   }
 
+  if (!videos.length) {
+    try {
+      videos = await listVideos(liveInputId, {
+        liveStartedAt: event.liveStartedAt,
+        liveEndedAt: event.liveEndedAt,
+      });
+    } catch {
+      videos = [];
+    }
+  }
+
   const selected = selectBroadcastRecordingVideo(videos, {
     liveStartedAt: event.liveStartedAt,
+    liveEndedAt: event.liveEndedAt,
+    liveInputId,
   });
   const uid = String(selected?.uid || '').trim();
-  if (!uid) return { saved: false, reason: 'no_completed_video' };
-  if (!selected.ready) {
-    cloudflareLog('recorded video still processing', {
+  const officialHls = stripCloudflareLiveDvrParam(selected?.video?.playback?.hls || '');
+  const playbackHlsUrl = isCloudflareRecordedVodHlsUrl(officialHls, uid, liveInputId)
+    ? officialHls
+    : '';
+
+  const logDiscovery = (extra = {}) => {
+    cloudflareLog('vod discovery', {
+      eventId: String(event.id || event._id || ''),
       liveInputUid: liveInputId,
-      videoUid: uid,
+      liveStartedAt: event.liveStartedAt || null,
+      liveEndedAt: event.liveEndedAt || null,
+      candidates: (Array.isArray(videos) ? videos : []).map((video) =>
+        describeCloudflareRecordingCandidate(video, { liveInputId }),
+      ),
+      selectedUid: uid,
+      selectedDurationSec: selected?.durationSec || 0,
+      selectedCreatedAt: selected?.video?.created || null,
+      selectedState: String(selected?.video?.status?.state || selected?.video?.status || ''),
+      selectedReady: Boolean(selected?.ready),
+      persistedCfStreamVideoUid: extra.persistedCfStreamVideoUid || '',
+      playbackHlsUrl: extra.playbackHlsUrl || '',
+      ...extra,
+    });
+  };
+
+  if (!uid || isCloudflareLiveInputVideoUid(uid, liveInputId)) {
+    logDiscovery({ reason: 'no_completed_video', persistedCfStreamVideoUid: '', playbackHlsUrl: '' });
+    return { saved: false, reason: 'no_completed_video' };
+  }
+  if (!selected.ready) {
+    event.cfStreamPendingVideoUid = uid;
+    if (isStaleCloudflareRecordedUid(event) || isIncompleteSavedCloudflareVod(event)) {
+      event.cfStreamVideoUid = '';
+      event.cfStreamVideoCapturedAt = undefined;
+      event.cfStreamVideoDurationSec = undefined;
+      event.cfStreamPlaybackHlsUrl = '';
+    }
+    logDiscovery({
+      reason: 'processing',
+      persistedCfStreamVideoUid: String(event.cfStreamVideoUid || '').trim(),
+      playbackHlsUrl: '',
     });
     return { saved: false, reason: 'processing', uid };
   }
 
   event.cfStreamVideoUid = uid;
-  cloudflareLog('captured recorded video uid', {
-    liveInputUid: liveInputId,
-    videoUid: uid,
+  event.cfStreamPendingVideoUid = '';
+  event.cfStreamVideoCapturedAt = new Date();
+  event.cfStreamVideoDurationSec = selected.durationSec || undefined;
+  event.cfStreamPlaybackHlsUrl = playbackHlsUrl;
+  logDiscovery({
+    reason: 'captured',
+    persistedCfStreamVideoUid: uid,
+    playbackHlsUrl: playbackHlsUrl || resolveCloudflareRecordedPlaybackUrl(event),
   });
-  return { saved: true, uid };
+  return { saved: true, uid, durationSec: selected.durationSec || 0 };
 }
 
 /**
  * Build Cloudflare Stream VOD HLS from the live manifest hostname,
  * replacing the Live Input UID with the recorded video UID.
  */
+export function resolveCloudflareRecordedPlaybackUrl(event) {
+  const videoUid = String(event?.cfStreamVideoUid || '').trim();
+  const inputId = String(event?.cfStreamLiveInputId || '').trim();
+  if (!videoUid || isCloudflareLiveInputVideoUid(videoUid, inputId)) return '';
+  const official = stripCloudflareLiveDvrParam(event?.cfStreamPlaybackHlsUrl || '');
+  if (isCloudflareRecordedVodHlsUrl(official, videoUid, inputId)) return official;
+  return buildCloudflareRecordedHlsUrl(event?.cfStreamHlsUrl, videoUid, inputId);
+}
+
 export function buildCloudflareRecordedHlsUrl(cfStreamHlsUrl, cfStreamVideoUid, liveInputId = '') {
   const videoUid = String(cfStreamVideoUid || '').trim();
+  const inputId = String(liveInputId || '').trim();
   const liveUrl = String(cfStreamHlsUrl || '').trim();
   if (!videoUid || !liveUrl) return '';
+  if (isCloudflareLiveInputVideoUid(videoUid, inputId)) return '';
   try {
     const parsed = new URL(liveUrl);
-    const inputId = String(liveInputId || '').trim();
     if (inputId && parsed.pathname.includes(inputId)) {
       parsed.pathname = parsed.pathname.split(inputId).join(videoUid);
     } else {
       parsed.pathname = parsed.pathname.replace(/\/[^/]+(?=\/manifest\/)/, `/${videoUid}`);
     }
-    parsed.searchParams.delete('dvrEnabled');
-    return parsed.toString();
+    parsed.search = '';
+    parsed.hash = '';
+    const out = parsed.toString();
+    if (!isCloudflareRecordedVodHlsUrl(out, videoUid, inputId)) return '';
+    return out;
   } catch {
     return '';
   }
@@ -489,18 +1039,18 @@ export function buildCloudflareRecordedHlsUrl(cfStreamHlsUrl, cfStreamVideoUid, 
  */
 export function cloudflareRecordedPlaybackFields(event, { isLive = false } = {}) {
   if (isLive || !isCloudflareStreamLive(event)) return null;
-  const hlsUrl = buildCloudflareRecordedHlsUrl(
-    event.cfStreamHlsUrl,
-    event.cfStreamVideoUid,
-    event.cfStreamLiveInputId,
-  );
+  const hlsUrl = resolveCloudflareRecordedPlaybackUrl(event);
   if (!hlsUrl) return null;
+  const videoUid = String(event.cfStreamVideoUid || '').trim();
   return {
     playbackMode: 'recorded',
     recordingAvailable: true,
     hlsUrl,
     playbackUrl: hlsUrl,
+    playerUrl: buildCloudflareStreamIframeUrl(event.cfStreamHlsUrl || hlsUrl, videoUid),
     recordingUrl: '',
+    cfStreamVideoUid: videoUid,
+    durationSec: Number(event.cfStreamVideoDurationSec) || 0,
   };
 }
 
@@ -510,28 +1060,57 @@ export function cloudflareRecordedPlaybackFields(event, { isLive = false } = {})
  */
 export function publicCloudflareOfflinePlayback(event, { isLive = false } = {}) {
   if (!isCloudflareStreamLive(event)) return null;
-  const recorded = cloudflareRecordedPlaybackFields(event, { isLive });
-  if (recorded) {
-    return {
-      ...recorded,
-      recordingUrl: '',
-      cfRecordingPreparing: false,
-    };
-  }
   if (isLive) return null;
+  if (
+    !isStaleCloudflareRecordedUid(event) &&
+    !isIncompleteSavedCloudflareVod(event)
+  ) {
+    const recorded = cloudflareRecordedPlaybackFields(event, { isLive: false });
+    if (recorded) {
+      cloudflareLog('offline playback uses recorded vod', {
+        eventId: String(event.id || event._id || ''),
+        videoUid: recorded.cfStreamVideoUid || '',
+        uidEqualsLiveInput: isCloudflareLiveInputVideoUid(
+          recorded.cfStreamVideoUid,
+          event.cfStreamLiveInputId,
+        ),
+        durationSec: recorded.durationSec || 0,
+        playbackUrlType: 'finite_vod',
+      });
+      return {
+        ...recorded,
+        recordingUrl: '',
+        cfRecordingPreparing: false,
+      };
+    }
+  }
   return {
     playbackMode: 'offline',
     recordingAvailable: false,
     recordingUrl: '',
+    hlsUrl: '',
+    playbackUrl: '',
     cfRecordingPreparing: true,
   };
 }
 
 /** Extra video-list attempts after the immediate capture in finalizeEventOffline. */
-export const CF_RECORDING_UID_RETRY_DELAYS_MS = [20_000, 40_000, 60_000, 90_000, 180_000, 300_000];
+export const CF_RECORDING_UID_RETRY_DELAYS_MS = [
+  5_000,
+  8_000,
+  12_000,
+  20_000,
+  30_000,
+  45_000,
+  60_000,
+  90_000,
+  120_000,
+  180_000,
+  300_000,
+];
 
 /** Minimum gap between GET /stream reconcile video-list calls for the same event. */
-export const CF_UID_RECONCILE_MIN_INTERVAL_MS = 30_000;
+export const CF_UID_RECONCILE_MIN_INTERVAL_MS = 5_000;
 
 const cfOfflineFinalizeStarted = new Set();
 const cfRecordingRetryTimers = new Map();
@@ -541,24 +1120,26 @@ function eventIdOf(event) {
   return String(event?._id || event?.id || '').trim();
 }
 
-function isProtectedLiveInput(event) {
-  const liveInputId = String(event?.cfStreamLiveInputId || '').trim();
-  return Boolean(liveInputId && PROTECTED_CF_LIVE_INPUT_IDS.has(liveInputId));
-}
-
 /**
  * Watch-page polling plan for Cloudflare ingest.
- * MediaMTX and protected Live Inputs are never auto-finalized here.
+ * Protected Live Inputs still capture VOD UIDs; they are only skipped for DELETE.
  */
 export function planCloudflareStreamConfigOffline(event, isPublishing) {
-  if (!isCloudflareStreamLive(event) || isProtectedLiveInput(event)) return { action: 'none' };
+  if (!isCloudflareStreamLive(event)) return { action: 'none' };
   if (isPublishing === true) return { action: 'persist_live' };
-  if (isPublishing === false && (Boolean(event.isLive) || event.status === 'live')) {
+  const liveish = Boolean(event.isLive) || event.status === 'live';
+  if (isPublishing === false && liveish) {
     return { action: 'finalize_once' };
   }
-  if (isPublishing === false && !String(event.cfStreamVideoUid || '').trim()) {
+  if (
+    isPublishing == null &&
+    (event.status === 'ended' || event.status === 'cancelled') &&
+    needsCloudflareRecordingUid(event)
+  ) {
     return { action: 'reconcile_uid' };
   }
+  if (liveish) return { action: 'none' };
+  if (needsCloudflareRecordingUid(event)) return { action: 'reconcile_uid' };
   return { action: 'none' };
 }
 
@@ -618,6 +1199,7 @@ export function resetCloudflareOfflineFinalizationState() {
   }
   cfOfflineFinalizeStarted.clear();
   cfUidReconcileLastAttemptMs.clear();
+  cfRecordingEnsureDone.clear();
 }
 
 export function isCloudflareRecordingUidRetryInflight(eventId) {
@@ -657,11 +1239,11 @@ export function scheduleCloudflareRecordingUidRetry(eventId, deps = {}) {
   const tick = async () => {
     try {
       const event = await EventModel.findById(id);
-      if (!event || !isCloudflareStreamLive(event) || isProtectedLiveInput(event)) {
+      if (!event || !isCloudflareStreamLive(event)) {
         finish();
         return;
       }
-      if (String(event.cfStreamVideoUid || '').trim()) {
+      if (String(event.cfStreamVideoUid || '').trim() && !needsCloudflareRecordingUid(event)) {
         finish();
         return;
       }
@@ -670,6 +1252,9 @@ export function scheduleCloudflareRecordingUidRetry(eventId, deps = {}) {
         if (typeof event.save === 'function') await event.save();
         finish();
         return;
+      }
+      if (result?.reason === 'processing' && typeof event.save === 'function') {
+        await event.save();
       }
     } catch {
       /* keep retrying until delays are exhausted */
@@ -690,7 +1275,7 @@ export function scheduleCloudflareRecordingUidRetry(eventId, deps = {}) {
 
 async function reconcileCloudflareRecordingUid(event, deps = {}) {
   const id = eventIdOf(event);
-  if (String(event?.cfStreamVideoUid || '').trim()) {
+  if (String(event?.cfStreamVideoUid || '').trim() && !needsCloudflareRecordingUid(event)) {
     return { action: 'none', event };
   }
   if (isCloudflareRecordingUidRetryInflight(id)) {
@@ -707,6 +1292,9 @@ async function reconcileCloudflareRecordingUid(event, deps = {}) {
     if (result?.saved && String(event.cfStreamVideoUid || '').trim()) {
       if (typeof event.save === 'function') await event.save();
       return { action: 'reconcile_uid', event };
+    }
+    if (result?.reason === 'processing' && typeof event.save === 'function') {
+      await event.save();
     }
   } catch {
     /* keep retrying in the background */
@@ -728,7 +1316,13 @@ export async function syncCloudflareLiveOfflineTransition(event, isPublishing, d
     cancelCloudflareRecordingUidRetry(id);
     clearCloudflareRecordingUidReconcileState(id);
     const persist = deps.persistCloudflareLive;
-    const next = typeof persist === 'function' ? await persist(event) : event;
+    let next = event;
+    if (typeof persist === 'function') {
+      next = await persist(event);
+    } else {
+      beginCloudflareLiveBroadcast(event);
+      next = event;
+    }
     return { action: 'persist_live', event: next };
   }
   if (plan.action === 'reconcile_uid') {
@@ -745,10 +1339,66 @@ export async function syncCloudflareLiveOfflineTransition(event, isPublishing, d
   if (typeof finalize === 'function') {
     next = (await finalize(id, { io: deps.io })) || event;
   }
-  if (!String(next?.cfStreamVideoUid || '').trim()) {
+  if (!String(next?.cfStreamVideoUid || '').trim() || needsCloudflareRecordingUid(next)) {
     scheduleCloudflareRecordingUidRetry(id, deps);
   }
   return { action: 'finalize_once', event: next };
+}
+
+/**
+ * Durable fallback: find offline Cloudflare events still missing a current VOD UID.
+ * Independent of in-memory retry timers and of whether a viewer is polling GET /stream.
+ */
+export async function reconcileOfflineCloudflareRecordings(deps = {}) {
+  const EventModel = deps.EventModel || Event;
+  const capture = deps.captureCloudflareRecordedVideoUid || captureCloudflareRecordedVideoUid;
+  const limit = Number(deps.limit) > 0 ? Number(deps.limit) : 25;
+  let events = [];
+  try {
+    if (typeof deps.findEvents === 'function') {
+      events = await deps.findEvents();
+    } else {
+      const query = EventModel.find({
+        liveIngestProvider: 'cloudflare_stream',
+        isLive: { $ne: true },
+        status: { $ne: 'live' },
+      });
+      events = typeof query?.limit === 'function' ? await query.limit(limit) : await query;
+    }
+  } catch (err) {
+    cloudflareLog('offline recording reconcile query failed', {
+      error: err.message || 'unknown',
+    });
+    return { scanned: 0, saved: 0, pending: 0 };
+  }
+
+  const list = Array.isArray(events) ? events : [];
+  let saved = 0;
+  let pending = 0;
+  for (const event of list) {
+    if (!needsCloudflareRecordingUid(event)) continue;
+    try {
+      const result = await capture(event, deps);
+      if (result?.saved) {
+        saved += 1;
+        if (typeof event.save === 'function') await event.save();
+      } else if (result?.reason === 'processing') {
+        pending += 1;
+        if (typeof event.save === 'function') await event.save();
+      }
+    } catch (err) {
+      cloudflareLog('offline recording reconcile failed', {
+        eventId: eventIdOf(event),
+        error: err.message || 'unknown',
+      });
+    }
+  }
+  cloudflareLog('offline recording reconcile', {
+    scanned: list.length,
+    saved,
+    pending,
+  });
+  return { scanned: list.length, saved, pending };
 }
 
 /**

@@ -66,6 +66,47 @@ test('markRecordingPartUploaded keeps older parts when newest migrates', () => {
   assert.equal(event.recordingR2Key, 'recordings/aaaaaaaaaaaaaaaaaaaaaaaa/new.mp4');
 });
 
+test('markRecordingPartUploaded does not insert a duplicate for a soft-deleted filename', () => {
+  const deletedAt = new Date('2026-09-06T10:00:00Z');
+  const event = {
+    _id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+    id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+    recordings: [
+      {
+        _id: '111111111111111111111111',
+        filename: '2026-09-06_09-00-00-000000.mp4',
+        localPath: '/root/EventLive-Pro/recordings/aaaaaaaaaaaaaaaaaaaaaaaa/2026-09-06_09-00-00-000000.mp4',
+        storage: 'local',
+        deletedAt,
+        startedAt: new Date('2026-09-06T09:00:00Z'),
+      },
+      {
+        _id: '222222222222222222222222',
+        filename: 'merged_1757148000000.mp4',
+        localPath: '/root/EventLive-Pro/recordings/aaaaaaaaaaaaaaaaaaaaaaaa/merged_1757148000000.mp4',
+        storage: 'local',
+        startedAt: new Date('2026-09-06T09:00:00Z'),
+      },
+    ],
+  };
+
+  const returned = markRecordingPartUploaded(event, {
+    filename: '2026-09-06_09-00-00-000000.mp4',
+    localPath: '/root/EventLive-Pro/recordings/aaaaaaaaaaaaaaaaaaaaaaaa/2026-09-06_09-00-00-000000.mp4',
+    r2Key: 'recordings/aaaaaaaaaaaaaaaaaaaaaaaa/2026-09-06_09-00-00-000000.mp4',
+    r2Url: 'https://example/orig.mp4',
+    sizeBytes: 50,
+  });
+
+  assert.equal(returned.deletedAt, deletedAt);
+  assert.equal(returned.storage, 'local');
+  assert.equal(event.recordings.length, 2);
+  const active = listActiveRecordingParts(event);
+  assert.equal(active.length, 1);
+  assert.equal(active[0].filename, 'merged_1757148000000.mp4');
+  assert.equal(event.recordings[0].deletedAt, deletedAt);
+});
+
 test('removeRecordingPart deletes only one part', () => {
   const event = {
     _id: 'aaaaaaaaaaaaaaaaaaaaaaaa',

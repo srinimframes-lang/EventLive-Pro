@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  isCloudflareLiveDvrPlaybackUrl,
   resolveServerPlaybackUrl,
   resolveCloudflareRecordedHlsUrl,
+  resolveCloudflareLiveDvrUrl,
+  isFiniteCloudflareVodUrl,
+  stripCloudflareLiveDvrParam,
   securePlaybackUrl,
   withCloudflareLiveDvr,
 } from './streamPlayback.js';
@@ -60,10 +64,101 @@ test('recorded HLS playback uses the VOD manifest without dvrEnabled', () => {
       hlsUrl: vod,
       recordingUrl: '',
       liveIngestProvider: 'cloudflare_stream',
+      cfStreamVideoUid: 'cccccccccccccccccccccccccccccccc',
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     }),
     vod,
   );
   assert.doesNotMatch(vod, /dvrEnabled=true/);
+});
+
+test('live/DVR URL is detected even when the API marks playback as recorded', () => {
+  const liveInputId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const dvr = `${CF_HLS}?dvrEnabled=true`;
+  assert.equal(isCloudflareLiveDvrPlaybackUrl(dvr, liveInputId), true);
+  assert.equal(isCloudflareLiveDvrPlaybackUrl(CF_HLS, liveInputId), true);
+  assert.equal(
+    isCloudflareLiveDvrPlaybackUrl(
+      'https://customer-test.cloudflarestream.com/cccccccccccccccccccccccccccccccc/manifest/video.m3u8',
+      liveInputId,
+    ),
+    false,
+  );
+});
+
+test('recorded playback rejects live/DVR URL after the event is offline', () => {
+  const live =
+    'https://customer-test.cloudflarestream.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/manifest/video.m3u8?dvrEnabled=true';
+  const vod = 'https://customer-test.cloudflarestream.com/cccccccccccccccccccccccccccccccc/manifest/video.m3u8';
+  assert.equal(
+    resolveCloudflareRecordedHlsUrl({
+      playbackMode: 'recorded',
+      playbackUrl: live,
+      hlsUrl: live,
+      recordingUrl: '',
+      cfStreamVideoUid: 'cccccccccccccccccccccccccccccccc',
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    }),
+    '',
+  );
+  assert.equal(
+    resolveCloudflareRecordedHlsUrl({
+      playbackMode: 'recorded',
+      playbackUrl: vod,
+      recordingUrl: '',
+      cfStreamVideoUid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    }),
+    '',
+  );
+  assert.equal(
+    resolveCloudflareRecordedHlsUrl({
+      playbackMode: 'recorded',
+      playbackUrl: vod,
+      recordingUrl: '',
+      cfStreamVideoUid: 'cccccccccccccccccccccccccccccccc',
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    }),
+    vod,
+  );
+});
+
+test('finite VOD URLs never get dvrEnabled and never count as Live Input DVR', () => {
+  const vod = 'https://customer-test.cloudflarestream.com/cccccccccccccccccccccccccccccccc/manifest/video.m3u8';
+  const liveInputId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const videoUid = 'cccccccccccccccccccccccccccccccc';
+  assert.equal(isFiniteCloudflareVodUrl(`${vod}?dvrEnabled=true`, { videoUid, liveInputId }), true);
+  assert.equal(isCloudflareLiveDvrPlaybackUrl(`${vod}?dvrEnabled=true`, liveInputId), false);
+  assert.equal(stripCloudflareLiveDvrParam(`${vod}?dvrEnabled=true`), vod);
+  assert.equal(
+    resolveServerPlaybackUrl({
+      playbackUrl: `${vod}?dvrEnabled=true`,
+      cfStreamVideoUid: videoUid,
+      cfStreamLiveInputId: liveInputId,
+    }),
+    vod,
+  );
+  assert.equal(
+    resolveCloudflareRecordedHlsUrl({
+      playbackMode: 'recorded',
+      isPublishing: false,
+      playbackUrl: `${vod}?dvrEnabled=true`,
+      cfStreamVideoUid: videoUid,
+      cfStreamLiveInputId: liveInputId,
+      recordingUrl: '',
+    }),
+    vod,
+  );
+  const live = resolveCloudflareLiveDvrUrl({
+    isPublishing: true,
+    playbackUrl: vod,
+    hlsUrl: vod,
+    cfStreamLiveInputId: liveInputId,
+    cfStreamVideoUid: videoUid,
+  });
+  assert.match(live, /dvrEnabled=true/);
+  assert.equal(live.includes(videoUid), false);
+  assert.equal(live.includes(liveInputId), true);
 });
 
 test('resolveCloudflareRecordedHlsUrl uses recorded CF VOD HLS and skips MediaMTX recordingUrl', () => {

@@ -25,6 +25,7 @@ import {
   isFfprobeMergedVideoOk,
   isValidatedMergedOutput,
   mayDeleteOriginalsAfterValidatedMerge,
+  recordingMergeStatusAfterR2Attempt,
   selectConcatVideoInputs,
 } from './mergeRecordingsLogic.js';
 import { Event } from '../models/Event.js';
@@ -373,7 +374,10 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
       startedAt,
       endedAt,
     });
-    event.recordingMergeStatus = isR2Configured() ? 'uploading' : 'merged';
+    event.recordingMergeStatus = recordingMergeStatusAfterR2Attempt({
+      r2Configured: isR2Configured(),
+      uploadVerified: false,
+    });
     event.recordingMergeError = '';
     event.recordingMergedAt = new Date();
     await event.save();
@@ -402,7 +406,11 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
           r2Url: url,
           sizeBytes: size,
         });
-        event.recordingMergeStatus = 'merged';
+        event.recordingMergeStatus = recordingMergeStatusAfterR2Attempt({
+          r2Configured: true,
+          uploadVerified: true,
+        });
+        event.recordingMergeError = '';
         await event.save();
         await safeUnlinkLocalAfterR2({
           localPath: outPath,
@@ -424,7 +432,10 @@ export async function mergeEventRecordings(eventId, { io = null } = {}) {
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`[r2] upload failed after merge: ${err.message}`);
-        event.recordingMergeStatus = 'merged';
+        event.recordingMergeStatus = recordingMergeStatusAfterR2Attempt({
+          r2Configured: true,
+          uploadVerified: false,
+        });
         event.recordingMergeError = String(err?.message || err).slice(0, 500);
         await event.save();
       }

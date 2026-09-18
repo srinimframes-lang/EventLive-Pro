@@ -199,9 +199,7 @@ export function restoreSoftDeletedPlayableParts(event, playableParts = []) {
 }
 
 export async function persistPlayableRecordingParts(event) {
-  const playable = await loadPlayableRecordingParts(event);
-  if (!restoreSoftDeletedPlayableParts(event, playable)) return playable;
-  if (typeof event.markModified === 'function') event.markModified('recordings');
-  if (typeof event.save === 'function') await event.save();
-  return playable;
+  // Playback may return soft-deleted originals as a fallback when the merged
+  // MP4 is unplayable. That list is response-only — do not persist deletedAt=null.
+  return loadPlayableRecordingParts(event);
 }

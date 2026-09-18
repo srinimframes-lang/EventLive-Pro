@@ -84,3 +84,15 @@ export function mayDeleteOriginalsAfterValidatedMerge({
   if (remote !== expected) return { ok: false, reason: 'size-mismatch' };
   return { ok: true, reason: 'verified' };
 }
+
+/**
+ * Merge file exists; R2 upload is a separate, retryable step.
+ * Never permanently mark "merged" when the object is not yet on R2.
+ */
+export function recordingMergeStatusAfterR2Attempt({
+  r2Configured = false,
+  uploadVerified = false,
+} = {}) {
+  if (!r2Configured) return 'merged';
+  return uploadVerified ? 'merged' : 'uploading';
+}

@@ -6,6 +6,7 @@ import {
   isQuarantineRecordingBlip,
   isValidatedMergedOutput,
   mayDeleteOriginalsAfterValidatedMerge,
+  recordingMergeStatusAfterR2Attempt,
   selectConcatVideoInputs,
 } from './mergeRecordingsLogic.js';
 
@@ -102,5 +103,24 @@ test('successful validated merge may clean originals only after R2 HEAD size mat
       expectedSize: 5171541,
     }).ok,
     false
+  );
+});
+
+test('R2 upload failure after a successful merge stays retryable, not permanently merged', () => {
+  assert.equal(
+    recordingMergeStatusAfterR2Attempt({ r2Configured: false, uploadVerified: false }),
+    'merged',
+  );
+  assert.equal(
+    recordingMergeStatusAfterR2Attempt({ r2Configured: true, uploadVerified: true }),
+    'merged',
+  );
+  assert.equal(
+    recordingMergeStatusAfterR2Attempt({ r2Configured: true, uploadVerified: false }),
+    'uploading',
+  );
+  assert.notEqual(
+    recordingMergeStatusAfterR2Attempt({ r2Configured: true, uploadVerified: false }),
+    'merged',
   );
 });

@@ -81,7 +81,14 @@ export function resolveServerPlaybackUrl(config) {
   if (!config) return '';
 
   const serverUrl = String(config.playbackUrl || config.hlsUrl || '').trim();
-  if (isCloudflareStreamHlsUrl(serverUrl)) return withCloudflareLiveDvr(serverUrl);
+  if (isCloudflareStreamHlsUrl(serverUrl)) {
+    const videoUid = String(config.cfStreamVideoUid || '').trim();
+    const liveInputId = String(config.cfStreamLiveInputId || '').trim();
+    if (isFiniteCloudflareVodUrl(serverUrl, { videoUid, liveInputId })) {
+      return stripCloudflareLiveDvrParam(serverUrl);
+    }
+    return withCloudflareLiveDvr(serverUrl);
+  }
   if (/^https:\/\//i.test(serverUrl) && HLS_PLAYLIST_RE.test(serverUrl)) {
     return serverUrl;
   }
@@ -98,12 +105,130 @@ export function resolveServerPlaybackUrl(config) {
  * Cloudflare Stream VOD HLS for recorded playback.
  * Does not rewrite MediaMTX recordingUrl / MP4 parts.
  */
+export function isCloudflareLiveDvrPlaybackUrl(url, liveInputId = '') {
+  const raw = String(url || '').trim();
+  if (!raw || !isCloudflareStreamHlsUrl(raw)) return false;
+  const pathUid = cloudflareManifestUid(raw);
+  const inputId = String(liveInputId || '').trim();
+  // A Video UID manifest is never Live Input DVR, even if dvrEnabled was appended.
+  if (pathUid && inputId && pathUid !== inputId) return false;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.searchParams.get('dvrEnabled') === 'true') return true;
+    return Boolean(inputId && pathUid && pathUid === inputId);
+  } catch {
+    return /[?&]dvrEnabled=true(?:&|#|$)/.test(raw);
+  }
+}
+
+function cloudflareUrlHasUid(url, uid) {
+  const id = String(uid || '').trim();
+  if (!id) return false;
+  try {
+    return new URL(String(url || '')).pathname.includes(id);
+  } catch {
+    return String(url || '').includes(id);
+  }
+}
+
+/** UID in `/<uid>/manifest/video.m3u8` — Live Input and Video UIDs share this shape. */
+export function cloudflareManifestUid(url) {
+  try {
+    const parts = new URL(String(url || '').trim()).pathname.split('/').filter(Boolean);
+    const idx = parts.indexOf('manifest');
+    if (idx > 0) return parts[idx - 1] || '';
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+export function stripCloudflareLiveDvrParam(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.delete('dvrEnabled');
+    return parsed.toString();
+  } catch {
+    return raw
+      .replace(/([?&])dvrEnabled=true(?=&|#|$)/g, (match, joiner) => (joiner === '?' ? '?' : ''))
+      .replace(/\?&/, '?')
+      .replace(/\?$/, '')
+      .replace(/&&+/g, '&');
+  }
+}
+
+/** Finite Cloudflare Video UID HLS — never the Live Input DVR playlist. */
+export function isFiniteCloudflareVodUrl(url, { videoUid = '', liveInputId = '' } = {}) {
+  const raw = String(url || '').trim();
+  if (!raw || !isCloudflareStreamHlsUrl(raw)) return false;
+  const pathUid = cloudflareManifestUid(raw);
+  const inputId = String(liveInputId || '').trim();
+  const vodUid = String(videoUid || '').trim();
+  if (!pathUid || !vodUid) return false;
+  if (inputId && (pathUid === inputId || vodUid === inputId)) return false;
+  return pathUid === vodUid || cloudflareUrlHasUid(raw, vodUid);
+}
+
 export function resolveCloudflareRecordedHlsUrl(config) {
-  if (!config || config.playbackMode !== 'recorded') return '';
+  if (!config) return '';
+  if (config.isPublishing === true) return '';
   if (String(config.recordingUrl || '').trim()) return '';
-  const url = String(config.playbackUrl || config.hlsUrl || '').trim();
-  if (!isCloudflareStreamHlsUrl(url)) return '';
-  return url;
+  const videoUid = String(config.cfStreamVideoUid || '').trim();
+  const liveInputId = String(config.cfStreamLiveInputId || '').trim();
+  const candidates = [
+    config.cfStreamPlaybackHlsUrl,
+    config.playbackUrl,
+    config.hlsUrl,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  for (const url of candidates) {
+    if (
+      isFiniteCloudflareVodUrl(url, { videoUid, liveInputId }) ||
+      (config.playbackMode === 'recorded' &&
+        isCloudflareStreamHlsUrl(url) &&
+        !isCloudflareLiveDvrPlaybackUrl(url, liveInputId) &&
+        (!videoUid || cloudflareUrlHasUid(url, videoUid)) &&
+        !(videoUid && liveInputId && videoUid === liveInputId))
+    ) {
+      if (!isCloudflareStreamHlsUrl(url)) continue;
+      if (isCloudflareLiveDvrPlaybackUrl(url, liveInputId)) continue;
+      if (videoUid && liveInputId && videoUid === liveInputId) continue;
+      if (videoUid && !cloudflareUrlHasUid(url, videoUid)) continue;
+      return stripCloudflareLiveDvrParam(url);
+    }
+  }
+  return '';
+}
+
+/** Live Input DVR URL while OBS is publishing. Never returns a finite VOD UID. */
+export function resolveCloudflareLiveDvrUrl(config) {
+  if (!config) return '';
+  const liveInputId = String(config.cfStreamLiveInputId || '').trim();
+  const raw = String(config.playbackUrl || config.hlsUrl || '').trim();
+  if (liveInputId && isCloudflareStreamHlsUrl(raw)) {
+    const pathUid = cloudflareManifestUid(raw);
+    if (pathUid && pathUid !== liveInputId) {
+      try {
+        const parsed = new URL(raw);
+        parsed.pathname = parsed.pathname.split(pathUid).join(liveInputId);
+        return withCloudflareLiveDvr(parsed.toString());
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  const resolved = resolveServerPlaybackUrl(config);
+  if (isFiniteCloudflareVodUrl(resolved, {
+    videoUid: config.cfStreamVideoUid,
+    liveInputId,
+  })) {
+    return '';
+  }
+  return resolved;
 }
 
 /**
@@ -112,7 +237,14 @@ export function resolveCloudflareRecordedHlsUrl(config) {
 export function securePlaybackUrl(url, config = null) {
   const trimmed = String(url || '').trim();
   if (!trimmed) return '';
-  if (isCloudflareStreamHlsUrl(trimmed)) return withCloudflareLiveDvr(trimmed);
+  if (isCloudflareStreamHlsUrl(trimmed)) {
+    const videoUid = String(config?.cfStreamVideoUid || '').trim();
+    const liveInputId = String(config?.cfStreamLiveInputId || '').trim();
+    if (isFiniteCloudflareVodUrl(trimmed, { videoUid, liveInputId })) {
+      return stripCloudflareLiveDvrParam(trimmed);
+    }
+    return withCloudflareLiveDvr(trimmed);
+  }
 
   const base = viewerBaseFromConfig(config);
   if (trimmed.startsWith(`${base}/`)) return trimmed;

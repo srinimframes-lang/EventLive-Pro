@@ -6,13 +6,23 @@ import {
 } from '../../utils/format.js';
 import { resolveServerPlaybackUrl, isCloudflareStreamHlsUrl, resolveCloudflareRecordedHlsUrl } from '../../utils/streamPlayback.js';
 import {
+  selectCloudflareStreamPlayer,
+  selectWatchPlayerSurface,
+  cloudflareStreamPlayerMountKey,
+} from '../../utils/cloudflareStreamPlayer.js';
+import CloudflareStreamPlayer from './CloudflareStreamPlayer.jsx';
+import {
   buildHlsConfig,
   isRecordedVodAtNaturalEnd,
   liveEdgeSeekTarget,
-  selectCloudflareHlsPlayback,
+  shouldFinishRecordedVod,
   shouldRetryOrRemountHls,
   shouldSeekHlsToLiveEdge,
   shouldSeekToLiveEdgeOnResume,
+  cloudflarePlaybackErrorUiMode,
+  CLOUDFLARE_RECORDING_PREPARING_MESSAGE,
+  clampVodSeek,
+  resolveHlsPlayerSession,
 } from '../../utils/hlsPlayerPlayback.js';
 import {
   failoverBackupVideoId,
@@ -50,7 +60,7 @@ const DVR_SCRUB_MIN_WINDOW_SEC = 2;
 const DVR_SKIP_SEC = 10;
 const OFFLINE_MSG = 'Live stream is currently offline.';
 const SERVER_WAITING_MSG = 'Waiting for live…';
-const RECORDING_PREPARING_MSG = 'Recording is processing…';
+const RECORDING_PREPARING_MSG = CLOUDFLARE_RECORDING_PREPARING_MESSAGE;
 const ENDED_MSG = 'This live stream has ended.';
 const RECONNECTING_MSG = 'Reconnecting…';
 const LIVE_INTERRUPTED_MSG = 'Live connection interrupted.\nTrying to reconnect…';
@@ -237,6 +247,44 @@ function resolveYoutubeVideoId(config) {
     extractYouTubeId(config?.youtubeBroadcastId || '') ||
     extractYouTubeId(config?.streamUrl || '')
   );
+}
+
+/** Official Stream iframe only — Cloudflare events never reach HlsPlayer. */
+function CloudflareWebPlayerFrame({
+  player,
+  origin,
+  poster,
+  eventId,
+  onEnded,
+}) {
+  if (player?.mode === 'waiting-for-live') {
+    return <Offline message={SERVER_WAITING_MSG} />;
+  }
+  if (player?.mode === 'live' || player?.mode === 'recorded') {
+    if (!player.iframeUrl && !origin) {
+      return <Offline message={RECORDING_PREPARING_MSG} />;
+    }
+    return (
+      <Frame>
+        <CloudflareStreamPlayer
+          key={cloudflareStreamPlayerMountKey({
+            mode: player.mode,
+            uid: player.uid,
+            eventId,
+          })}
+          mode={player.mode}
+          liveInputUid={player.liveInputUid}
+          videoUid={player.videoUid || ''}
+          playbackOriginUrl={origin}
+          iframeUrl={player.iframeUrl}
+          poster={poster}
+          title={player.mode === 'recorded' ? 'Recording' : 'Live stream'}
+          onEnded={player.mode === 'recorded' ? onEnded : undefined}
+        />
+      </Frame>
+    );
+  }
+  return <Offline message={RECORDING_PREPARING_MSG} />;
 }
 
 /** True for "YouTube + Server" — public live UI must be YouTube embed, never HLS. */
@@ -431,8 +479,21 @@ function usePlayerChrome(videoRef, shellRef, {
         let end = video.seekable.end(video.seekable.length - 1);
         if (!isLiveMode && trusted > 0 && end > trusted * 1.25) end = trusted;
         target = Math.min(Math.max(t, start), end);
+        if (!isLiveMode) {
+          target = clampVodSeek({
+            currentTime: video.currentTime,
+            duration: Number.isFinite(video.duration) ? video.duration : end,
+            target,
+            expectedDurationSec: trusted,
+          });
+        }
       } else if (!isLiveMode && trusted > 0) {
-        target = Math.min(Math.max(t, 0), trusted);
+        target = clampVodSeek({
+          currentTime: video.currentTime,
+          duration: trusted,
+          target: t,
+          expectedDurationSec: trusted,
+        });
       }
       try {
         video.currentTime = target;
@@ -606,7 +667,7 @@ function PlayerChrome({
               {chrome.paused ? <IconPlay /> : <IconPause />}
             </button>
 
-            {isLiveMode && showScrub && (
+            {showScrub && (
               <>
                 <button
                   type="button"
@@ -685,12 +746,21 @@ function PlayerChrome({
 function HlsPlayer({
   src,
   poster,
-  isLive = true,
-  detectPublish = false,
-  recorded = false,
+  isLive: isLiveProp = true,
+  detectPublish: detectPublishProp = false,
+  recorded: recordedProp = false,
   eventId = '',
   reconnecting = false,
+  expectedDurationSec = 0,
+  waitingMessage = '',
+  liveIngestProvider = '',
+  eventIsLive,
+  eventIsPublishing,
+  eventPlaybackMode = '',
+  cfStreamLiveInputId = '',
+  cfStreamVideoUid = '',
   onRecordedEnded,
+  onLiveSessionEnded,
 }) {
   const videoRef = useRef(null);
   const shellRef = useRef(null);
@@ -712,11 +782,42 @@ function HlsPlayer({
   const ignoreSurfaceClickRef = useRef(false);
   const onRecordedEndedRef = useRef(onRecordedEnded);
   onRecordedEndedRef.current = onRecordedEnded;
+  const onLiveSessionEndedRef = useRef(onLiveSessionEnded);
+  onLiveSessionEndedRef.current = onLiveSessionEnded;
+  const liveSessionEndedRef = useRef(false);
+  const {
+    recorded,
+    isLive,
+    detectPublish,
+    liveChrome,
+  } = resolveHlsPlayerSession({
+    src,
+    recorded: recordedProp,
+    isLive: isLiveProp,
+    detectPublish: detectPublishProp,
+    videoUid: cfStreamVideoUid,
+    liveInputId: cfStreamLiveInputId,
+  });
   const cloudflareDvr = isCloudflareStreamHlsUrl(src) && !recorded;
   const [lagSec, setLagSec] = useState(0);
   const [newLiveAvailable, setNewLiveAvailable] = useState(false);
-  const [userStarted, setUserStarted] = useState(() => loadUserStarted(eventId));
+  const [userStarted, setUserStarted] = useState(() => recorded || loadUserStarted(eventId));
   const dvrIntentRef = useRef(loadLiveDvrIntent(eventId));
+  const errorUiMode = cloudflarePlaybackErrorUiMode({
+    recorded,
+    isLive: eventIsLive !== undefined ? eventIsLive : isLive,
+    isPublishing: eventIsPublishing,
+    playbackMode: eventPlaybackMode,
+    liveIngestProvider,
+    cfRecordingPreparing: Boolean(waitingMessage),
+  });
+  const offlineOverlayMessage =
+    waitingMessage ||
+    (recorded
+      ? ''
+      : liveSessionEndedRef.current || errorUiMode === 'recording-preparing'
+        ? RECORDING_PREPARING_MSG
+        : SERVER_WAITING_MSG);
 
   const markDvrIntent = useCallback(
     (intent) => {
@@ -876,11 +977,12 @@ function HlsPlayer({
   );
 
   const chrome = usePlayerChrome(videoRef, shellRef, {
-    isLiveMode: !recorded,
-    onUserSeek: recorded ? undefined : handleUserSeek,
+    isLiveMode: liveChrome,
+    onUserSeek: liveChrome ? handleUserSeek : undefined,
     mediaActive: userStarted,
     syncKey: reloadKey,
-    onResumeFromPause: recorded ? undefined : resumeLivePlayback,
+    onResumeFromPause: liveChrome ? resumeLivePlayback : undefined,
+    trustedDurationSec: recorded ? expectedDurationSec : 0,
   });
   markMediaPlayingRef.current = chrome.markMediaPlaying;
   syncFromVideoRef.current = chrome.syncFromVideo;
@@ -969,7 +1071,14 @@ function HlsPlayer({
   }, []);
 
   const scheduleRetry = useCallback(() => {
-    if (!shouldRetryOrRemountHls({ recorded })) return;
+    if (
+      !shouldRetryOrRemountHls({
+        recorded,
+        cloudflareSessionEnded: liveSessionEndedRef.current,
+      })
+    ) {
+      return;
+    }
     clearRetry();
     setPlaybackHealthy(false);
     setOverlay(OVERLAY.RECONNECTING);
@@ -1091,6 +1200,9 @@ function HlsPlayer({
 
   useEffect(() => {
     if (!userStarted) return undefined;
+    if (String(liveIngestProvider || '') === 'cloudflare_stream' || isCloudflareStreamHlsUrl(src)) {
+      return undefined;
+    }
     if (!detectPublish && !isLive && !recorded) return undefined;
     const video = videoRef.current;
     if (!video || !src) return undefined;
@@ -1099,6 +1211,7 @@ function HlsPlayer({
     hasPlayedRef.current = false;
     restoredPosRef.current = false;
     recordedEndedNotifiedRef.current = false;
+    liveSessionEndedRef.current = false;
     setPlaybackHealthy(false);
     setOverlay(OVERLAY.BUFFERING);
     setBehindLive(false);
@@ -1113,8 +1226,17 @@ function HlsPlayer({
     let useNative = false;
     let frameCallbackId = null;
 
+    const vodReachedRealEnd = (videoEl, { ended = false } = {}) =>
+      shouldFinishRecordedVod({
+        ended: ended || videoEl?.ended === true,
+        currentTime: videoEl?.currentTime,
+        duration: videoEl?.duration,
+        expectedDurationSec,
+      }) || isRecordedVodAtNaturalEnd(videoEl, expectedDurationSec);
+
     const finishRecordedVod = () => {
       if (!recorded || recordedEndedNotifiedRef.current) return;
+      if (!vodReachedRealEnd(video, { ended: true })) return;
       recordedEndedNotifiedRef.current = true;
       clearRetry();
       try {
@@ -1123,6 +1245,24 @@ function HlsPlayer({
         /* ignore */
       }
       onRecordedEndedRef.current?.();
+    };
+
+    const endCloudflareLiveSession = () => {
+      if (recorded) return;
+      if (String(liveIngestProvider) !== 'cloudflare_stream' && !cloudflareDvr) return;
+      if (liveSessionEndedRef.current) return;
+      liveSessionEndedRef.current = true;
+      clearRetry();
+      setShowOffline(true);
+      setOverlay(OVERLAY.NONE);
+      setPlaybackHealthy(false);
+      console.info('[cloudflare-playback] live session ended → recording-preparing', {
+        src,
+        eventIsLive,
+        eventIsPublishing,
+        eventPlaybackMode,
+      });
+      onLiveSessionEndedRef.current?.();
     };
 
     const refreshDvrState = () => {
@@ -1172,6 +1312,14 @@ function HlsPlayer({
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
         const lvls = (data.levels || []).map((l, index) => ({ index, height: l.height || 0 }));
         setLevels(lvls);
+        if (recorded) {
+          console.info('[cloudflare-playback] vod manifest', {
+            src,
+            duration: video.duration,
+            expectedDurationSec,
+            levels: lvls.length,
+          });
+        }
         tryRestoreOrLive(video, hls);
         video.play?.().catch(() => {});
       });
@@ -1179,12 +1327,12 @@ function HlsPlayer({
         if (hlsRef.current) setCurrentLevel(hlsRef.current.autoLevelEnabled ? -1 : data.level);
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (recorded && isRecordedVodAtNaturalEnd(video)) {
+        if (recorded && vodReachedRealEnd(video)) {
           finishRecordedVod();
           return;
         }
-        if (!data.fatal) return;
         if (recorded) {
+          if (!data.fatal) return;
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             try {
               hls.startLoad();
@@ -1200,6 +1348,8 @@ function HlsPlayer({
           }
           return;
         }
+        if (!data.fatal) return;
+        if (liveSessionEndedRef.current) return;
         // After first successful play: reconnect overlay + remount (no second Play click).
         if (hasPlayedRef.current) {
           setShowOffline(false);
@@ -1262,9 +1412,15 @@ function HlsPlayer({
             scheduleRetry();
         }
       });
-      if (recorded && Hls.Events.BUFFER_EOS) {
+      if (Hls.Events.BUFFER_EOS) {
         hls.on(Hls.Events.BUFFER_EOS, () => {
-          if (isRecordedVodAtNaturalEnd(video) || video.ended) finishRecordedVod();
+          if (recorded) {
+            if (vodReachedRealEnd(video, { ended: video.ended })) finishRecordedVod();
+            return;
+          }
+          if (video?.ended || (Number.isFinite(video?.duration) && video.duration > 0 && video.currentTime >= video.duration - 0.5)) {
+            endCloudflareLiveSession();
+          }
         });
       }
     } else {
@@ -1278,7 +1434,7 @@ function HlsPlayer({
     };
     const recoverStall = () => {
       if (recorded) {
-        if (isRecordedVodAtNaturalEnd(video)) finishRecordedVod();
+        if (vodReachedRealEnd(video)) finishRecordedVod();
         return;
       }
       // User intentionally paused — do not auto-resume.
@@ -1304,7 +1460,7 @@ function HlsPlayer({
       video.play?.().catch(() => {});
     };
     const onWaiting = () => {
-      if (recorded && isRecordedVodAtNaturalEnd(video)) {
+      if (recorded && vodReachedRealEnd(video)) {
         finishRecordedVod();
         return;
       }
@@ -1316,7 +1472,7 @@ function HlsPlayer({
       recoverStall();
     };
     const onTimeUpdate = () => {
-      if (recorded && video.ended) {
+      if (recorded && vodReachedRealEnd(video, { ended: video.ended })) {
         finishRecordedVod();
         return;
       }
@@ -1332,13 +1488,18 @@ function HlsPlayer({
     };
     const onSeeked = () => refreshDvrState();
     const onEnded = () => {
-      if (recorded) finishRecordedVod();
+      if (recorded && vodReachedRealEnd(video, { ended: true })) {
+        finishRecordedVod();
+        return;
+      }
+      if (!recorded) endCloudflareLiveSession();
     };
     const onVideoError = () => {
       if (recorded) {
-        if (isRecordedVodAtNaturalEnd(video)) finishRecordedVod();
+        if (vodReachedRealEnd(video)) finishRecordedVod();
         return;
       }
+      if (liveSessionEndedRef.current) return;
       if (useNative) {
         if (detectPublish && !hasPlayedRef.current) setShowOffline(true);
         else setOverlay(OVERLAY.RECONNECTING);
@@ -1411,6 +1572,11 @@ function HlsPlayer({
     seekVideoToLiveEdge,
     isHoldingDvrPosition,
     cloudflareDvr,
+    expectedDurationSec,
+    liveIngestProvider,
+    eventIsLive,
+    eventIsPublishing,
+    eventPlaybackMode,
   ]);
 
   const pickLevel = (index) => {
@@ -1419,8 +1585,24 @@ function HlsPlayer({
     chrome.bumpControls();
   };
 
-  if (!detectPublish && !isLive && !recorded) return <Offline message={SERVER_WAITING_MSG} />;
-  if (!src) return <Offline message={SERVER_WAITING_MSG} />;
+  if (!detectPublish && !isLive && !recorded) {
+    return <Offline message={offlineOverlayMessage || SERVER_WAITING_MSG} />;
+  }
+  if (!src) {
+    return (
+      <Offline
+        message={
+          recorded || waitingMessage
+            ? RECORDING_PREPARING_MSG
+            : offlineOverlayMessage || SERVER_WAITING_MSG
+        }
+      />
+    );
+  }
+
+  if (String(liveIngestProvider || '') === 'cloudflare_stream' || isCloudflareStreamHlsUrl(src)) {
+    return null;
+  }
 
   if (!userStarted) {
     return (
@@ -1445,7 +1627,9 @@ function HlsPlayer({
       {showOffline && !recorded && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-neutral-950 px-6 text-center text-white">
           <QuietSpinner show />
-          <p className="mt-4 text-base font-semibold text-white/90">{SERVER_WAITING_MSG}</p>
+          <p className="mt-4 text-base font-semibold text-white/90">
+            {offlineOverlayMessage || SERVER_WAITING_MSG}
+          </p>
         </div>
       )}
       <video
@@ -1467,7 +1651,7 @@ function HlsPlayer({
       {!showOffline && (
         <PlayerChrome
           chrome={chrome}
-          isLiveMode={!recorded}
+          isLiveMode={liveChrome}
           behindLive={behindLive}
           lagSec={lagSec}
           onGoLive={jumpToLive}
@@ -1908,16 +2092,19 @@ function Mp4Player({
 function LivePlayerView({ config, onLiveUiChange }) {
   const [hlsLiveResume, setHlsLiveResume] = useState(false);
   const [recordedVodEnded, setRecordedVodEnded] = useState(false);
+  const [cfLiveSessionEnded, setCfLiveSessionEnded] = useState(false);
 
   useEffect(() => {
     setRecordedVodEnded(false);
+    setCfLiveSessionEnded(false);
   }, [config?.eventId]);
 
   useEffect(() => {
-    if (config?.playbackMode === 'live') {
+    if (config?.isLive === true || config?.isPublishing === true) {
+      setCfLiveSessionEnded(false);
       setRecordedVodEnded(false);
     }
-  }, [config?.playbackMode]);
+  }, [config?.isLive, config?.isPublishing, config?.playbackMode]);
 
   useEffect(() => {
     if (!config) return;
@@ -1982,7 +2169,10 @@ function LivePlayerView({ config, onLiveUiChange }) {
       setHlsLiveResume(false);
       return undefined;
     }
-    if (isCloudflareStreamHlsUrl(config.playbackUrl || config.hlsUrl)) {
+    if (
+      String(config.liveIngestProvider || '') === 'cloudflare_stream' ||
+      isCloudflareStreamHlsUrl(config.playbackUrl || config.hlsUrl)
+    ) {
       setHlsLiveResume(false);
       return undefined;
     }
@@ -2024,21 +2214,80 @@ function LivePlayerView({ config, onLiveUiChange }) {
     };
   }, [config, hlsLiveResume]);
 
+  const isCloudflareIngestEarly =
+    String(config?.liveIngestProvider || '') === 'cloudflare_stream' ||
+    isCloudflareStreamHlsUrl(config?.playbackUrl || config?.hlsUrl);
   const youtubePlusServer = isYoutubePlusServerDestination(config);
-  const cfHlsPlayback = selectCloudflareHlsPlayback({
-    config,
-    hlsLiveResume,
+  const cfPlaybackConfig =
+    cfLiveSessionEnded && config && config.isPublishing !== true
+      ? {
+          ...config,
+          isLive: false,
+          isPublishing: false,
+          playbackMode: config.playbackMode === 'recorded' ? 'recorded' : 'offline',
+          cfRecordingPreparing: config.playbackMode !== 'recorded',
+          playbackUrl: config.playbackMode === 'recorded' ? config.playbackUrl : '',
+          hlsUrl: config.playbackMode === 'recorded' ? config.hlsUrl : '',
+        }
+      : config;
+  const cfStreamPlayer = selectCloudflareStreamPlayer({
+    config: cfPlaybackConfig,
     recordedVodEnded,
   });
-  const preferCfRecorded = cfHlsPlayback?.mode === 'recorded';
-  const preferCfLiveDvr = cfHlsPlayback?.mode === 'live';
+  const cfWatchSurface = selectWatchPlayerSurface(cfPlaybackConfig, { recordedVodEnded });
+
+  useEffect(() => {
+    if (!cfStreamPlayer) return undefined;
+    const videoUid = String(config?.cfStreamVideoUid || '').trim();
+    const liveInputId = String(config?.cfStreamLiveInputId || '').trim();
+    console.info('[cloudflare-playback]', {
+      mode: cfStreamPlayer.mode,
+      sourceType: cfStreamPlayer.mode,
+      eventStatus: config?.status || '',
+      isLive: config?.isLive,
+      isPublishing: config?.isPublishing,
+      playbackMode: config?.playbackMode,
+      liveInputUid: liveInputId,
+      liveStartedAt: config?.liveStartedAt || null,
+      liveEndedAt: config?.liveEndedAt || null,
+      videoUid,
+      pendingVideoUid: String(config?.cfStreamPendingVideoUid || '').trim(),
+      playbackHlsUrl: String(config?.cfStreamPlaybackHlsUrl || '').trim(),
+      uidEqualsLiveInput: Boolean(videoUid && liveInputId && videoUid === liveInputId),
+      durationSec: Number(config?.cfStreamVideoDurationSec) || 0,
+      playerMode: cfStreamPlayer.mode,
+      playerUid: cfStreamPlayer.uid || '',
+      iframeUrl: cfStreamPlayer.iframeUrl || '',
+      cfLiveSessionEnded,
+    });
+    return undefined;
+  }, [
+    cfStreamPlayer,
+    config?.cfStreamVideoUid,
+    config?.cfStreamLiveInputId,
+    config?.cfStreamVideoDurationSec,
+    config?.cfStreamPendingVideoUid,
+    config?.cfStreamPlaybackHlsUrl,
+    config?.liveStartedAt,
+    config?.liveEndedAt,
+    config?.isLive,
+    config?.isPublishing,
+    config?.playbackMode,
+    cfLiveSessionEnded,
+  ]);
+  const preferCfRecorded = cfStreamPlayer?.mode === 'recorded';
+  const preferCfLiveDvr = cfStreamPlayer?.mode === 'live';
+  const cfPreparing = cfStreamPlayer?.mode === 'recording-preparing';
+  const cfWaitingForLive = cfStreamPlayer?.mode === 'waiting-for-live';
   // Never treat HLS resume as "live" for YouTube + Server — that would flip into HlsPlayer.
-  // Cloudflare recorded VOD ignores hlsLiveResume. Live DVR stays live until the event ends.
+  // Cloudflare recorded VOD / preparing ignores hlsLiveResume. Live DVR stays live until the event ends.
   const live = youtubePlusServer
     ? Boolean(config?.isLive)
-    : preferCfRecorded
+    : preferCfRecorded || cfPreparing || cfWaitingForLive
       ? false
-      : preferCfLiveDvr || Boolean(config?.isLive) || hlsLiveResume;
+      : preferCfLiveDvr
+        ? true
+        : !isCloudflareIngestEarly && (Boolean(config?.isLive) || hlsLiveResume);
   // HLS probe confirmation clears reconnect UI immediately. Server grace flag may
   // still be true — HlsPlayer hides overlay once media is actually playing.
   const reconnecting = hlsLiveResume && !youtubePlusServer ? false : Boolean(config?.reconnecting);
@@ -2057,6 +2306,31 @@ function LivePlayerView({ config, onLiveUiChange }) {
     return <Offline message="This live stream has been disabled." />;
   }
 
+  const poster = config.poster || '';
+  const eventId = config.eventId || '';
+  const cfPlayerOrigin = String(
+    config.cfStreamPlayerUrl ||
+      config.cfStreamHlsUrl ||
+      config.cfStreamPlaybackHlsUrl ||
+      config.playbackUrl ||
+      config.hlsUrl ||
+      '',
+  ).trim();
+
+  // Cloudflare Stream events use ONLY the official Web Player iframe.
+  // This runs before YouTube, failover, MediaMTX, and HlsPlayer.
+  if (cfWatchSurface.surface === 'cloudflare-iframe') {
+    return (
+      <CloudflareWebPlayerFrame
+        player={cfWatchSurface.player || cfStreamPlayer}
+        origin={cfPlayerOrigin}
+        poster={poster}
+        eventId={eventId}
+        onEnded={() => setRecordedVodEnded(true)}
+      />
+    );
+  }
+
   const videoId = resolveYoutubeVideoId(config);
   const isServerProvider =
     config.provider === 'rtmp' || config.provider === 'hls' || config.provider === 'webrtc';
@@ -2069,13 +2343,11 @@ function LivePlayerView({ config, onLiveUiChange }) {
   }
 
   const { provider } = config;
-  const poster = config.poster || '';
   const isCloudflareIngest =
     String(config.liveIngestProvider || '') === 'cloudflare_stream' ||
     isCloudflareStreamHlsUrl(config.playbackUrl || config.hlsUrl);
   const isMediaMtx = (provider === 'rtmp' || provider === 'hls') && !isCloudflareIngest;
   const recordingSrc = resolveMediaUrl(config.recordingUrl || '');
-  const eventId = config.eventId || '';
   const recordingParts = Array.isArray(config.recordings) ? config.recordings : [];
   const hasServerReplay = Boolean(recordingSrc || recordingParts.length > 0);
   const recordingDurationSec = Math.max(0, Number(config.recordingDurationSec) || 0);
@@ -2120,47 +2392,6 @@ function LivePlayerView({ config, onLiveUiChange }) {
     return (
       <Offline message="No YouTube video configured" />
     );
-  }
-
-  if (cfHlsPlayback?.mode === 'live') {
-    return (
-      <HlsPlayer
-        key={`live-${eventId}-${hlsLiveResume ? 'resume' : 'cfg'}`}
-        src={cfHlsPlayback.src}
-        poster={poster}
-        isLive
-        detectPublish
-        eventId={eventId}
-        reconnecting={reconnecting}
-      />
-    );
-  }
-
-  if (preferCfRecorded) {
-    const hlsPlayer = cfHlsPlayback.hlsPlayer;
-    return (
-      <HlsPlayer
-        key={`cf-vod-${eventId}`}
-        src={hlsPlayer.src}
-        poster={poster}
-        isLive={hlsPlayer.isLive}
-        recorded={hlsPlayer.recorded}
-        eventId={eventId}
-        onRecordedEnded={() => setRecordedVodEnded(true)}
-      />
-    );
-  }
-
-  if (cfHlsPlayback?.mode === 'recording-preparing') {
-    return <Offline message={RECORDING_PREPARING_MSG} />;
-  }
-
-  if (cfHlsPlayback?.mode === 'waiting-for-live') {
-    return <Offline message={SERVER_WAITING_MSG} />;
-  }
-
-  if (isCloudflareIngest && !live) {
-    return <Offline message={RECORDING_PREPARING_MSG} />;
   }
 
   if (isMediaMtx && live) {

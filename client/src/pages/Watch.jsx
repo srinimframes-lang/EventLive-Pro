@@ -23,6 +23,7 @@ import {
   livePollIntervalMs,
   mergeLivePriorityConfig,
 } from '../utils/livePriority.js';
+import { selectCloudflareStreamPlayer } from '../utils/cloudflareStreamPlayer.js';
 
 // Defer chat / Q&A / gallery / themed shell so the player can load first.
 const LiveChat = lazy(() => import('../components/live/LiveChat.jsx'));
@@ -98,6 +99,9 @@ export default function Watch() {
         isLive: pollIsLive,
         recordingUrl: pollRecordingKey ? '1' : '',
         recordings: pollRecordingKey ? [{}] : [],
+        cfRecordingPreparing: Boolean(config?.cfRecordingPreparing),
+        liveIngestProvider: config?.liveIngestProvider,
+        playbackMode: config?.playbackMode,
       },
       { socketConnected: room.connected }
     );
@@ -108,7 +112,7 @@ export default function Watch() {
       }
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey]);
+  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey, config?.cfRecordingPreparing, config?.liveIngestProvider, config?.playbackMode]);
 
   const [playerLiveConfirmed, setPlayerLiveConfirmed] = useState(false);
 
@@ -122,13 +126,20 @@ export default function Watch() {
   );
 
   // Badge/status only — do not write back into stream config (keeps parts fallback intact).
-  const displayIsLive = Boolean(mergedConfig?.isLive || playerLiveConfirmed);
+  const cfPlayback = useMemo(
+    () => selectCloudflareStreamPlayer({ config: mergedConfig }),
+    [mergedConfig]
+  );
+  const displayIsLive = Boolean(
+    cfPlayback ? cfPlayback.mode === 'live' : mergedConfig?.isLive || playerLiveConfirmed
+  );
 
   const isRecordedReplay = Boolean(
-    mergedConfig &&
-      !displayIsLive &&
-      !isTemporaryRecordingFallback(mergedConfig) &&
-      (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl)
+    cfPlayback?.mode === 'recorded' ||
+      (mergedConfig &&
+        !displayIsLive &&
+        !isTemporaryRecordingFallback(mergedConfig) &&
+        (mergedConfig.playbackMode === 'recorded' || mergedConfig.recordingUrl))
   );
 
   const canAnswer = useMemo(

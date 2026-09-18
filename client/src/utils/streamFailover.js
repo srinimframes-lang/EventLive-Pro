@@ -14,6 +14,8 @@ export function isFailoverFeatureOn(config) {
 export function shouldPlayYoutubeBackup(config) {
   if (!isFailoverFeatureOn(config)) return false;
   if (config.activeSource !== 'youtube') return false;
+  if (String(config?.liveIngestProvider || '') === 'cloudflare_stream') return false;
+  if (String(config?.viewerPlayback || '') === 'cloudflare_stream') return false;
   const provider = config.provider;
   const isServer =
     provider === 'rtmp' || provider === 'hls' || provider === 'webrtc';

@@ -14,11 +14,13 @@ const EVENT_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const {
   planCloudflareStreamConfigOffline,
   beginCloudflareOfflineFinalization,
+  beginCloudflareLiveBroadcast,
   resetCloudflareOfflineFinalizationState,
   scheduleCloudflareRecordingUidRetry,
   isCloudflareRecordingUidRetryInflight,
   syncCloudflareLiveOfflineTransition,
   shouldReconcileCloudflareRecordingUid,
+  reconcileOfflineCloudflareRecordings,
 } = await import('../services/cloudflareStream.js');
 
 function cfEvent(extra = {}) {
@@ -212,13 +214,25 @@ test('MediaMTX behavior unchanged', async () => {
   assert.equal(event.recordingUrl, '/api/events/aaaaaaaaaaaaaaaaaaaaaaaa/stream/recording');
 });
 
-test('protected Anil Geetha input is not auto-finalized', () => {
+test('protected Anil Geetha input still finalizes and captures VOD UID', () => {
   assert.deepEqual(
     planCloudflareStreamConfigOffline(
       cfEvent({ cfStreamLiveInputId: ANIL_INPUT }),
       false,
     ),
-    { action: 'none' },
+    { action: 'finalize_once' },
+  );
+  assert.deepEqual(
+    planCloudflareStreamConfigOffline(
+      cfEvent({
+        cfStreamLiveInputId: ANIL_INPUT,
+        isLive: false,
+        status: 'ended',
+        cfStreamVideoUid: '',
+      }),
+      false,
+    ),
+    { action: 'reconcile_uid' },
   );
 });
 
@@ -341,12 +355,41 @@ test('next live broadcast persists live and allows a later finalize', async () =
   const live = await syncCloudflareLiveOfflineTransition(event, true, {
     persistCloudflareLive: async (ev) => {
       persisted.push(1);
-      ev.isLive = true;
-      ev.status = 'live';
+      beginCloudflareLiveBroadcast(ev, { now: new Date('2026-09-09T18:00:00.000Z') });
       return ev;
     },
   });
   assert.equal(live.action, 'persist_live');
   assert.equal(persisted.length, 1);
+  assert.equal(event.cfStreamVideoUid, '');
+  assert.equal(event.isLive, true);
   assert.deepEqual(planCloudflareStreamConfigOffline(event, false), { action: 'finalize_once' });
+});
+
+test('unknown publishing status still reconciles a missed offline VOD', async () => {
+  const event = cfEvent({ isLive: false, status: 'ended', cfStreamVideoUid: '' });
+  const captures = [];
+  const result = await syncCloudflareLiveOfflineTransition(event, null, {
+    captureCloudflareRecordedVideoUid: async (ev) => {
+      captures.push(1);
+      ev.cfStreamVideoUid = 'null-probe-uid';
+      return { saved: true, uid: 'null-probe-uid' };
+    },
+  });
+  assert.equal(result.action, 'reconcile_uid');
+  assert.equal(event.cfStreamVideoUid, 'null-probe-uid');
+  assert.equal(captures.length, 1);
+});
+
+test('hourly reconcile recovers UID after in-memory retries are gone', async () => {
+  const event = cfEvent({ isLive: false, status: 'ended', cfStreamVideoUid: '' });
+  const result = await reconcileOfflineCloudflareRecordings({
+    findEvents: async () => [event],
+    captureCloudflareRecordedVideoUid: async (ev) => {
+      ev.cfStreamVideoUid = 'durable-uid';
+      return { saved: true, uid: 'durable-uid' };
+    },
+  });
+  assert.equal(result.saved, 1);
+  assert.equal(event.cfStreamVideoUid, 'durable-uid');
 });

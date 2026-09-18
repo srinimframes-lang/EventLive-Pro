@@ -3,6 +3,7 @@
  * LIVE HLS always wins over recording parts. Parts are a temporary fallback
  * until LIVE returns (or the event has been offline long enough to treat as replay).
  */
+import { isCloudflareLiveDvrPlaybackUrl } from './streamPlayback.js';
 
 /** Poll stream config this often while showing recording parts (awaiting LIVE resume). */
 export const LIVE_PRIORITY_POLL_MS = 3000;
@@ -43,6 +44,15 @@ export function isTemporaryRecordingFallback(config) {
  * Fast while on parts (LIVE may return); normal cadence while live / idle.
  */
 export function livePollIntervalMs(config, { socketConnected = false } = {}) {
+  if (
+    config &&
+    !config.isLive &&
+    (config.cfRecordingPreparing === true ||
+      (String(config.liveIngestProvider || '') === 'cloudflare_stream' &&
+        (config.playbackMode === 'offline' || !config.playbackMode)))
+  ) {
+    return LIVE_PRIORITY_POLL_MS;
+  }
   if (config && !config.isLive && hasPublicRecordings(config) && isTemporaryRecordingFallback(config)) {
     return LIVE_PRIORITY_POLL_MS;
   }
@@ -113,9 +123,30 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
   }
 
   // LIVE has highest priority — poll probe or socket live both win over stale "parts".
-  const socketLive = liveStatus?.isLive === true;
-  const configLive = config.isLive === true || config.isPublishing === true;
-  const isLive = socketLive || configLive;
+  // Cloudflare: REST/probe offline always beats a stale socket "isLive" that would
+  // keep leftover Live Input DVR playing for ~10–20s then "Waiting for live…".
+  const cfIngest = String(config.liveIngestProvider || '') === 'cloudflare_stream';
+  const restStatusOffline =
+    config.status === 'ended' ||
+    config.status === 'cancelled' ||
+    config.status === 'offline' ||
+    config.status === 'published' ||
+    config.status === 'draft';
+  const restCloudflareRecorded =
+    cfIngest && config.playbackMode === 'recorded' && config.isPublishing !== true;
+  const restCloudflareOffline =
+    cfIngest &&
+    config.isPublishing !== true &&
+    (config.isPublishing === false ||
+      restCloudflareRecorded ||
+      config.isLive === false ||
+      restStatusOffline);
+  const socketLive = !restCloudflareOffline && liveStatus?.isLive === true;
+  const configLive =
+    !restCloudflareRecorded &&
+    !restCloudflareOffline &&
+    (config.isLive === true || config.isPublishing === true);
+  const isLive = restCloudflareOffline ? false : socketLive || configLive;
   next.isLive = isLive;
 
   if (isLive) {
@@ -140,6 +171,39 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
     }
   } else {
     next.reconnecting = false;
+    // A stale socket "live"/"reconnecting" mode must not survive after the
+    // REST config has already marked the event offline or recorded.
+    if (next.playbackMode === 'live' || next.playbackMode === 'reconnecting') {
+      if (config.playbackMode && config.playbackMode !== 'live' && config.playbackMode !== 'reconnecting') {
+        next.playbackMode = config.playbackMode;
+      } else if (config.recordingUrl || (Array.isArray(config.recordings) && config.recordings.length)) {
+        next.playbackMode = 'recorded';
+      } else {
+        next.playbackMode = 'offline';
+      }
+    }
+    if (String(config.liveIngestProvider || '') === 'cloudflare_stream') {
+      next.isPublishing = config.isPublishing;
+      next.cfRecordingPreparing = Boolean(config.cfRecordingPreparing);
+      next.status = config.status;
+      if (config.playbackMode === 'recorded' && !config.cfRecordingPreparing) {
+        next.playbackMode = 'recorded';
+        next.cfRecordingPreparing = false;
+      } else {
+        next.playbackMode = config.playbackMode === 'recorded' ? 'recorded' : 'offline';
+        if (next.playbackMode === 'offline') {
+          next.cfRecordingPreparing = true;
+          const liveInputId = String(config.cfStreamLiveInputId || '').trim();
+          if (
+            isCloudflareLiveDvrPlaybackUrl(next.playbackUrl, liveInputId) ||
+            isCloudflareLiveDvrPlaybackUrl(next.hlsUrl, liveInputId)
+          ) {
+            next.playbackUrl = '';
+            next.hlsUrl = '';
+          }
+        }
+      }
+    }
   }
 
   return next;

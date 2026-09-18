@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import { RECORDINGS_ROOT } from './recording.js';
-import { partSourceExists, restoreSoftDeletedPlayableParts } from './recordingPlayable.js';
+import {
+  persistPlayableRecordingParts,
+  restoreSoftDeletedPlayableParts,
+  partSourceExists,
+} from './recordingPlayable.js';
 
 test('restoreSoftDeletedPlayableParts clears deletedAt on leftover originals only', () => {
   const orig = {
@@ -27,6 +31,42 @@ test('restoreSoftDeletedPlayableParts clears deletedAt on leftover originals onl
   assert.equal(orig.deletedAt, null);
   assert.ok(other.deletedAt instanceof Date);
   assert.equal(merged.deletedAt, undefined);
+});
+
+test('playback fallback does not persist deletedAt=null on inspected originals', async () => {
+  const orig = {
+    _id: 'o1',
+    filename: '2026-09-06_09-00-00-000000.mp4',
+    localPath: path.join(RECORDINGS_ROOT, 'aaaaaaaaaaaaaaaaaaaaaaaa', '2026-09-06_09-00-00-000000.mp4'),
+    storage: 'local',
+    sizeBytes: 5_000_000,
+    deletedAt: new Date('2026-09-06T10:05:00Z'),
+  };
+  const merged = {
+    _id: 'm1',
+    filename: 'merged_1757152800000.mp4',
+    localPath: path.join(RECORDINGS_ROOT, 'aaaaaaaaaaaaaaaaaaaaaaaa', 'merged_1757152800000.mp4'),
+    storage: 'local',
+    sizeBytes: 9_000_000,
+  };
+  let saved = 0;
+  const event = {
+    _id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+    id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+    recordings: [orig, merged],
+    async save() {
+      saved += 1;
+      return this;
+    },
+    markModified() {},
+  };
+
+  const playable = await persistPlayableRecordingParts(event);
+  assert.ok(Array.isArray(playable));
+  assert.equal(saved, 0);
+  assert.ok(orig.deletedAt instanceof Date);
+  assert.equal(event.recordings.filter((p) => !p.deletedAt).length, 1);
+  assert.equal(event.recordings.filter((p) => !p.deletedAt)[0].filename, 'merged_1757152800000.mp4');
 });
 
 test('restoreSoftDeletedPlayableParts never touches merged files or empty lists', () => {

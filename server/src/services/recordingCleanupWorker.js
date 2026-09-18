@@ -1,6 +1,6 @@
 /**
- * Hourly recording R2 sync — retry leftover uploads and delete only
- * HEAD-verified local copies. Never touches MediaMTX, HLS, or live ingest.
+ * Hourly recording R2 sync + Cloudflare VOD UID reconcile.
+ * R2 path never touches MediaMTX ingest. Cloudflare path never deletes Live Inputs.
  */
 import fs from 'fs';
 import { isR2Configured } from '../utils/r2.js';
@@ -9,6 +9,7 @@ import {
   RECORDING_R2_SWEEP_MS,
   runRecordingR2SyncCycle,
 } from '../utils/recordingR2Sync.js';
+import { reconcileOfflineCloudflareRecordings } from './cloudflareStream.js';
 
 let timer = null;
 let startupTimer = null;
@@ -22,6 +23,12 @@ async function tick() {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[r2] cleanup cycle failed:', err?.message || err);
+  }
+  try {
+    await reconcileOfflineCloudflareRecordings();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[cloudflare-stream] recording reconcile failed:', err?.message || err);
   } finally {
     running = false;
   }

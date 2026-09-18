@@ -522,20 +522,29 @@ export function applyRecordingToEvent(event, { filePath, durationSec = 0, record
   return event;
 }
 
+function partMatchesUploadIdentity(part, { filename, localPath, r2Key } = {}) {
+  if (!part) return false;
+  if (filename && part.filename === filename) return true;
+  if (localPath && part.localPath === localPath) return true;
+  if (r2Key && part.r2Key === r2Key) return true;
+  return false;
+}
+
 /** Mark a local history part as uploaded to R2 (does not touch other parts). */
 export function markRecordingPartUploaded(event, { filename, localPath, r2Key, r2Url, sizeBytes }) {
   const parts = ensureRecordingsArray(event);
   let part =
-    parts.find(
-      (p) =>
-        p &&
-        !p.deletedAt &&
-        ((filename && p.filename === filename) ||
-          (localPath && p.localPath === localPath) ||
-          (r2Key && p.r2Key === r2Key))
-    ) || null;
+    parts.find((p) => p && !p.deletedAt && partMatchesUploadIdentity(p, { filename, localPath, r2Key })) ||
+    null;
 
   if (!part) {
+    const deletedMatch = parts.find(
+      (p) => p && p.deletedAt && partMatchesUploadIdentity(p, { filename, localPath, r2Key }),
+    );
+    if (deletedMatch) {
+      // Soft-deleted originals must stay deleted — never resurrect as a new active part.
+      return deletedMatch;
+    }
     const startedAt = parseRecordingFilenameTimestamp(filename) || new Date();
     part = {
       filename: filename || path.basename(r2Key || ''),

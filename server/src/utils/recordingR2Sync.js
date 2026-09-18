@@ -7,11 +7,13 @@ import fs from 'fs';
 import path from 'path';
 import { Event } from '../models/Event.js';
 import {
+  ensureRecordingsArray,
   listActiveRecordingParts,
   markRecordingPartUploaded,
   RECORDINGS_ROOT,
   resolveRecordingAbsolutePath,
 } from './recording.js';
+import { isMergedRecordingFilename } from './recordingPlayback.js';
 import { headR2Object, isR2Configured, uploadRecordingToR2 } from './r2.js';
 
 export const RECORDING_R2_SWEEP_MS = Math.max(
@@ -125,6 +127,29 @@ export function extractEventIdsFromRecordingRelPath(rel) {
   return ids;
 }
 
+function isSoftDeletedRecordingFilename(event, filename) {
+  const name = String(filename || '').trim();
+  if (!name) return false;
+  return ensureRecordingsArray(event).some(
+    (p) => p && p.deletedAt && String(p.filename || '').trim() === name,
+  );
+}
+
+function hasActiveMergedRecording(event) {
+  return listActiveRecordingParts(event).some((p) => isMergedRecordingFilename(p.filename));
+}
+
+/** Disk leftovers that must not be re-registered as new active recordings. */
+export function shouldIgnoreExtraDiskRecording(event, filename) {
+  const name = String(filename || '').trim();
+  if (!name) return true;
+  if (isSoftDeletedRecordingFilename(event, name)) return true;
+  // Once a merged replay exists, leftover source MP4s stay on disk until R2
+  // verifies the merge. They are not new sessions.
+  if (hasActiveMergedRecording(event) && !isMergedRecordingFilename(name)) return true;
+  return false;
+}
+
 export function listPendingLocalParts(event, { existsFn = fs.existsSync, listFilesFn } = {}) {
   const parts = listActiveRecordingParts(event);
   const pending = [];
@@ -148,6 +173,7 @@ export function listPendingLocalParts(event, { existsFn = fs.existsSync, listFil
     if (seen.has(abs)) continue;
     const filename = path.basename(abs);
     if (alreadyR2Names.has(filename)) continue;
+    if (shouldIgnoreExtraDiskRecording(event, filename)) continue;
     pending.push({
       part: { filename, localPath: abs, storage: 'local', r2Key: '' },
       abs,
@@ -572,6 +598,7 @@ export async function sweepVerifiedLocalRecordings({
 async function listEventsNeedingUpload() {
   return Event.find({
     $or: [
+      { recordingMergeStatus: 'uploading' },
       { 'recordings.storage': 'local' },
       { recordingStorage: 'local', recordingPath: { $nin: [null, ''] } },
       { recordingPath: { $nin: [null, ''] } },

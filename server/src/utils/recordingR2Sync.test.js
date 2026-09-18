@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'path';
 import test from 'node:test';
-import { RECORDINGS_ROOT } from './recording.js';
+import { listActiveRecordingParts, RECORDINGS_ROOT } from './recording.js';
 import {
   extractEventIdsFromRecordingRelPath,
   isRecentRecordingFile,
@@ -11,6 +11,7 @@ import {
   matchPartForLocalFile,
   RECORDING_R2_MIN_AGE_MS,
   safeUnlinkLocalAfterR2,
+  shouldIgnoreExtraDiskRecording,
   shouldUnlinkLocalAfterR2,
   sweepVerifiedLocalRecordings,
   unlinkOriginalsReplacedByMergedR2,
@@ -430,4 +431,79 @@ test('sweep leaves live/orphan and unknown 24-hex folders unmapped', async () =>
   assert.equal(sweep.removed, 0);
   assert.equal(removed.length, 0);
   assert.equal(sweep.skipped, 2);
+});
+
+test('hourly R2 sync does not resurrect soft-deleted originals after merge', async () => {
+  const origA = recPath('2026-09-06_09-00-00-000000.mp4');
+  const origB = recPath('2026-09-06_10-00-00-000000.mp4');
+  const merged = recPath('merged_1757152800000.mp4');
+  const deletedAt = new Date('2026-09-06T10:05:00Z');
+  const event = makeEvent([
+    {
+      _id: '111111111111111111111111',
+      filename: '2026-09-06_09-00-00-000000.mp4',
+      localPath: origA,
+      storage: 'local',
+      deletedAt,
+      startedAt: new Date('2026-09-06T09:00:00Z'),
+    },
+    {
+      _id: '222222222222222222222222',
+      filename: '2026-09-06_10-00-00-000000.mp4',
+      localPath: origB,
+      storage: 'local',
+      deletedAt,
+      startedAt: new Date('2026-09-06T10:00:00Z'),
+    },
+    {
+      _id: '333333333333333333333333',
+      filename: 'merged_1757152800000.mp4',
+      localPath: merged,
+      storage: 'local',
+      r2Key: '',
+      startedAt: new Date('2026-09-06T09:00:00Z'),
+    },
+  ]);
+  event.recordingMergeStatus = 'uploading';
+
+  assert.equal(shouldIgnoreExtraDiskRecording(event, '2026-09-06_09-00-00-000000.mp4'), true);
+  assert.equal(shouldIgnoreExtraDiskRecording(event, 'merged_1757152800000.mp4'), false);
+
+  const diskFiles = [
+    { abs: origA, rel: `${EVENT_ID}/2026-09-06_09-00-00-000000.mp4` },
+    { abs: origB, rel: `${EVENT_ID}/2026-09-06_10-00-00-000000.mp4` },
+    { abs: merged, rel: `${EVENT_ID}/merged_1757152800000.mp4` },
+  ];
+  const pending = listPendingLocalParts(event, {
+    existsFn: (p) => [origA, origB, merged].includes(p),
+    listFilesFn: () => diskFiles,
+  });
+  assert.deepEqual(pending.map((x) => path.basename(x.abs)), ['merged_1757152800000.mp4']);
+
+  const uploads = [];
+  const result = await uploadAllPendingLocalParts(EVENT_ID, {
+    loadEvent: async () => event,
+    existsFn: (p) => [origA, origB, merged].includes(p),
+    listFilesFn: () => diskFiles,
+    statFn: () => ({ size: 80, mtimeMs: Date.now() - 300_000 }),
+    sleepFn: async () => {},
+    retries: 1,
+    uploadFn: async (_local, key) => {
+      uploads.push(key);
+      return { url: `https://r2/${key}`, size: 80 };
+    },
+    headFn: async () => ({ exists: true, size: 80 }),
+    unlinkFn: () => {},
+  });
+
+  assert.equal(result.uploaded, 1);
+  assert.deepEqual(uploads, [`recordings/${EVENT_ID}/merged_1757152800000.mp4`]);
+  const active = listActiveRecordingParts(event);
+  assert.equal(active.length, 1);
+  assert.equal(active[0].filename, 'merged_1757152800000.mp4');
+  assert.equal(active[0].storage, 'r2');
+  assert.equal(event.recordings.length, 3);
+  assert.ok(event.recordings[0].deletedAt);
+  assert.ok(event.recordings[1].deletedAt);
+  assert.equal(event.recordings[2].deletedAt, undefined);
 });

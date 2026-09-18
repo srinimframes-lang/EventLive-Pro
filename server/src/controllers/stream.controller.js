@@ -22,7 +22,10 @@ import {
   streamKeyFromEventId,
 } from '../utils/mediaStream.js';
 import {
+  beginCloudflareLiveBroadcast,
+  buildCloudflareStreamIframeUrl,
   captureCloudflareRecordedVideoUid,
+  ensureCloudflareLiveInputRecordingForEvent,
   getLiveInputStatus,
   publicCloudflareOfflinePlayback,
   syncCloudflareLiveOfflineTransition,
@@ -221,8 +224,15 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     else if (playbackMatchesStored && youtubePlayback?.isLive === true) isLive = true;
     else isLive = event.status === 'live' || Boolean(event.isLive);
   } else if (isCloudflareStreamLive(event)) {
-    // Cloudflare ingest: live flag comes from Live Input status, not Mongo isLive.
-    isLive = liveFromProbe ? true : offlineFromProbe ? false : Boolean(event.isLive);
+    // Probe publishing wins. Ended/offline event status beats a stale Mongo isLive
+    // so leftover Live Input DVR is never returned as the public player source.
+    if (liveFromProbe) isLive = true;
+    else if (offlineFromProbe) isLive = false;
+    else if (event.status === 'ended' || event.status === 'cancelled' || event.status === 'published' || event.status === 'draft') {
+      isLive = false;
+    } else {
+      isLive = Boolean(event.isLive);
+    }
   } else {
     isLive = liveFromProbe
       ? true
@@ -261,21 +271,29 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
       ? 'recorded'
       : 'offline';
   const playable = Boolean(recordingUrl) || Boolean(cfRecorded);
-  const viewerHlsUrl = cfRecorded ? cfRecorded.hlsUrl : playbackUrl;
+  const viewerHlsUrl = isLive
+    ? playbackUrl
+    : cfRecorded
+      ? cfRecorded.hlsUrl
+      : isCloudflareStreamLive(event)
+        ? ''
+        : playbackUrl;
 
   const base = {
     eventId: event.id,
     provider,
     liveIngestProvider: event.liveIngestProvider || undefined,
     streamingDestination: event.streamingDestination || undefined,
-    // Public watch page must use YouTube embed for this destination (never HLS).
-    viewerPlayback: youtubePlusServer
-      ? 'youtube'
-      : isServer
-        ? 'hls'
-        : provider === 'youtube'
-          ? 'youtube'
-          : undefined,
+    // Cloudflare Stream public player is the official iframe, not YouTube or MediaMTX HLS.
+    viewerPlayback: isCloudflareStreamLive(event)
+      ? 'cloudflare_stream'
+      : youtubePlusServer
+        ? 'youtube'
+        : isServer
+          ? 'hls'
+          : provider === 'youtube'
+            ? 'youtube'
+            : undefined,
     youtubeVideoId,
     youtubeBroadcastId: storedId || (playbackMatchesStored ? youtubePlayback?.broadcastId : '') || event.youtubeBroadcastId || '',
     youtubeWatchUrl:
@@ -290,8 +308,22 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
       playbackMatchesStored ? youtubePlayback?.lifeCycleStatus || '' : '',
     youtubeIsLive: playbackMatchesStored && youtubePlayback?.isLive === true,
     // Never expose live HLS to the public player for YouTube + Server.
-    hlsUrl: youtubePlusServer ? '' : isServer ? viewerHlsUrl : event.hlsUrl,
-    playbackUrl: youtubePlusServer ? '' : viewerHlsUrl,
+    hlsUrl: isCloudflareStreamLive(event)
+      ? (isLive ? viewerHlsUrl : cfRecorded?.hlsUrl || '')
+      : youtubePlusServer
+        ? ''
+        : isServer
+          ? viewerHlsUrl
+          : event.hlsUrl,
+    playbackUrl: isCloudflareStreamLive(event)
+      ? (!isLive && cfRecorded?.playerUrl
+          ? cfRecorded.playerUrl
+          : isLive
+            ? buildCloudflareStreamIframeUrl(event.cfStreamHlsUrl, event.cfStreamLiveInputId) || viewerHlsUrl
+            : viewerHlsUrl)
+      : youtubePlusServer
+        ? ''
+        : viewerHlsUrl,
     hlsCdnEnabled: isHlsCdnEnabled(),
     hlsPlaybackBase: getViewerHlsPlaybackBase(),
     adaptiveStreaming: isServer ? isAdaptiveStreamingEnabled(event) : false,
@@ -306,10 +338,40 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     liveEndedAt: event.liveEndedAt,
     peakViewers: event.peakViewers,
     totalViews: event.totalViews,
+    status: event.status,
     // Recorded replay
     playbackMode,
     recordingUrl,
     cfRecordingPreparing: Boolean(cfPublic?.cfRecordingPreparing),
+    cfStreamVideoUid: isCloudflareStreamLive(event)
+      ? String(event.cfStreamVideoUid || '').trim()
+      : undefined,
+    cfStreamLiveInputId: isCloudflareStreamLive(event)
+      ? String(event.cfStreamLiveInputId || '').trim()
+      : undefined,
+    cfStreamVideoDurationSec: isCloudflareStreamLive(event)
+      ? Number(event.cfStreamVideoDurationSec) || 0
+      : undefined,
+    cfStreamPlaybackHlsUrl: isCloudflareStreamLive(event) && !isLive
+      ? String(cfRecorded?.playbackUrl || event.cfStreamPlaybackHlsUrl || '').trim()
+      : undefined,
+    cfStreamHlsUrl: isCloudflareStreamLive(event)
+      ? String(event.cfStreamHlsUrl || '').trim()
+      : undefined,
+    cfStreamPendingVideoUid: isCloudflareStreamLive(event)
+      ? String(event.cfStreamPendingVideoUid || '').trim()
+      : undefined,
+    cfStreamPlayerUrl: isCloudflareStreamLive(event)
+      ? (isLive
+          ? buildCloudflareStreamIframeUrl(event.cfStreamHlsUrl, event.cfStreamLiveInputId)
+          : cfRecorded?.playerUrl ||
+            (cfRecorded
+              ? buildCloudflareStreamIframeUrl(
+                  event.cfStreamHlsUrl || cfRecorded.hlsUrl,
+                  event.cfStreamVideoUid,
+                )
+              : ''))
+      : undefined,
     hasRecording: rec.hasRecording,
     recordingAvailable: Boolean(recordingUrl) || Boolean(cfRecorded),
     recordingPublicUntil: rec.recordingPublicUntil,
@@ -391,7 +453,14 @@ function emitLiveStatus(io, event, extra = {}) {
   if (!io) return;
   const rec = getRecordingState(event);
   const reconnecting = isWithinReconnectGrace(event);
-  const isLive = Boolean(event.isLive) || reconnecting;
+  const statusEnded = event.status === 'ended' || event.status === 'cancelled';
+  const cfOffline = isCloudflareStreamLive(event) && statusEnded && extra.reconnecting !== true;
+  const isLive =
+    extra.isLive !== undefined
+      ? extra.isLive
+      : cfOffline
+        ? false
+        : Boolean(event.isLive) || reconnecting;
   io.to(`event:${event.id}`).emit('stream:status', {
     isLive,
     reconnecting,
@@ -497,13 +566,13 @@ function resolveYoutubePlaybackForPublicEvent(event) {
 }
 
 async function persistCloudflareLiveFromProbe(event) {
-  if (event.isLive && event.status === 'live' && !event.liveReconnecting) return event;
-  event.isLive = true;
-  event.liveReconnecting = false;
-  event.liveReconnectUntil = undefined;
-  event.liveStartedAt = event.liveStartedAt || new Date();
-  event.liveEndedAt = undefined;
-  if (['draft', 'published', 'ended'].includes(event.status)) event.status = 'live';
+  try {
+    await ensureCloudflareLiveInputRecordingForEvent(event);
+  } catch {
+    /* recording ensure is best-effort — live ingest must still start */
+  }
+  const { started } = beginCloudflareLiveBroadcast(event);
+  if (!started) return event;
   await event.save();
   return event;
 }
@@ -520,6 +589,11 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
   const youtubePlayback = await resolveYoutubePlaybackForPublicEvent(event);
   const isPublishing = await publishingStatusForEvent(event);
   if (isCloudflareStreamLive(event)) {
+    try {
+      await ensureCloudflareLiveInputRecordingForEvent(event);
+    } catch {
+      /* best-effort */
+    }
     const synced = await syncCloudflareLiveOfflineTransition(event, isPublishing, {
       io,
       finalizeEventOffline,
@@ -547,6 +621,17 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
     eventIsLive: data.isLive,
     playbackMode: data.playbackMode,
     provider: data.provider,
+    liveIngestProvider: data.liveIngestProvider || '',
+    isPublishing: data.isPublishing,
+    liveStartedAt: data.liveStartedAt || null,
+    liveEndedAt: data.liveEndedAt || null,
+    cfStreamLiveInputId: data.cfStreamLiveInputId || '',
+    cfStreamVideoUid: data.cfStreamVideoUid || '',
+    cfStreamPendingVideoUid: event.cfStreamPendingVideoUid || '',
+    cfStreamPlayerUrl: data.cfStreamPlayerUrl || '',
+    cfStreamVideoDurationSec: data.cfStreamVideoDurationSec || 0,
+    cfRecordingPreparing: data.cfRecordingPreparing === true,
+    playbackUrl: data.playbackUrl || '',
   });
   res.status(200).json({
     success: true,

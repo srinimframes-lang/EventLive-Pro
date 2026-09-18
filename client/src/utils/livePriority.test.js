@@ -67,3 +67,95 @@ test('settled replay uses slower poll, not live-priority 3s', () => {
   };
   assert.ok(livePollIntervalMs(settled) > LIVE_PRIORITY_POLL_MS);
 });
+
+test('Cloudflare recording-preparing polls quickly and ignores stale socket live', () => {
+  const preparing = {
+    isLive: false,
+    playbackMode: 'offline',
+    liveIngestProvider: 'cloudflare_stream',
+    cfRecordingPreparing: true,
+  };
+  assert.equal(livePollIntervalMs(preparing), LIVE_PRIORITY_POLL_MS);
+
+  const merged = mergeLivePriorityConfig(
+    {
+      isLive: false,
+      isPublishing: false,
+      playbackMode: 'offline',
+      liveIngestProvider: 'cloudflare_stream',
+      cfRecordingPreparing: true,
+      playbackUrl: '',
+      hlsUrl: '',
+    },
+    { isLive: false, playbackMode: 'live', reconnecting: false }
+  );
+  assert.equal(merged.isLive, false);
+  assert.equal(merged.playbackMode, 'offline');
+  assert.equal(merged.cfRecordingPreparing, true);
+  assert.equal(merged.reconnecting, false);
+});
+
+test('stale socket isLive cannot keep Cloudflare leftover DVR after OBS stop', () => {
+  const liveInputId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const merged = mergeLivePriorityConfig(
+    {
+      isLive: false,
+      isPublishing: false,
+      playbackMode: 'offline',
+      liveIngestProvider: 'cloudflare_stream',
+      cfRecordingPreparing: true,
+      cfStreamLiveInputId: liveInputId,
+      playbackUrl: `https://customer-test.cloudflarestream.com/${liveInputId}/manifest/video.m3u8?dvrEnabled=true`,
+      hlsUrl: `https://customer-test.cloudflarestream.com/${liveInputId}/manifest/video.m3u8?dvrEnabled=true`,
+    },
+    { isLive: true, playbackMode: 'live', reconnecting: false }
+  );
+  assert.equal(merged.isLive, false);
+  assert.equal(merged.playbackMode, 'offline');
+  assert.equal(merged.cfRecordingPreparing, true);
+  assert.equal(merged.playbackUrl, '');
+  assert.equal(merged.hlsUrl, '');
+  assert.equal(String(merged.playbackUrl).includes('dvrEnabled'), false);
+});
+
+test('stale socket isLive cannot override REST ended Cloudflare VOD', () => {
+  const vod = 'https://customer-test.cloudflarestream.com/cccccccccccccccccccccccccccccccc/manifest/video.m3u8';
+  const merged = mergeLivePriorityConfig(
+    {
+      status: 'ended',
+      isLive: false,
+      isPublishing: false,
+      playbackMode: 'recorded',
+      liveIngestProvider: 'cloudflare_stream',
+      cfRecordingPreparing: false,
+      playbackUrl: vod,
+      hlsUrl: vod,
+      cfStreamVideoUid: 'cccccccccccccccccccccccccccccccc',
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    { isLive: true, playbackMode: 'live', reconnecting: false }
+  );
+  assert.equal(merged.isLive, false);
+  assert.equal(merged.playbackMode, 'recorded');
+  assert.equal(merged.playbackUrl, vod);
+});
+
+test('ended event status beats stale REST isLive for Cloudflare', () => {
+  const merged = mergeLivePriorityConfig(
+    {
+      status: 'ended',
+      isLive: true,
+      isPublishing: undefined,
+      playbackMode: 'live',
+      liveIngestProvider: 'cloudflare_stream',
+      playbackUrl: 'https://customer-test.cloudflarestream.com/cccccccccccccccccccccccccccccccc/manifest/video.m3u8',
+      hlsUrl: 'https://customer-test.cloudflarestream.com/cccccccccccccccccccccccccccccccc/manifest/video.m3u8',
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      cfStreamVideoUid: 'cccccccccccccccccccccccccccccccc',
+    },
+    { isLive: true, playbackMode: 'live' }
+  );
+  assert.equal(merged.isLive, false);
+  assert.notEqual(merged.playbackMode, 'live');
+});
+

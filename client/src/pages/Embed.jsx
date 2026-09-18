@@ -69,6 +69,9 @@ export default function Embed() {
         isLive: pollIsLive,
         recordingUrl: pollRecordingKey ? '1' : '',
         recordings: pollRecordingKey ? [{}] : [],
+        cfRecordingPreparing: Boolean(config?.cfRecordingPreparing),
+        liveIngestProvider: config?.liveIngestProvider,
+        playbackMode: config?.playbackMode,
       },
       { socketConnected: room.connected }
     );
@@ -77,7 +80,7 @@ export default function Embed() {
       if (cfg) setConfig((prev) => (prev ? { ...prev, ...cfg } : cfg));
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey]);
+  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey, config?.cfRecordingPreparing, config?.liveIngestProvider, config?.playbackMode]);
 
   const mergedConfig = useMemo(
     () => mergeLivePriorityConfig(config, room.liveStatus, room.failoverState),

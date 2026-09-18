@@ -278,6 +278,14 @@ const eventSchema = new Schema(
     cfStreamRtmpsKey: { type: String, default: '', select: false },
     // Recorded Stream video UID after a Cloudflare live ends (optional).
     cfStreamVideoUid: { type: String, trim: true, default: '' },
+    // Newest Live Input video still encoding — not playable yet.
+    cfStreamPendingVideoUid: { type: String, trim: true, default: '' },
+    // When cfStreamVideoUid was saved. Older than liveStartedAt ⇒ stale previous broadcast.
+    cfStreamVideoCapturedAt: { type: Date },
+    // Duration of the saved Cloudflare VOD. Used to reject trailing ~30s clips.
+    cfStreamVideoDurationSec: { type: Number },
+    // Official Cloudflare video playback.hls for the saved VOD (never Live Input DVR).
+    cfStreamPlaybackHlsUrl: { type: String, trim: true, default: '' },
     // Website-only live background music (Cloudflare Stream events). Does not
     // mix into HLS or YouTube. Defaults keep existing events unchanged.
     backgroundMusicEnabled: { type: Boolean, default: false },
