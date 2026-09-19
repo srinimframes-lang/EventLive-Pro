@@ -34,6 +34,7 @@ export const EVENT_CATEGORIES = [
   'concert',
   'meetup',
   'sports',
+  'college',
   'other',
 ];
 
@@ -190,6 +191,15 @@ const eventSchema = new Schema(
     heroBackgroundImage: { type: String, trim: true, default: '' },
     bridePhoto: { type: String, trim: true, default: '' },
     groomPhoto: { type: String, trim: true, default: '' },
+
+    // College Annual Day template (opt-in). Unused by other templates.
+    collegeName: { type: String, trim: true, default: '', maxlength: 160 },
+    collegeLogo: { type: String, trim: true, default: '' },
+    academicYear: { type: String, trim: true, default: '', maxlength: 40 },
+    chiefGuestName: { type: String, trim: true, default: '', maxlength: 120 },
+    chiefGuestDesignation: { type: String, trim: true, default: '', maxlength: 160 },
+    principalName: { type: String, trim: true, default: '', maxlength: 120 },
+    collegeAddress: { type: String, trim: true, default: '', maxlength: 400 },
 
     // ── Photography branding ──────────────────────────────────
     studioName: { type: String, trim: true, default: '', maxlength: 120 },

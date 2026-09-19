@@ -87,7 +87,7 @@ export const eventService = {
     return data.data;
   },
 
-  /** Upload classic-wedding (or template) image. kind: hero | bride | groom */
+  /** Upload classic-wedding (or template) image. kind: hero | bride | groom | college-logo */
   async uploadTemplateImage(id, kind, file) {
     const fd = new FormData();
     fd.append('image', file);
@@ -139,6 +139,7 @@ export const EVENT_CATEGORIES = [
   'mehendi',
   'birthday',
   'housewarming',
+  'college',
   'other',
 ];
 

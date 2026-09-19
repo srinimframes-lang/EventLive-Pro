@@ -9,7 +9,12 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/format.js';
-import { normalizePageTemplate, WEDDING_TEMPLATE_OPTIONS } from '../utils/weddingTemplates.js';
+import {
+  COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION,
+  isCollegeAnnualDayTemplate,
+  normalizePageTemplate,
+  WEDDING_TEMPLATE_OPTIONS,
+} from '../utils/weddingTemplates.js';
 import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
@@ -86,6 +91,13 @@ const EMPTY = {
   heroBackgroundImage: '',
   bridePhoto: '',
   groomPhoto: '',
+  collegeName: '',
+  collegeLogo: '',
+  academicYear: '',
+  chiefGuestName: '',
+  chiefGuestDesignation: '',
+  principalName: '',
+  collegeAddress: '',
   theme: '',
   shortCode: '',
   slug: '',
@@ -113,6 +125,7 @@ export default function EventForm() {
   const heroInputRef = useRef(null);
   const bridePhotoInputRef = useRef(null);
   const groomPhotoInputRef = useRef(null);
+  const collegeLogoInputRef = useRef(null);
   const pendingCoverRef = useRef(null);
   const pendingThumbRef = useRef(null);
   const coverSourceRef = useRef(null);
@@ -122,6 +135,7 @@ export default function EventForm() {
   const pendingHeroRef = useRef(null);
   const pendingBridePhotoRef = useRef(null);
   const pendingGroomPhotoRef = useRef(null);
+  const pendingCollegeLogoRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
@@ -245,6 +259,13 @@ export default function EventForm() {
           heroBackgroundImage: event.heroBackgroundImage || '',
           bridePhoto: event.bridePhoto || '',
           groomPhoto: event.groomPhoto || '',
+          collegeName: event.collegeName || '',
+          collegeLogo: event.collegeLogo || '',
+          academicYear: event.academicYear || '',
+          chiefGuestName: event.chiefGuestName || '',
+          chiefGuestDesignation: event.chiefGuestDesignation || '',
+          principalName: event.principalName || '',
+          collegeAddress: event.collegeAddress || '',
           theme: event.theme?.id || event.theme || '',
           shortCode: event.shortCode || '',
           slug: event.slug || '',
@@ -564,19 +585,29 @@ export default function EventForm() {
     const file = e.target.files?.[0];
     if (!file) return;
     const field =
-      kind === 'hero' ? 'heroBackgroundImage' : kind === 'bride' ? 'bridePhoto' : 'groomPhoto';
+      kind === 'hero'
+        ? 'heroBackgroundImage'
+        : kind === 'bride'
+          ? 'bridePhoto'
+          : kind === 'college-logo'
+            ? 'collegeLogo'
+            : 'groomPhoto';
     const pendingRef =
       kind === 'hero'
         ? pendingHeroRef
         : kind === 'bride'
           ? pendingBridePhotoRef
-          : pendingGroomPhotoRef;
+          : kind === 'college-logo'
+            ? pendingCollegeLogoRef
+            : pendingGroomPhotoRef;
     const inputRef =
       kind === 'hero'
         ? heroInputRef
         : kind === 'bride'
           ? bridePhotoInputRef
-          : groomPhotoInputRef;
+          : kind === 'college-logo'
+            ? collegeLogoInputRef
+            : groomPhotoInputRef;
 
     if (!isEdit) {
       pendingRef.current = file;
@@ -727,6 +758,12 @@ export default function EventForm() {
       groomName: form.groomName?.trim() || '',
       pageTemplate: normalizePageTemplate(form.pageTemplate),
       chatEnabled: form.chatEnabled,
+      collegeName: form.collegeName?.trim() || '',
+      academicYear: form.academicYear?.trim() || '',
+      chiefGuestName: form.chiefGuestName?.trim() || '',
+      chiefGuestDesignation: form.chiefGuestDesignation?.trim() || '',
+      principalName: form.principalName?.trim() || '',
+      collegeAddress: form.collegeAddress?.trim() || '',
     };
 
     if (form.isOnline) {
@@ -836,12 +873,14 @@ export default function EventForm() {
     const pendingHero = pendingHeroRef.current;
     const pendingBride = pendingBridePhotoRef.current;
     const pendingGroom = pendingGroomPhotoRef.current;
+    const pendingCollegeLogo = pendingCollegeLogoRef.current;
     pendingCoverRef.current = null;
     pendingThumbRef.current = null;
     pendingLogoRef.current = null;
     pendingHeroRef.current = null;
     pendingBridePhotoRef.current = null;
     pendingGroomPhotoRef.current = null;
+    pendingCollegeLogoRef.current = null;
 
     let saved = null;
     try {
@@ -870,6 +909,9 @@ export default function EventForm() {
         if (pendingHero) uploads.push(eventService.uploadTemplateImage(saved.id, 'hero', pendingHero));
         if (pendingBride) uploads.push(eventService.uploadTemplateImage(saved.id, 'bride', pendingBride));
         if (pendingGroom) uploads.push(eventService.uploadTemplateImage(saved.id, 'groom', pendingGroom));
+        if (pendingCollegeLogo) {
+          uploads.push(eventService.uploadTemplateImage(saved.id, 'college-logo', pendingCollegeLogo));
+        }
         if (uploads.length) {
           const results = await Promise.all(uploads);
           const thumbResult = results.find((r) => r && r.shareThumbnail);
@@ -982,16 +1024,31 @@ export default function EventForm() {
 
         {/* ── Basics ─────────────────────────────────────────── */}
         <Section title="Event details">
-          <Field label="Title" htmlFor="title">
+          <Field
+            label={isCollegeAnnualDayTemplate(form.pageTemplate) ? 'Annual Day / Event Title' : 'Title'}
+            htmlFor="title"
+          >
             <input id="title" name="title" required minLength={3} maxLength={120}
               className="input" value={form.title} onChange={handleChange}
-              placeholder="e.g. Aarav & Priya — Wedding Live" />
+              placeholder={
+                isCollegeAnnualDayTemplate(form.pageTemplate)
+                  ? 'e.g. College Annual Day 2026'
+                  : 'e.g. Aarav & Priya — Wedding Live'
+              } />
           </Field>
 
-          {isEdit && (
-            <Field label="Description" htmlFor="description">
+          {(isEdit || isCollegeAnnualDayTemplate(form.pageTemplate)) && (
+            <Field
+              label={isCollegeAnnualDayTemplate(form.pageTemplate) ? 'Event Description' : 'Description'}
+              htmlFor="description"
+            >
               <textarea id="description" name="description" rows={5}
-                className="input" value={form.description} onChange={handleChange} />
+                className="input" value={form.description} onChange={handleChange}
+                placeholder={
+                  isCollegeAnnualDayTemplate(form.pageTemplate)
+                    ? 'Welcome note, programme highlights, or event description'
+                    : undefined
+                } />
             </Field>
           )}
 
@@ -1015,7 +1072,10 @@ export default function EventForm() {
             </Field>
           </div>
 
-          <Field label="Start time" htmlFor="startTime">
+          <Field
+            label={isCollegeAnnualDayTemplate(form.pageTemplate) ? 'Event Date & Time' : 'Start time'}
+            htmlFor="startTime"
+          >
             <input id="startTime" name="startTime" type="datetime-local" required
               className="input" value={form.startTime} onChange={handleChange} />
           </Field>
@@ -1036,6 +1096,9 @@ export default function EventForm() {
             >
               <option value="default">Default (current EventLive-Pro page)</option>
               <option value="classic-wedding">Classic Wedding</option>
+              <option value={COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION.id}>
+                {COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION.label}
+              </option>
               {WEDDING_TEMPLATE_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.label}
@@ -1043,6 +1106,139 @@ export default function EventForm() {
               ))}
             </select>
           </Field>
+
+          {isCollegeAnnualDayTemplate(form.pageTemplate) && (
+            <div className="mt-4 space-y-4 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+              <p className="text-sm text-amber-950">
+                College Annual Day uses a campus-style public page. Streaming still follows the
+                destinations below — the selected provider only changes playback. Live chat is the
+                checkbox in the streaming section. Gallery is managed after the event is created.
+              </p>
+              <ImageUploadField
+                label="College Logo"
+                preview={form.collegeLogo}
+                inputRef={collegeLogoInputRef}
+                uploading={uploadingTemplateImg}
+                onChange={(e) => handleTemplateImageUpload('college-logo', e)}
+              />
+              <Field label="College Name" htmlFor="collegeName">
+                <input
+                  id="collegeName"
+                  name="collegeName"
+                  className="input"
+                  maxLength={160}
+                  placeholder="e.g. St. Mary’s College"
+                  value={form.collegeName}
+                  onChange={handleChange}
+                />
+              </Field>
+              <Field label="Academic Year" htmlFor="academicYear">
+                <input
+                  id="academicYear"
+                  name="academicYear"
+                  className="input"
+                  maxLength={40}
+                  placeholder="e.g. 2025–26"
+                  value={form.academicYear}
+                  onChange={handleChange}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Chief Guest Name" htmlFor="chiefGuestName">
+                  <input
+                    id="chiefGuestName"
+                    name="chiefGuestName"
+                    className="input"
+                    maxLength={120}
+                    placeholder="e.g. Dr. Ananya Rao"
+                    value={form.chiefGuestName}
+                    onChange={handleChange}
+                  />
+                </Field>
+                <Field label="Chief Guest Designation" htmlFor="chiefGuestDesignation">
+                  <input
+                    id="chiefGuestDesignation"
+                    name="chiefGuestDesignation"
+                    className="input"
+                    maxLength={160}
+                    placeholder="e.g. Vice Chancellor"
+                    value={form.chiefGuestDesignation}
+                    onChange={handleChange}
+                  />
+                </Field>
+              </div>
+              <Field label="Principal Name" htmlFor="principalName">
+                <input
+                  id="principalName"
+                  name="principalName"
+                  className="input"
+                  maxLength={120}
+                  placeholder="e.g. Prof. R. Krishnan"
+                  value={form.principalName}
+                  onChange={handleChange}
+                />
+              </Field>
+              <Field label="College Address" htmlFor="collegeAddress">
+                <input
+                  id="collegeAddress"
+                  name="collegeAddress"
+                  className="input"
+                  maxLength={400}
+                  placeholder="e.g. MG Road, Hyderabad"
+                  value={form.collegeAddress}
+                  onChange={handleChange}
+                />
+              </Field>
+              <div>
+                <span className="mb-1 block text-sm font-medium text-slate-700">
+                  Event Banner / Cover Image
+                </span>
+                <div className="flex flex-wrap items-center gap-4">
+                  {form.coverImage ? (
+                    <img
+                      src={resolveMediaUrl(form.coverImage)}
+                      alt="Event banner"
+                      className="h-20 w-28 rounded-lg border border-slate-200 object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-20 w-28 place-items-center rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400">
+                      No banner
+                    </div>
+                  )}
+                  <div>
+                    <input
+                      ref={coverInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCoverUpload}
+                      className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                      disabled={uploadingCover}
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      {uploadingCover
+                        ? 'Uploading…'
+                        : isEdit
+                          ? 'Wide banner shown behind the Annual Day title. JPG/PNG, up to 8 MB.'
+                          : 'Select a banner — it will upload when you create the event.'}
+                    </p>
+                  </div>
+                </div>
+                <YoutubeThumbnailPreview
+                  coverSrc={form.coverImage}
+                  previewSrc={thumbPreview || form.shareThumbnail}
+                  generating={generatingThumb}
+                  saving={uploadingThumb}
+                  dirty={thumbDirty}
+                  hasCover={Boolean(form.coverImage || coverSourceRef.current || pendingCoverRef.current)}
+                  stored={Boolean(form.shareThumbnail)}
+                  error={thumbError}
+                  onRegenerate={handleRegenerateThumbnail}
+                  onSave={handleSaveThumbnail}
+                  onDownload={handleDownloadThumbnail}
+                />
+              </div>
+            </div>
+          )}
 
           {form.pageTemplate === 'classic-wedding' && (
             <div className="mt-4 space-y-4 rounded-xl border border-teal-100 bg-teal-50/50 p-4">
@@ -1078,7 +1274,7 @@ export default function EventForm() {
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
           title="Choose a theme"
-          subtitle="10 premium layout themes — optional; pick one for a custom live page design. Ignored when Classic Wedding page template is selected."
+          subtitle="10 premium layout themes — optional; pick one for a custom live page design. Ignored when Classic Wedding or College Annual Day is selected."
         >
           <ThemeGallery
             themes={allThemes}
@@ -1092,6 +1288,7 @@ export default function EventForm() {
         </Section>
 
         {/* ── Couple ─────────────────────────────────────────── */}
+        {!isCollegeAnnualDayTemplate(form.pageTemplate) && (
         <Section title="The couple" subtitle="Shown on the live watch page.">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Bride's name" htmlFor="brideName">
@@ -1156,6 +1353,7 @@ export default function EventForm() {
             />
           </div>
         </Section>
+        )}
 
         {/* ── Streaming ──────────────────────────────────────── */}
         <Section title="Live stream">

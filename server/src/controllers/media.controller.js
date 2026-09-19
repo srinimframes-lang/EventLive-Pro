@@ -398,6 +398,7 @@ const TEMPLATE_IMAGE_FIELDS = {
   hero: 'heroBackgroundImage',
   bride: 'bridePhoto',
   groom: 'groomPhoto',
+  'college-logo': 'collegeLogo',
 };
 
 /**
@@ -413,7 +414,7 @@ export const uploadTemplateImage = asyncHandler(async (req, res) => {
   const field = TEMPLATE_IMAGE_FIELDS[String(req.params.kind || '').toLowerCase()];
   if (!field) {
     res.status(400);
-    throw new Error('Invalid image kind (use hero, bride, or groom)');
+    throw new Error('Invalid image kind (use hero, bride, groom, or college-logo)');
   }
 
   if (!req.file) {

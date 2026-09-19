@@ -34,6 +34,7 @@ export const PUBLIC_EVENT_TYPE_LABELS = {
   corporate: 'CORPORATE LIVE',
   temple: 'TEMPLE LIVE',
   memorial: 'MEMORIAL LIVE',
+  college: 'ANNUAL DAY LIVE',
 };
 
 /**

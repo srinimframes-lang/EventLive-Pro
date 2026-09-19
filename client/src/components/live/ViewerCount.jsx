@@ -1,4 +1,4 @@
-export default function ViewerCount({ count, isLive, isRecorded = false }) {
+export default function ViewerCount({ count, isLive, isRecorded = false, recordedLabel = 'Recorded' }) {
   let badge;
   if (isLive) {
     badge = (
@@ -10,7 +10,7 @@ export default function ViewerCount({ count, isLive, isRecorded = false }) {
   } else if (isRecorded) {
     badge = (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white">
-        Recorded
+        {recordedLabel}
       </span>
     );
   } else {

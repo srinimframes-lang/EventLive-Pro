@@ -1,0 +1,399 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,500&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+
+body.watch-college-annual-day {
+  background: #071422;
+}
+
+.college-annual-day {
+  --cad-navy: #071422;
+  --cad-ink: #10233d;
+  --cad-paper: #f7f3ea;
+  --cad-gold: #c9a227;
+  --cad-gold-soft: #e8d48a;
+  --cad-muted: #5c6b7a;
+  --cad-card: #fffdf8;
+  --cad-line: rgba(201, 162, 39, 0.35);
+  --cad-font-display: 'Cinzel', 'Palatino Linotype', Palatino, serif;
+  --cad-font-serif: 'Source Serif 4', Georgia, serif;
+  --cad-font-body: 'Source Sans 3', system-ui, sans-serif;
+  color: var(--cad-ink);
+  background: var(--cad-paper);
+  font-family: var(--cad-font-body);
+}
+
+.cad-header {
+  background:
+    linear-gradient(180deg, rgba(7, 20, 34, 0.18), rgba(7, 20, 34, 0.55)),
+    linear-gradient(135deg, #0b1f3a 0%, #16345c 52%, #0b1f3a 100%);
+  color: #f8f1dc;
+  padding: 1.25rem 1rem 1.5rem;
+  border-bottom: 3px solid var(--cad-gold);
+}
+
+.cad-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.cad-logo {
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 999px;
+  object-fit: contain;
+  background: #fffdf8;
+  padding: 0.35rem;
+  border: 2px solid var(--cad-gold);
+  flex-shrink: 0;
+}
+
+.cad-logo-fallback {
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 253, 248, 0.12);
+  border: 2px solid var(--cad-gold);
+  color: var(--cad-gold-soft);
+  font-family: var(--cad-font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cad-college-name {
+  margin: 0;
+  font-family: var(--cad-font-display);
+  font-size: clamp(1.15rem, 3.4vw, 1.85rem);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.cad-kicker {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cad-gold-soft);
+}
+
+.cad-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(58svh, 520px);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.cad-hero-bg,
+.cad-hero-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+.cad-hero-fallback {
+  background:
+    radial-gradient(ellipse at 20% 10%, #2a4a78 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 80%, #7a5a18 0%, transparent 42%),
+    linear-gradient(160deg, #10233d 0%, #1d3a5c 60%, #0b1f3a 100%);
+}
+
+.cad-hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(7, 20, 34, 0.15) 0%, rgba(7, 20, 34, 0.82) 88%);
+}
+
+.cad-hero-inner {
+  position: relative;
+  z-index: 2;
+  width: min(72rem, calc(100% - 2rem));
+  margin: 0 auto 2rem;
+  color: #fff8e8;
+}
+
+.cad-year {
+  display: inline-flex;
+  margin-bottom: 0.7rem;
+  padding: 0.28rem 0.75rem;
+  border: 1px solid var(--cad-gold);
+  border-radius: 999px;
+  color: var(--cad-gold-soft);
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.cad-title {
+  margin: 0;
+  font-family: var(--cad-font-display);
+  font-size: clamp(1.8rem, 6vw, 3.4rem);
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+}
+
+.cad-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.15rem;
+  margin-top: 1rem;
+  font-family: var(--cad-font-serif);
+  font-size: 1.05rem;
+}
+
+.cad-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cad-status.is-live {
+  background: #dc2626;
+  color: #fff;
+}
+
+.cad-status.is-replay {
+  background: #4338ca;
+  color: #fff;
+}
+
+.cad-status.is-upcoming {
+  background: rgba(255, 248, 232, 0.16);
+  color: var(--cad-gold-soft);
+  border: 1px solid var(--cad-line);
+}
+
+.cad-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.cad-status.is-live .cad-status-dot {
+  animation: cad-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cad-pulse {
+  50% { opacity: 0.35; }
+}
+
+.cad-section {
+  width: min(72rem, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.4rem 0;
+}
+
+.cad-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.cad-section-title {
+  margin: 0;
+  font-family: var(--cad-font-display);
+  font-size: clamp(1.25rem, 3vw, 1.7rem);
+  letter-spacing: 0.04em;
+}
+
+.cad-rule {
+  height: 2px;
+  width: 4.5rem;
+  margin: 0.55rem 0 0;
+  background: linear-gradient(90deg, var(--cad-gold), transparent);
+}
+
+.cad-guest-card,
+.cad-info-card,
+.cad-player-frame,
+.cad-chat-card {
+  background: var(--cad-card);
+  border: 1px solid var(--cad-line);
+  border-radius: 1.15rem;
+  box-shadow: 0 12px 32px rgba(16, 35, 61, 0.08);
+}
+
+.cad-guest-card {
+  padding: 1.5rem 1.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cad-guest-label {
+  margin: 0;
+  color: var(--cad-gold);
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.cad-guest-name {
+  margin: 0;
+  font-family: var(--cad-font-serif);
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.cad-guest-role {
+  margin: 0;
+  color: var(--cad-muted);
+  font-size: 1rem;
+}
+
+.cad-info-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 720px) {
+  .cad-info-grid {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+}
+
+.cad-info-card {
+  padding: 1.35rem 1.3rem;
+}
+
+.cad-info-card p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.65;
+  font-size: 1.02rem;
+}
+
+.cad-facts {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.cad-fact dt {
+  margin: 0;
+  color: var(--cad-gold);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.cad-fact dd {
+  margin: 0.2rem 0 0;
+  font-family: var(--cad-font-serif);
+  font-size: 1.05rem;
+}
+
+.cad-player-frame {
+  overflow: hidden;
+}
+
+.cad-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.cad-studio-link {
+  color: var(--cad-ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cad-empty {
+  margin: 0;
+  color: var(--cad-muted);
+  font-size: 0.95rem;
+}
+
+.cad-chat-card {
+  overflow: hidden;
+}
+
+.cad-chat-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--cad-line);
+}
+
+.cad-chat-tab {
+  flex: 1;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  border: 0;
+  color: var(--cad-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cad-chat-tab.is-active {
+  color: var(--cad-ink);
+  box-shadow: inset 0 -2px 0 var(--cad-gold);
+}
+
+.cad-chat-body {
+  min-height: 22rem;
+}
+
+.cad-footer {
+  background: var(--cad-navy);
+  color: #f4ead0;
+  text-align: center;
+  padding: 2rem 1rem 2.4rem;
+  border-top: 3px solid var(--cad-gold);
+}
+
+.cad-footer-names {
+  margin: 0;
+  font-family: var(--cad-font-display);
+  letter-spacing: 0.05em;
+}
+
+.cad-footer-meta {
+  margin: 0.4rem 0 0;
+  color: #d4c39a;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 640px) {
+  .cad-header-inner {
+    align-items: flex-start;
+  }
+
+  .cad-logo,
+  .cad-logo-fallback {
+    width: 3.4rem;
+    height: 3.4rem;
+  }
+
+  .cad-section {
+    padding: 1.7rem 0;
+  }
+
+  .cad-section-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

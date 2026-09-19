@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  COLLEGE_ANNUAL_DAY_TEMPLATE,
   DEFAULT_WEDDING_CARD_TEMPLATE,
   EVENT_TYPE_TEMPLATES,
   combineWeddingCardStartTime,
+  isCollegeAnnualDayTemplate,
   isManualWeddingEntry,
+  isPremiumCeremonyTemplate,
   isWeddingPageTemplate,
   normalizeManualWeddingCategory,
   resolveWatchWeddingTemplate,
@@ -25,6 +28,7 @@ test('wedding page template enum includes default, classic, wedding, and type te
     'sangeet-template-1',
     'birthday-template-1',
     'other-template-1',
+    'college-annual-day',
   ]);
 });
 
@@ -181,6 +185,24 @@ test('uploaded wedding-card events stay on the wedding template even if category
       source: 'wedding-card',
       category: 'reception',
       pageTemplate: 'default',
+    }),
+    DEFAULT_WEDDING_CARD_TEMPLATE
+  );
+});
+
+test('college annual day is a standalone template and does not replace wedding pages', () => {
+  assert.equal(isCollegeAnnualDayTemplate(COLLEGE_ANNUAL_DAY_TEMPLATE), true);
+  assert.equal(isCollegeAnnualDayTemplate('classic-wedding'), false);
+  assert.equal(isWeddingPageTemplate(COLLEGE_ANNUAL_DAY_TEMPLATE), false);
+  assert.equal(isPremiumCeremonyTemplate(COLLEGE_ANNUAL_DAY_TEMPLATE), false);
+  assert.equal(
+    resolveWatchWeddingTemplate({ pageTemplate: COLLEGE_ANNUAL_DAY_TEMPLATE }, { hasTheme: true }),
+    ''
+  );
+  assert.equal(
+    resolveWatchWeddingTemplate({
+      source: 'wedding-card',
+      pageTemplate: COLLEGE_ANNUAL_DAY_TEMPLATE,
     }),
     DEFAULT_WEDDING_CARD_TEMPLATE
   );

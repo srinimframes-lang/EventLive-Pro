@@ -32,6 +32,14 @@ export const TYPE_PAGE_TEMPLATES = [
   EVENT_TYPE_TEMPLATES.other,
 ];
 
+/** Standalone college public page. Not a wedding/ceremony template. */
+export const COLLEGE_ANNUAL_DAY_TEMPLATE = 'college-annual-day';
+
+export const COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION = {
+  id: COLLEGE_ANNUAL_DAY_TEMPLATE,
+  label: 'College Annual Day',
+};
+
 export const EVENT_TYPE_COPY = {
   wedding: { kicker: 'Wedding Live', conjunction: 'Weds', eventTitle: '', player: 'Live Ceremony' },
   reception: { kicker: 'Reception Live', conjunction: '&', eventTitle: 'Reception', player: 'Live Reception' },
@@ -81,6 +89,10 @@ export function isPremiumCeremonyTemplate(id) {
   return isWeddingPageTemplate(id) || isTypePageTemplate(id);
 }
 
+export function isCollegeAnnualDayTemplate(id) {
+  return String(id || '') === COLLEGE_ANNUAL_DAY_TEMPLATE;
+}
+
 export function weddingCardPageTemplate(existing) {
   const current = String(existing || '');
   if (isWeddingPageTemplate(current)) return current;
@@ -95,7 +107,13 @@ export function ceremonyPageTemplate(category, existing) {
 
 export function normalizePageTemplate(id) {
   const value = String(id || '');
-  if (value === 'classic-wedding' || isPremiumCeremonyTemplate(value)) return value;
+  if (
+    value === 'classic-wedding' ||
+    isCollegeAnnualDayTemplate(value) ||
+    isPremiumCeremonyTemplate(value)
+  ) {
+    return value;
+  }
   return 'default';
 }
 
@@ -119,7 +137,7 @@ export function resolveWatchWeddingTemplate(event, { hasTheme = false } = {}) {
   }
 
   if (isPremiumCeremonyTemplate(current)) return current;
-  if (current === 'classic-wedding') return '';
+  if (current === 'classic-wedding' || isCollegeAnnualDayTemplate(current)) return '';
   if (hasTheme) return '';
   return '';
 }

@@ -7,6 +7,7 @@ import { useLiveRoom } from '../hooks/useLiveRoom.js';
 import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../utils/format.js';
 import { hasEventTheme, ensureSafeEventTheme, publicEventTypeLabel } from '../utils/eventTheme.js';
 import { resolveWatchWeddingTemplate } from '../utils/weddingTemplates.js';
+import { isCollegeAnnualDayTemplate } from '../utils/collegeAnnualDay.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
 import StreamingDetailsBox from '../components/live/StreamingDetailsBox.jsx';
@@ -32,6 +33,7 @@ const PhotoGallery = lazy(() => import('../components/PhotoGallery.jsx'));
 const ThemedWatchLayout = lazy(() => import('../components/ThemedWatchLayout.jsx'));
 const ClassicWeddingPage = lazy(() => import('../components/classic-wedding/ClassicWeddingPage.jsx'));
 const WeddingTemplatePage = lazy(() => import('../components/wedding-templates/WeddingTemplatePage.jsx'));
+const CollegeAnnualDayPage = lazy(() => import('../components/college-annual-day/CollegeAnnualDayPage.jsx'));
 
 function PanelFallback() {
   return <p className="p-4 text-center text-sm text-slate-500">Loading…</p>;
@@ -176,18 +178,21 @@ export default function Watch() {
   const themed = hasEventTheme(event);
   const weddingTemplateId = resolveWatchWeddingTemplate(event, { hasTheme: themed });
   const isClassicWedding = event?.pageTemplate === 'classic-wedding' && !weddingTemplateId;
+  const isCollegeAnnualDay = isCollegeAnnualDayTemplate(event?.pageTemplate) && !weddingTemplateId;
 
   useEffect(() => {
-    if (!themed && !isClassicWedding && !weddingTemplateId) return undefined;
+    if (!themed && !isClassicWedding && !weddingTemplateId && !isCollegeAnnualDay) return undefined;
     document.body.classList.add('watch-themed');
     if (isClassicWedding) document.body.classList.add('watch-classic-wedding');
     if (weddingTemplateId) document.body.classList.add('watch-wedding-template');
+    if (isCollegeAnnualDay) document.body.classList.add('watch-college-annual-day');
     return () => {
       document.body.classList.remove('watch-themed');
       document.body.classList.remove('watch-classic-wedding');
       document.body.classList.remove('watch-wedding-template');
+      document.body.classList.remove('watch-college-annual-day');
     };
-  }, [themed, isClassicWedding, weddingTemplateId]);
+  }, [themed, isClassicWedding, weddingTemplateId, isCollegeAnnualDay]);
 
   if (error)
     return (
@@ -202,6 +207,44 @@ export default function Watch() {
   const watchUrl = buildWatchUrl(event);
   const chatOn = event.chatEnabled !== false;
   const activeTab = chatOn ? tab : 'qa';
+
+  // Opt-in College Annual Day template — visual layer only; player is unchanged.
+  if (isCollegeAnnualDay) {
+    return (
+      <>
+        <FailoverToast
+          message={room.failoverNotice}
+          visible={Boolean(room.failoverNotice)}
+          onDismiss={room.clearFailoverNotice}
+        />
+        {showRecovery ? (
+          <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-4">
+            <FailoverRecoveryBanner
+              visible
+              busy={emergencyBusy}
+              onContinueYoutube={() => runEmergency('continue_youtube')}
+              onSwitchServer={() => runEmergency('switch_server')}
+            />
+          </div>
+        ) : null}
+        <Suspense fallback={<ThemeLoadingScreen label="Loading annual day page…" />}>
+          <CollegeAnnualDayPage
+            event={event}
+            watchUrl={watchUrl}
+            mergedConfig={mergedConfig}
+            room={room}
+            chatOn={chatOn}
+            activeTab={activeTab}
+            setTab={setTab}
+            canAnswer={canAnswer}
+            onLiveUiChange={handleLiveUiChange}
+            displayIsLive={displayIsLive}
+            isRecordedReplay={isRecordedReplay}
+          />
+        </Suspense>
+      </>
+    );
+  }
 
   // Opt-in Classic Wedding template — does not affect default or other themes.
   if (isClassicWedding) {
