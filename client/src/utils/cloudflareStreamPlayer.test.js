@@ -191,3 +191,12 @@ test('Live Input UID is never used as the recorded iframe UID', () => {
   assert.equal(selected.mode, 'recording-preparing');
   assert.equal(buildCloudflareStreamIframeUrl({ originUrl: ORIGIN_HLS, uid: '', mode: 'recorded' }), '');
 });
+
+test('external embed leftover Cloudflare fields do not take the watch surface', () => {
+  const config = liveConfig({
+    streamingProvider: 'external_embed',
+    viewerPlayback: 'external_embed',
+  });
+  assert.equal(selectCloudflareStreamPlayer({ config }), null);
+  assert.equal(selectWatchPlayerSurface(config).surface, 'other');
+});

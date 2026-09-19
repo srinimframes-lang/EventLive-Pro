@@ -84,6 +84,10 @@ import {
   youtubeWatchUrl,
 } from '../services/youtubeLiveApi.js';
 import {
+  isExternalEmbedEvent,
+  resolveExternalEmbedPlayback,
+} from '../utils/externalEmbed.js';
+import {
   DEFAULT_FACEBOOK_RTMP,
   listEnabledForwardTargets,
   buildForwardTarget,
@@ -178,7 +182,78 @@ function preferredStoredYoutubeWatchUrl(event, storedId) {
 /**
  * Public-safe view of an event's streaming configuration (no secret key).
  */
+function publicExternalEmbedStreamConfig(event) {
+  const playback = resolveExternalEmbedPlayback(event);
+  const ended = event.status === 'ended' || event.status === 'cancelled';
+  const upcoming = event.status === 'published' || event.status === 'draft';
+  const isLive = ended
+    ? Boolean(event.isLive)
+    : event.status === 'live' || Boolean(event.isLive);
+  const playbackMode = isLive ? 'live' : ended ? 'offline' : upcoming ? 'offline' : 'offline';
+  return {
+    eventId: event.id,
+    provider: 'none',
+    streamingProvider: 'external_embed',
+    viewerPlayback: 'external_embed',
+    liveIngestProvider: undefined,
+    streamingDestination: undefined,
+    externalEmbedType: playback.type,
+    externalEmbedUrl: playback.type === 'iframe' ? playback.url : '',
+    externalHlsUrl: playback.type === 'hls' ? playback.url : '',
+    youtubeVideoId: '',
+    youtubeBroadcastId: '',
+    youtubeWatchUrl: '',
+    streamUrl: '',
+    hlsUrl: playback.type === 'hls' ? playback.url : '',
+    playbackUrl: playback.url,
+    poster: event.coverImage || '',
+    isLive,
+    reconnecting: false,
+    isPublishing: isLive || undefined,
+    streamDisabled: event.streamDisabled,
+    status: event.status,
+    playbackMode,
+    recordingUrl: '',
+    recordings: [],
+    hasRecording: false,
+    recordingAvailable: false,
+  };
+}
+
+function publicMuxStreamConfig(event) {
+  const ended = event.status === 'ended' || event.status === 'cancelled';
+  const isLive = ended ? Boolean(event.isLive) : event.status === 'live' || Boolean(event.isLive);
+  return {
+    eventId: event.id,
+    provider: 'none',
+    streamingProvider: 'mux',
+    viewerPlayback: 'mux',
+    liveIngestProvider: undefined,
+    streamingDestination: undefined,
+    youtubeVideoId: '',
+    youtubeBroadcastId: '',
+    youtubeWatchUrl: '',
+    streamUrl: '',
+    hlsUrl: '',
+    playbackUrl: '',
+    poster: event.coverImage || '',
+    isLive,
+    reconnecting: false,
+    streamDisabled: event.streamDisabled,
+    status: event.status,
+    playbackMode: isLive ? 'live' : 'offline',
+    recordingUrl: '',
+    recordings: [],
+  };
+}
+
 function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null, playableParts = null } = {}) {
+  if (isExternalEmbedEvent(event)) {
+    return publicExternalEmbedStreamConfig(event);
+  }
+  if (String(event.streamingProvider || '') === 'mux') {
+    return publicMuxStreamConfig(event);
+  }
   const storedId = resolvePublicYoutubeVideoId(event);
   const playbackId = youtubePlayback?.videoId || '';
   const playbackMatchesStored = !storedId || !playbackId || playbackId === storedId;
@@ -282,6 +357,7 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
   const base = {
     eventId: event.id,
     provider,
+    streamingProvider: event.streamingProvider || undefined,
     liveIngestProvider: event.liveIngestProvider || undefined,
     streamingDestination: event.streamingDestination || undefined,
     // Cloudflare Stream public player is the official iframe, not YouTube or MediaMTX HLS.
@@ -433,6 +509,9 @@ function adminRecordingConfig(event) {
 }
 
 export async function publishingStatusForEvent(event, deps = {}) {
+  if (isExternalEmbedEvent(event) || String(event.streamingProvider || '') === 'mux') {
+    return event.status === 'live' || Boolean(event.isLive);
+  }
   if (isCloudflareStreamLive(event)) {
     const uid = String(event.cfStreamLiveInputId || '').trim();
     if (!uid) return null;

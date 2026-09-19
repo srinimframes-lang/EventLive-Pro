@@ -72,6 +72,20 @@ test('isCloudflareStreamLive is opt-in only', () => {
   assert.equal(isCloudflareStreamLive({}), false);
   assert.equal(isCloudflareStreamLive({ liveIngestProvider: 'mediamtx' }), false);
   assert.equal(isCloudflareStreamLive({ liveIngestProvider: 'cloudflare_stream' }), true);
+  assert.equal(
+    isCloudflareStreamLive({
+      liveIngestProvider: 'cloudflare_stream',
+      streamingProvider: 'external_embed',
+    }),
+    false,
+  );
+  assert.equal(
+    isCloudflareStreamLive({
+      liveIngestProvider: 'cloudflare_stream',
+      streamingProvider: 'mux',
+    }),
+    false,
+  );
 });
 
 test('deriveHlsPlaybackUrl appends dvrEnabled=true to Cloudflare HLS', () => {

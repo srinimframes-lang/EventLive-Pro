@@ -28,6 +28,7 @@ import {
   failoverBackupVideoId,
   shouldPlayYoutubeBackup,
 } from '../../utils/streamFailover.js';
+import { selectExternalEmbedPlayer } from '../../utils/externalEmbed.js';
 import {
   clearPlaybackPosition,
   loadLiveDvrIntent,
@@ -212,6 +213,26 @@ function formatClock(totalSec) {
   const sec = s % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function ExternalEmbedIframe({ url }) {
+  const src = String(url || '').trim();
+  if (!src) {
+    return <Offline message="External embed URL is missing." />;
+  }
+  return (
+    <Frame>
+      <iframe
+        className="absolute inset-0 h-full w-full border-0"
+        src={src}
+        title="External live stream"
+        referrerPolicy="strict-origin-when-cross-origin"
+        sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        allowFullScreen
+      />
+    </Frame>
+  );
 }
 
 function YouTubePlayer({ videoId }) {
@@ -2304,6 +2325,34 @@ function LivePlayerView({ config, onLiveUiChange }) {
 
   if (config.streamDisabled) {
     return <Offline message="This live stream has been disabled." />;
+  }
+
+  const externalPlayer = selectExternalEmbedPlayer(config);
+  if (externalPlayer) {
+    if (externalPlayer.mode === 'hls' && externalPlayer.url) {
+      return (
+        <HlsPlayer
+          src={externalPlayer.url}
+          poster={config.poster || ''}
+          isLive={Boolean(config.isLive) || config.status === 'live'}
+          eventId={config.eventId || ''}
+        />
+      );
+    }
+    if (externalPlayer.mode === 'iframe' && externalPlayer.url) {
+      return <ExternalEmbedIframe url={externalPlayer.url} />;
+    }
+    if (config.status === 'ended' || config.status === 'cancelled') {
+      return <Offline message={ENDED_MSG} />;
+    }
+    if (config.status === 'published' || config.status === 'draft') {
+      return <Offline message={SERVER_WAITING_MSG} />;
+    }
+    return <Offline message={OFFLINE_MSG} />;
+  }
+
+  if (String(config.streamingProvider || '') === 'mux' || String(config.viewerPlayback || '') === 'mux') {
+    return <Offline message="Mux playback is not configured for this event." />;
   }
 
   const poster = config.poster || '';

@@ -13,6 +13,10 @@ function youtubeIdFromPayload(payload = {}) {
 
 /** Resolve stream type from request body (`streamType`, `linkType`, or destination). */
 export function normalizeStreamType(body = {}) {
+  const provider = String(body.streamingProvider || '').trim().toLowerCase().replace(/-/g, '_');
+  if (provider === 'external_embed') return 'external_embed';
+  if (provider === 'mux') return 'mux';
+
   const fromDest = normalizeStreamingDestination(body.streamingDestination);
   if (fromDest) return fromDest;
 
@@ -21,11 +25,15 @@ export function normalizeStreamType(body = {}) {
   if (raw === 'youtube') return 'youtube';
   if (raw === 'server_youtube') return 'server_youtube';
   if (raw === 'youtube_server') return 'youtube_server';
+  if (raw === 'external_embed') return 'external_embed';
+  if (raw === 'mux') return 'mux';
   return normalizeStreamingDestination(raw);
 }
 
 /** Map stored event fields back to form stream / destination type. */
 export function streamTypeFromEvent(event = {}) {
+  if (event.streamingProvider === 'external_embed') return 'external_embed';
+  if (event.streamingProvider === 'mux') return 'mux';
   const dest = normalizeStreamingDestination(event.streamingDestination);
   if (dest) return dest;
 
@@ -109,6 +117,24 @@ export function applyStreamTypeSelection(payload, streamType, { isCreate = false
       payload.hlsUrl = '';
       payload.webrtcUrl = '';
     }
+    return;
+  }
+
+  if (streamType === 'external_embed') {
+    payload.streamProvider = 'none';
+    payload.streamingDestination = undefined;
+    payload.streamingProvider = 'external_embed';
+    payload.youtubeForwardEnabled = false;
+    if (payload.creditType !== 'none') payload.creditType = 'none';
+    return;
+  }
+
+  if (streamType === 'mux') {
+    payload.streamingProvider = 'mux';
+    payload.streamProvider = 'none';
+    payload.streamingDestination = undefined;
+    payload.youtubeForwardEnabled = false;
+    if (payload.creditType !== 'none') payload.creditType = 'none';
   }
 }
 
@@ -116,6 +142,8 @@ export function validateOnlineStreamPayload(payload, streamType, options = {}) {
   if (payload.isOnline === false) return null;
   const resolved = streamType || inferStreamTypeFromPayload(payload);
   if (!resolved) return 'Stream type is required for online events.';
+  if (resolved === 'external_embed') return null;
+  if (resolved === 'mux') return null;
   if (resolved === 'youtube' || resolved === 'youtube_server') {
     const yid = youtubeIdFromPayload(payload);
     if (!yid && !options.allowMissingYoutubeUrl) {
@@ -128,6 +156,8 @@ export function validateOnlineStreamPayload(payload, streamType, options = {}) {
 }
 
 function inferStreamTypeFromPayload(payload) {
+  if (payload.streamingProvider === 'external_embed') return 'external_embed';
+  if (payload.streamingProvider === 'mux') return 'mux';
   const dest = normalizeStreamingDestination(payload.streamingDestination);
   if (dest) return dest;
   const yid = youtubeIdFromPayload(payload);

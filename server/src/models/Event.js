@@ -265,6 +265,19 @@ const eventSchema = new Schema(
       type: String,
       enum: ['server', 'youtube', 'server_youtube', 'youtube_server'],
     },
+    // Admin-facing provider. Additive — missing on legacy docs is fine.
+    streamingProvider: {
+      type: String,
+      enum: ['cloudflare_stream', 'mux', 'external_embed', 'youtube', 'mediamtx'],
+    },
+    externalEmbedUrl: { type: String, trim: true, default: '' },
+    externalEmbedHtml: { type: String, trim: true, default: '', maxlength: 2000 },
+    externalHlsUrl: { type: String, trim: true, default: '' },
+    externalEmbedType: {
+      type: String,
+      enum: ['iframe', 'hls'],
+      default: 'iframe',
+    },
     // YouTube RTMP ingest (for OBS→YouTube or MediaMTX→YouTube forward).
     youtubeRtmpUrl: { type: String, trim: true, default: '' },
     // YouTube stream key — never returned unless explicitly selected.

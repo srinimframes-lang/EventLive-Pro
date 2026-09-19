@@ -59,6 +59,24 @@ test('youtube URL is not required when OAuth auto-create is allowed', () => {
   );
 });
 
+test('external_embed and mux normalize from streamingProvider', () => {
+  assert.equal(normalizeStreamType({ streamingProvider: 'external_embed' }), 'external_embed');
+  assert.equal(normalizeStreamType({ streamingProvider: 'mux', streamType: 'server' }), 'mux');
+  assert.equal(validateOnlineStreamPayload({ isOnline: true }, 'external_embed'), null);
+  assert.equal(validateOnlineStreamPayload({ isOnline: true }, 'mux'), null);
+
+  const embed = {};
+  applyStreamTypeSelection(embed, 'external_embed', { isCreate: true });
+  assert.equal(embed.streamProvider, 'none');
+  assert.equal(embed.streamingProvider, 'external_embed');
+  assert.equal(embed.youtubeForwardEnabled, false);
+
+  const mux = {};
+  applyStreamTypeSelection(mux, 'mux', { isCreate: true });
+  assert.equal(mux.streamProvider, 'none');
+  assert.equal(mux.streamingProvider, 'mux');
+});
+
 test('existing modes unchanged', () => {
   const server = {};
   applyStreamTypeSelection(server, 'server', { isCreate: true });

@@ -66,6 +66,14 @@ function playbackOriginUrl(config) {
 
 export function isCloudflareStreamEventConfig(config) {
   if (!config) return false;
+  if (
+    String(config.streamingProvider || '') === 'external_embed' ||
+    String(config.viewerPlayback || '') === 'external_embed' ||
+    String(config.streamingProvider || '') === 'mux' ||
+    String(config.viewerPlayback || '') === 'mux'
+  ) {
+    return false;
+  }
   if (String(config.liveIngestProvider || '') === 'cloudflare_stream') return true;
   if (String(config.viewerPlayback || '') === 'cloudflare_stream') return true;
   if (

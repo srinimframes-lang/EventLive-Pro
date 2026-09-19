@@ -34,6 +34,39 @@ import {
 import { createEventWithCloudflareLive, deleteCloudflareLiveInputForEvent, syncCloudflareSimulcastOutputs } from '../services/cloudflareStream.js';
 import { loadUserCredential } from '../utils/youtubeOauth.js';
 import { applyCollegeTemplateFields } from '../utils/collegeAnnualDay.js';
+import {
+  applyExternalEmbedFields,
+  applyMuxFields,
+  clearExternalEmbedFields,
+  inferStreamingProvider,
+  normalizeStreamingProvider,
+  validateExternalEmbedPayload,
+} from '../utils/externalEmbed.js';
+
+function applyStreamingProviderSelection(target, body, res) {
+  const explicit = normalizeStreamingProvider(body.streamingProvider);
+  const provider = explicit || inferStreamingProvider(target);
+  if (!provider) return provider;
+  target.streamingProvider = provider;
+  if (provider === 'mediamtx') {
+    target.liveIngestProvider = 'mediamtx';
+  }
+  if (provider === 'mux') {
+    applyMuxFields(target);
+    if (explicit) clearExternalEmbedFields(target);
+  }
+  if (provider === 'external_embed') {
+    const embedError = validateExternalEmbedPayload(body);
+    if (embedError) {
+      res.status(400);
+      throw new Error(embedError);
+    }
+    applyExternalEmbedFields(target, body);
+  } else if (explicit) {
+    clearExternalEmbedFields(target);
+  }
+  return provider;
+}
 
 const EDITABLE_FIELDS = [
   'title',
@@ -80,6 +113,11 @@ const EDITABLE_FIELDS = [
   'studioYoutube',
   'studioMapsUrl',
   'streamProvider',
+  'streamingProvider',
+  'externalEmbedUrl',
+  'externalEmbedHtml',
+  'externalHlsUrl',
+  'externalEmbedType',
   'youtubeVideoId',
   'hlsUrl',
   'webrtcUrl',
@@ -476,7 +514,7 @@ export const createEvent = asyncHandler(async (req, res) => {
 
   const streamType = resolveStreamType(req.body, payload);
   let youtubeIngest = null;
-  if (!manualVideoId) {
+  if (!manualVideoId && streamType !== 'external_embed' && streamType !== 'mux') {
     try {
       youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, payload, streamType, {
         cloudflareVideoOnlyYoutube: streamType === 'server',
@@ -503,6 +541,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     throw new Error(streamError);
   }
   if (streamType) applyStreamTypeSelection(payload, streamType, { isCreate: true });
+  applyStreamingProviderSelection(payload, req.body, res);
   const forwardErr = applyYoutubeForwardFields(payload, req.body, { isCreate: true });
   if (forwardErr) {
     res.status(400);
@@ -691,7 +730,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
   let youtubeIngest = null;
   const storedOrManualId =
     manualVideoId || extractYouTubeId(event.youtubeVideoId) || existingVideoId;
-  if (!storedOrManualId) {
+  if (!storedOrManualId && streamType !== 'external_embed' && streamType !== 'mux') {
     try {
       youtubeIngest = await provisionYoutubeLiveIfNeeded(req.user, event, streamType, {
         existingVideoId,
@@ -718,6 +757,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     }
     applyStreamTypeSelection(event, streamType);
   }
+  applyStreamingProviderSelection(event, req.body, res);
   const forwardErr = applyYoutubeForwardFields(event, req.body, { isCreate: false });
   if (forwardErr) {
     res.status(400);

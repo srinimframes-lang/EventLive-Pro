@@ -49,6 +49,8 @@ export function mediamtxPathName(streamKey) {
 
 /** True when this event uses Cloudflare Stream Live ingest (not MediaMTX). */
 export function isCloudflareStreamLive(event = {}) {
+  const provider = String(event.streamingProvider || '').trim();
+  if (provider === 'external_embed' || provider === 'mux') return false;
   return String(event.liveIngestProvider || '') === 'cloudflare_stream';
 }
 

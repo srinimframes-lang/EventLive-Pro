@@ -82,6 +82,38 @@ test('shouldProvisionCloudflareLive for all new Server-related destinations', ()
   );
   assert.equal(shouldProvisionCloudflareLive({ streamProvider: 'rtmp' }), false);
   assert.equal(shouldProvisionCloudflareLive({}), false);
+  assert.equal(
+    shouldProvisionCloudflareLive({
+      streamProvider: 'rtmp',
+      streamingDestination: 'server',
+      streamingProvider: 'external_embed',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldProvisionCloudflareLive({
+      streamProvider: 'rtmp',
+      streamingDestination: 'server',
+      streamingProvider: 'mux',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldProvisionCloudflareLive({
+      streamProvider: 'rtmp',
+      streamingDestination: 'server',
+      streamingProvider: 'mediamtx',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldProvisionCloudflareLive({
+      streamProvider: 'youtube',
+      streamingDestination: 'youtube',
+      streamingProvider: 'youtube',
+    }),
+    false,
+  );
 });
 
 test('liveInputMetaName is unique per event id', () => {

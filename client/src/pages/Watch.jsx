@@ -95,6 +95,10 @@ export default function Watch() {
     const isYoutubePlusServer =
       String(streamDestination || '').toLowerCase().replace(/-/g, '_') === 'youtube_server';
     const isYoutubeOnly = streamProvider === 'youtube';
+    const isExternalEmbed =
+      String(config?.streamingProvider || '') === 'external_embed' ||
+      String(config?.viewerPlayback || '') === 'external_embed';
+    if (isExternalEmbed) return undefined;
     if (!isServer && !isYoutubePlusServer && !isYoutubeOnly) return undefined;
     const intervalMs = livePollIntervalMs(
       {

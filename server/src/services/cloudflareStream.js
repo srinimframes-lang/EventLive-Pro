@@ -40,6 +40,10 @@ const CLOUDFLARE_LIVE_DESTINATIONS = new Set([
  * YouTube-only stays YouTube. Existing MediaMTX docs are never updated here.
  */
 export function shouldProvisionCloudflareLive(payload = {}) {
+  const provider = String(payload.streamingProvider || '').trim();
+  if (provider === 'external_embed' || provider === 'mux' || provider === 'mediamtx' || provider === 'youtube') {
+    return false;
+  }
   return (
     String(payload.streamProvider || '') === 'rtmp' &&
     CLOUDFLARE_LIVE_DESTINATIONS.has(String(payload.streamingDestination || ''))

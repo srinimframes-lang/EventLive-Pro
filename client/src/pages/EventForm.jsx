@@ -40,6 +40,11 @@ import {
   DEFAULT_BACKGROUND_MUSIC_VOLUME,
   listBackgroundMusicCatalog,
 } from '../utils/backgroundMusic.js';
+import {
+  STREAMING_PROVIDER_OPTIONS,
+  inferStreamingProvider,
+  validateExternalEmbedForm,
+} from '../utils/externalEmbed.js';
 
 const LINK_COSTS = { youtube: 1, server: 5, server_youtube: 5, youtube_server: 5 };
 
@@ -118,6 +123,11 @@ const EMPTY = {
   backupStreamEnabled: false,
   backupYoutubeVideoId: '',
   liveIngestProvider: '',
+  streamingProvider: 'cloudflare_stream',
+  externalEmbedUrl: '',
+  externalEmbedHtml: '',
+  externalHlsUrl: '',
+  externalEmbedType: 'iframe',
   backgroundMusicEnabled: false,
   backgroundMusicId: 'ambient-soft',
   backgroundMusicVolume: DEFAULT_BACKGROUND_MUSIC_VOLUME,
@@ -165,17 +175,31 @@ export default function EventForm() {
   const [websitePlayer, setWebsitePlayer] = useState(
     searchParams.get('type') === 'youtube_server' ? 'youtube' : 'hls'
   );
+  const [streamingProvider, setStreamingProvider] = useState(
+    searchParams.get('type') === 'youtube' ? 'youtube' : 'cloudflare_stream'
+  );
 
-  const streamType =
+  const destStreamType =
     streamTypeFromDestinations(
       destServer || destFacebook,
       destYoutube,
       websitePlayer
     ) || 'server';
+  const streamType =
+    streamingProvider === 'external_embed' ||
+    streamingProvider === 'mux' ||
+    streamingProvider === 'youtube'
+      ? streamingProvider
+      : destStreamType;
   const balance = user?.creditBalance ?? 0;
   const cost = LINK_COSTS[streamType] || 1;
   const isStaffEditor = isAdmin || isSubAdmin;
-  const isServerDest = streamType !== 'youtube';
+  const isServerDest =
+    streamType !== 'youtube' &&
+    streamType !== 'external_embed' &&
+    streamType !== 'mux';
+  const usesLegacyDestinations =
+    streamingProvider === 'cloudflare_stream' || streamingProvider === 'mediamtx';
   const showCreditCosts = !isAdmin && !isEdit && isServerDest;
   const insufficient = showCreditCosts && balance < cost;
 
@@ -290,6 +314,11 @@ export default function EventForm() {
           backupStreamEnabled: Boolean(event.backupStreamEnabled),
           backupYoutubeVideoId: event.backupYoutubeVideoId || '',
           liveIngestProvider: event.liveIngestProvider || '',
+          streamingProvider: inferStreamingProvider(event) || 'cloudflare_stream',
+          externalEmbedUrl: event.externalEmbedUrl || '',
+          externalEmbedHtml: event.externalEmbedHtml || '',
+          externalHlsUrl: event.externalHlsUrl || '',
+          externalEmbedType: event.externalEmbedType === 'hls' ? 'hls' : 'iframe',
           backgroundMusicEnabled: Boolean(event.backgroundMusicEnabled),
           backgroundMusicId: event.backgroundMusicId || 'ambient-soft',
           backgroundMusicVolume:
@@ -331,18 +360,32 @@ export default function EventForm() {
             resolved = 'youtube';
           }
         }
-        setDestServer(
-          resolved === 'server' ||
-            resolved === 'server_youtube' ||
-            resolved === 'youtube_server'
-        );
-        setDestYoutube(
-          resolved === 'youtube' ||
-            resolved === 'server_youtube' ||
-            resolved === 'youtube_server'
-        );
-        setDestFacebook(Boolean(event.facebookForwardEnabled));
-        setWebsitePlayer(resolved === 'youtube_server' ? 'youtube' : 'hls');
+        const inferredProvider = inferStreamingProvider(event) || 'cloudflare_stream';
+        setStreamingProvider(inferredProvider);
+        if (inferredProvider === 'external_embed' || inferredProvider === 'mux') {
+          setDestServer(false);
+          setDestYoutube(false);
+          setDestFacebook(false);
+          setWebsitePlayer('hls');
+        } else if (inferredProvider === 'youtube') {
+          setDestServer(false);
+          setDestYoutube(true);
+          setDestFacebook(false);
+          setWebsitePlayer('hls');
+        } else {
+          setDestServer(
+            resolved === 'server' ||
+              resolved === 'server_youtube' ||
+              resolved === 'youtube_server'
+          );
+          setDestYoutube(
+            resolved === 'youtube' ||
+              resolved === 'server_youtube' ||
+              resolved === 'youtube_server'
+          );
+          setDestFacebook(Boolean(event.facebookForwardEnabled));
+          setWebsitePlayer(resolved === 'youtube_server' ? 'youtube' : 'hls');
+        }
       })
       .catch((err) => active && setError(err.message))
       .finally(() => active && setLoading(false));
@@ -679,11 +722,32 @@ export default function EventForm() {
     saveInFlightRef.current = true;
     setSubmitting(true);
 
-    if (form.isOnline && !destServer && !destYoutube && !destFacebook) {
+    if (
+      form.isOnline &&
+      usesLegacyDestinations &&
+      !destServer &&
+      !destYoutube &&
+      !destFacebook
+    ) {
       setError('Please select at least one streaming destination.');
       saveInFlightRef.current = false;
       setSubmitting(false);
       return;
+    }
+
+    if (form.isOnline && streamingProvider === 'external_embed') {
+      const embedErr = validateExternalEmbedForm({
+        externalEmbedUrl: form.externalEmbedUrl,
+        externalEmbedHtml: form.externalEmbedHtml,
+        externalHlsUrl: form.externalHlsUrl,
+        externalEmbedType: form.externalEmbedType,
+      });
+      if (embedErr) {
+        setError(embedErr);
+        saveInFlightRef.current = false;
+        setSubmitting(false);
+        return;
+      }
     }
 
     let ytConnected = Boolean(youtubeConnected);
@@ -806,8 +870,20 @@ export default function EventForm() {
     };
 
     if (form.isOnline) {
+      payload.streamingProvider = streamingProvider;
       payload.streamType = streamType;
       payload.linkType = streamType;
+      if (streamingProvider === 'external_embed') {
+        payload.streamType = 'external_embed';
+        payload.linkType = 'external_embed';
+        payload.externalEmbedUrl = form.externalEmbedUrl?.trim() || '';
+        payload.externalEmbedHtml = form.externalEmbedHtml?.trim() || '';
+        payload.externalHlsUrl = form.externalHlsUrl?.trim() || '';
+        payload.externalEmbedType = form.externalEmbedType === 'hls' ? 'hls' : 'iframe';
+      } else if (streamingProvider === 'mux') {
+        payload.streamType = 'mux';
+        payload.linkType = 'mux';
+      } else {
       payload.streamingDestination = streamType;
       if (streamType === 'youtube') {
         if (rawYoutubeUrl) {
@@ -881,6 +957,7 @@ export default function EventForm() {
       // Live ABR only when Super Admin opts into Adaptive (Premium). Default Standard.
       if (streamType !== 'youtube' && isSuperAdmin) {
         payload.adaptiveStreaming = Boolean(form.adaptiveStreaming);
+      }
       }
     }
 
@@ -1484,6 +1561,111 @@ export default function EventForm() {
 
           {form.isOnline ? (
             <>
+              <Field
+                label="Streaming Provider"
+                htmlFor="streamingProvider"
+                hint="Admin-only. Viewers cannot change this on the public watch page."
+              >
+                <select
+                  id="streamingProvider"
+                  name="streamingProvider"
+                  value={streamingProvider}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setStreamingProvider(next);
+                    if (next === 'youtube') {
+                      setDestServer(false);
+                      setDestYoutube(true);
+                      setDestFacebook(false);
+                    } else if (next === 'external_embed' || next === 'mux') {
+                      setDestServer(false);
+                      setDestYoutube(false);
+                      setDestFacebook(false);
+                    } else {
+                      setDestServer(true);
+                      setDestYoutube(false);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  {STREAMING_PROVIDER_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {streamingProvider === 'external_embed' && (
+                <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <Field
+                    label="Embed URL"
+                    htmlFor="externalEmbedUrl"
+                    hint="HTTPS URL used as the iframe src. JavaScript and non-HTTPS URLs are rejected."
+                  >
+                    <input
+                      id="externalEmbedUrl"
+                      name="externalEmbedUrl"
+                      type="url"
+                      value={form.externalEmbedUrl}
+                      onChange={handleChange}
+                      placeholder="https://example.com/live/embed"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field
+                    label="Optional iframe HTML"
+                    htmlFor="externalEmbedHtml"
+                    hint="Only the iframe src is kept. Script tags and event handlers are stripped."
+                  >
+                    <textarea
+                      id="externalEmbedHtml"
+                      name="externalEmbedHtml"
+                      rows={3}
+                      value={form.externalEmbedHtml}
+                      onChange={handleChange}
+                      placeholder='<iframe src="https://example.com/live/embed"></iframe>'
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field
+                    label="Optional HLS (.m3u8) URL"
+                    htmlFor="externalHlsUrl"
+                    hint="HTTPS .m3u8 URL. Used when player type is HLS."
+                  >
+                    <input
+                      id="externalHlsUrl"
+                      name="externalHlsUrl"
+                      type="url"
+                      value={form.externalHlsUrl}
+                      onChange={handleChange}
+                      placeholder="https://example.com/live/index.m3u8"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label="Player type" htmlFor="externalEmbedType">
+                    <select
+                      id="externalEmbedType"
+                      name="externalEmbedType"
+                      value={form.externalEmbedType}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="iframe">Iframe</option>
+                      <option value="hls">HLS</option>
+                    </select>
+                  </Field>
+                </div>
+              )}
+
+              {streamingProvider === 'mux' && (
+                <p className="text-xs text-slate-500">
+                  Mux is saved as this event&apos;s provider. Mux playback is not wired yet and
+                  does not change Cloudflare Stream or MediaMTX events.
+                </p>
+              )}
+
+              {usesLegacyDestinations && (
               <div>
                 <p className="mb-2 text-sm font-medium text-slate-700">Streaming destinations</p>
                 <p className="mb-3 text-xs text-slate-500">
@@ -1568,6 +1750,7 @@ export default function EventForm() {
                   </p>
                 )}
               </div>
+              )}
 
               {showYoutubeEmbedUrl && (
                 <Field
