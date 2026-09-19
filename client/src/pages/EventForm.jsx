@@ -15,6 +15,13 @@ import {
   normalizePageTemplate,
   WEDDING_TEMPLATE_OPTIONS,
 } from '../utils/weddingTemplates.js';
+import {
+  COLLEGE_EVENT_KINDS,
+  COLLEGE_SECTION_DEFS,
+  emptyCollegeSections,
+  normalizeCollegeEventKind,
+  normalizeCollegeSections,
+} from '../utils/collegeAnnualDay.js';
 import { normalizeStudioForm } from '../utils/studioFields.js';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
@@ -94,6 +101,10 @@ const EMPTY = {
   collegeName: '',
   collegeLogo: '',
   academicYear: '',
+  collegeEventKind: 'annual_day',
+  collegeTagline: '',
+  collegeContact: '',
+  collegeSections: emptyCollegeSections(),
   chiefGuestName: '',
   chiefGuestDesignation: '',
   principalName: '',
@@ -262,6 +273,10 @@ export default function EventForm() {
           collegeName: event.collegeName || '',
           collegeLogo: event.collegeLogo || '',
           academicYear: event.academicYear || '',
+          collegeEventKind: normalizeCollegeEventKind(event.collegeEventKind),
+          collegeTagline: event.collegeTagline || '',
+          collegeContact: event.collegeContact || '',
+          collegeSections: normalizeCollegeSections(event.collegeSections),
           chiefGuestName: event.chiefGuestName || '',
           chiefGuestDesignation: event.chiefGuestDesignation || '',
           principalName: event.principalName || '',
@@ -418,6 +433,26 @@ export default function EventForm() {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((f) => ({ ...f, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleCollegeSectionToggle = (id, enabled) => {
+    setForm((f) => {
+      const sections = normalizeCollegeSections(f.collegeSections);
+      return {
+        ...f,
+        collegeSections: { ...sections, [id]: { ...sections[id], enabled } },
+      };
+    });
+  };
+
+  const handleCollegeSectionNote = (id, note) => {
+    setForm((f) => {
+      const sections = normalizeCollegeSections(f.collegeSections);
+      return {
+        ...f,
+        collegeSections: { ...sections, [id]: { ...sections[id], note } },
+      };
+    });
   };
 
   const revokeThumbPreview = () => {
@@ -760,6 +795,10 @@ export default function EventForm() {
       chatEnabled: form.chatEnabled,
       collegeName: form.collegeName?.trim() || '',
       academicYear: form.academicYear?.trim() || '',
+      collegeEventKind: normalizeCollegeEventKind(form.collegeEventKind),
+      collegeTagline: form.collegeTagline?.trim() || '',
+      collegeContact: form.collegeContact?.trim() || '',
+      collegeSections: normalizeCollegeSections(form.collegeSections),
       chiefGuestName: form.chiefGuestName?.trim() || '',
       chiefGuestDesignation: form.chiefGuestDesignation?.trim() || '',
       principalName: form.principalName?.trim() || '',
@@ -1025,14 +1064,14 @@ export default function EventForm() {
         {/* ── Basics ─────────────────────────────────────────── */}
         <Section title="Event details">
           <Field
-            label={isCollegeAnnualDayTemplate(form.pageTemplate) ? 'Annual Day / Event Title' : 'Title'}
+            label={isCollegeAnnualDayTemplate(form.pageTemplate) ? 'Fest / Annual Day Name' : 'Title'}
             htmlFor="title"
           >
             <input id="title" name="title" required minLength={3} maxLength={120}
               className="input" value={form.title} onChange={handleChange}
               placeholder={
                 isCollegeAnnualDayTemplate(form.pageTemplate)
-                  ? 'e.g. College Annual Day 2026'
+                  ? 'e.g. Tarang 2026 or College Annual Day'
                   : 'e.g. Aarav & Priya — Wedding Live'
               } />
           </Field>
@@ -1110,10 +1149,25 @@ export default function EventForm() {
           {isCollegeAnnualDayTemplate(form.pageTemplate) && (
             <div className="mt-4 space-y-4 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
               <p className="text-sm text-amber-950">
-                College Annual Day uses a campus-style public page. Streaming still follows the
-                destinations below — the selected provider only changes playback. Live chat is the
-                checkbox in the streaming section. Gallery is managed after the event is created.
+                College Fest / Annual Day uses a campus public page. Choose Annual Day for the
+                formal look, or Fest for a colourful cultural poster. Streaming still follows the
+                destinations below. Live chat is the checkbox in the streaming section.
               </p>
+              <Field label="Event style" htmlFor="collegeEventKind">
+                <select
+                  id="collegeEventKind"
+                  name="collegeEventKind"
+                  className="input"
+                  value={normalizeCollegeEventKind(form.collegeEventKind)}
+                  onChange={handleChange}
+                >
+                  {COLLEGE_EVENT_KINDS.map((kind) => (
+                    <option key={kind.id} value={kind.id}>
+                      {kind.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <ImageUploadField
                 label="College Logo"
                 preview={form.collegeLogo}
@@ -1132,7 +1186,18 @@ export default function EventForm() {
                   onChange={handleChange}
                 />
               </Field>
-              <Field label="Academic Year" htmlFor="academicYear">
+              <Field label="Tagline" htmlFor="collegeTagline">
+                <input
+                  id="collegeTagline"
+                  name="collegeTagline"
+                  className="input"
+                  maxLength={200}
+                  placeholder="e.g. A celebration of talent, culture & colour"
+                  value={form.collegeTagline}
+                  onChange={handleChange}
+                />
+              </Field>
+              <Field label="Year / Academic Year" htmlFor="academicYear">
                 <input
                   id="academicYear"
                   name="academicYear"
@@ -1140,6 +1205,17 @@ export default function EventForm() {
                   maxLength={40}
                   placeholder="e.g. 2025–26"
                   value={form.academicYear}
+                  onChange={handleChange}
+                />
+              </Field>
+              <Field label="Venue" htmlFor="venue">
+                <input
+                  id="venue"
+                  name="venue"
+                  className="input"
+                  maxLength={200}
+                  placeholder="e.g. Main Auditorium"
+                  value={form.venue}
                   onChange={handleChange}
                 />
               </Field>
@@ -1189,9 +1265,53 @@ export default function EventForm() {
                   onChange={handleChange}
                 />
               </Field>
+              <Field label="Contact Details" htmlFor="collegeContact">
+                <input
+                  id="collegeContact"
+                  name="collegeContact"
+                  className="input"
+                  maxLength={300}
+                  placeholder="e.g. 98765 43210 · fest@college.edu"
+                  value={form.collegeContact}
+                  onChange={handleChange}
+                />
+              </Field>
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">Optional event sections</p>
+                <p className="mb-3 text-xs text-slate-500">
+                  Enable only the programme blocks you want on the public page. Existing Annual Day
+                  pages stay unchanged if these stay off.
+                </p>
+                <div className="space-y-3">
+                  {COLLEGE_SECTION_DEFS.map((section) => {
+                    const current = normalizeCollegeSections(form.collegeSections)[section.id];
+                    return (
+                      <div key={section.id} className="rounded-lg border border-amber-100 bg-white/70 p-3">
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(current.enabled)}
+                            onChange={(e) => handleCollegeSectionToggle(section.id, e.target.checked)}
+                          />
+                          {section.label}
+                        </label>
+                        {current.enabled ? (
+                          <input
+                            className="input mt-2"
+                            maxLength={300}
+                            placeholder={`Optional note for ${section.label.toLowerCase()}`}
+                            value={current.note}
+                            onChange={(e) => handleCollegeSectionNote(section.id, e.target.value)}
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div>
                 <span className="mb-1 block text-sm font-medium text-slate-700">
-                  Event Banner / Cover Image
+                  Event Poster / Hero Banner
                 </span>
                 <div className="flex flex-wrap items-center gap-4">
                   {form.coverImage ? (
@@ -1218,7 +1338,7 @@ export default function EventForm() {
                       {uploadingCover
                         ? 'Uploading…'
                         : isEdit
-                          ? 'Wide banner shown behind the Annual Day title. JPG/PNG, up to 8 MB.'
+                          ? 'Poster artwork shown behind the fest / Annual Day title. JPG/PNG, up to 8 MB.'
                           : 'Select a banner — it will upload when you create the event.'}
                     </p>
                   </div>

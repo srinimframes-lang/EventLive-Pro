@@ -66,7 +66,7 @@ export default function CollegeAnnualDayPage({
   return (
     <>
       <EventSeo event={event} pageType="watch" />
-      <div className="college-annual-day">
+      <div className="college-annual-day" data-kind={content.kind}>
         <header className="cad-header">
           <div className="cad-header-inner">
             {logoSrc ? (
@@ -75,13 +75,13 @@ export default function CollegeAnnualDayPage({
               <div className="cad-logo-fallback" aria-hidden>{initials}</div>
             )}
             <div>
-              <p className="cad-kicker">College Annual Day</p>
-              <h1 className="cad-college-name">{content.collegeName || 'College Annual Day'}</h1>
+              <p className="cad-kicker">{content.kicker}</p>
+              <h1 className="cad-college-name">{content.collegeName || content.fallbackCollege}</h1>
             </div>
           </div>
         </header>
 
-        <section className="cad-hero" aria-label="Annual Day title">
+        <section className="cad-hero" aria-label={content.fallbackTitle}>
           {bannerSrc ? (
             <img
               src={bannerSrc}
@@ -96,11 +96,12 @@ export default function CollegeAnnualDayPage({
           <div className="cad-hero-overlay" aria-hidden />
           <div className="cad-hero-inner">
             {content.academicYear ? <p className="cad-year">{content.academicYear}</p> : null}
-            <h2 className="cad-title">{content.title || 'Annual Day'}</h2>
+            <h2 className="cad-title">{content.title || content.fallbackTitle}</h2>
+            {content.tagline ? <p className="cad-tagline">{content.tagline}</p> : null}
             <div className="cad-meta">
               {dateLabel ? <span>{dateLabel}</span> : null}
               {timeLabel ? <span>{timeLabel}</span> : null}
-              {content.collegeAddress ? <span>{content.collegeAddress}</span> : null}
+              {content.heroPlace ? <span>{content.heroPlace}</span> : null}
             </div>
             <div className={`cad-status ${status.className}`}>
               <span className="cad-status-dot" aria-hidden />
@@ -108,6 +109,25 @@ export default function CollegeAnnualDayPage({
             </div>
           </div>
         </section>
+
+        {content.hasSections ? (
+          <section className="cad-section" aria-label="Programme">
+            <div className="cad-section-head">
+              <div>
+                <h2 className="cad-section-title">Programme</h2>
+                <div className="cad-rule" aria-hidden />
+              </div>
+            </div>
+            <div className="cad-program-grid">
+              {content.sections.map((section) => (
+                <article key={section.id} className="cad-program-card">
+                  <h3>{section.label}</h3>
+                  {section.note ? <p>{section.note}</p> : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {content.hasChiefGuest ? (
           <section className="cad-section" aria-label="Chief guest">
@@ -190,14 +210,20 @@ export default function CollegeAnnualDayPage({
               <div className="cad-info-card">
                 <p>
                   {content.description ||
-                    `${content.title || 'Annual Day'} at ${content.collegeName || 'the college'}.`}
+                    `${content.title || content.fallbackTitle} at ${content.collegeName || 'the college'}.`}
                 </p>
               </div>
               <div className="cad-info-card cad-facts">
                 {content.academicYear ? (
                   <div className="cad-fact">
-                    <dt>Academic year</dt>
+                    <dt>Year</dt>
                     <dd>{content.academicYear}</dd>
+                  </div>
+                ) : null}
+                {content.venue ? (
+                  <div className="cad-fact">
+                    <dt>Venue</dt>
+                    <dd>{content.venue}</dd>
                   </div>
                 ) : null}
                 {content.principalName ? (
@@ -206,10 +232,16 @@ export default function CollegeAnnualDayPage({
                     <dd>{content.principalName}</dd>
                   </div>
                 ) : null}
-                {content.collegeAddress ? (
+                {content.collegeAddress && content.collegeAddress !== content.venue ? (
                   <div className="cad-fact">
                     <dt>College address</dt>
                     <dd>{content.collegeAddress}</dd>
+                  </div>
+                ) : null}
+                {content.contact ? (
+                  <div className="cad-fact">
+                    <dt>Contact</dt>
+                    <dd>{content.contact}</dd>
                   </div>
                 ) : null}
                 {dateLabel || timeLabel ? (
@@ -278,6 +310,7 @@ export default function CollegeAnnualDayPage({
         <footer className="cad-footer">
           <p className="cad-footer-names">{content.collegeName || content.title}</p>
           {content.title && content.collegeName ? <p className="cad-footer-meta">{content.title}</p> : null}
+          {content.contact ? <p className="cad-footer-meta">{content.contact}</p> : null}
           {dateLabel || timeLabel ? (
             <p className="cad-footer-meta">{[dateLabel, timeLabel].filter(Boolean).join(' · ')}</p>
           ) : null}

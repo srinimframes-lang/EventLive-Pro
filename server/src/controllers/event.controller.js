@@ -33,6 +33,7 @@ import {
 } from '../services/youtubeLiveApi.js';
 import { createEventWithCloudflareLive, deleteCloudflareLiveInputForEvent, syncCloudflareSimulcastOutputs } from '../services/cloudflareStream.js';
 import { loadUserCredential } from '../utils/youtubeOauth.js';
+import { applyCollegeTemplateFields } from '../utils/collegeAnnualDay.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -59,6 +60,10 @@ const EDITABLE_FIELDS = [
   'collegeName',
   'collegeLogo',
   'academicYear',
+  'collegeEventKind',
+  'collegeTagline',
+  'collegeContact',
+  'collegeSections',
   'chiefGuestName',
   'chiefGuestDesignation',
   'principalName',
@@ -448,6 +453,7 @@ export const createEvent = asyncHandler(async (req, res) => {
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
+  applyCollegeTemplateFields(payload, req.body);
   normalizeStudioFields(payload);
   if (payload.description === undefined || payload.description === null) {
     payload.description = '';
@@ -665,6 +671,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     }
     event[field] = req.body[field];
   }
+  applyCollegeTemplateFields(event, req.body);
   normalizeStudioFields(event);
   if (req.body.youtubeLiveUrl !== undefined) event.youtubeLiveUrl = req.body.youtubeLiveUrl;
   const bodyYoutube = resolveYoutubeInput(req.body);

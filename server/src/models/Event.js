@@ -192,10 +192,18 @@ const eventSchema = new Schema(
     bridePhoto: { type: String, trim: true, default: '' },
     groomPhoto: { type: String, trim: true, default: '' },
 
-    // College Annual Day template (opt-in). Unused by other templates.
+    // College Fest / Annual Day template (opt-in). Unused by other templates.
+    collegeEventKind: {
+      type: String,
+      enum: ['annual_day', 'fest'],
+      default: 'annual_day',
+    },
     collegeName: { type: String, trim: true, default: '', maxlength: 160 },
     collegeLogo: { type: String, trim: true, default: '' },
     academicYear: { type: String, trim: true, default: '', maxlength: 40 },
+    collegeTagline: { type: String, trim: true, default: '', maxlength: 200 },
+    collegeContact: { type: String, trim: true, default: '', maxlength: 300 },
+    collegeSections: { type: Schema.Types.Mixed, default: {} },
     chiefGuestName: { type: String, trim: true, default: '', maxlength: 120 },
     chiefGuestDesignation: { type: String, trim: true, default: '', maxlength: 160 },
     principalName: { type: String, trim: true, default: '', maxlength: 120 },

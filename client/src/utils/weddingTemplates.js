@@ -37,7 +37,7 @@ export const COLLEGE_ANNUAL_DAY_TEMPLATE = 'college-annual-day';
 
 export const COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION = {
   id: COLLEGE_ANNUAL_DAY_TEMPLATE,
-  label: 'College Annual Day',
+  label: 'College Fest / Annual Day',
 };
 
 export const EVENT_TYPE_COPY = {

@@ -142,6 +142,15 @@ body.watch-college-annual-day {
   letter-spacing: 0.03em;
 }
 
+.cad-tagline {
+  margin: 0.75rem 0 0;
+  max-width: 38rem;
+  font-family: var(--cad-font-serif);
+  font-size: clamp(1.05rem, 2.6vw, 1.35rem);
+  font-style: italic;
+  color: var(--cad-gold-soft);
+}
+
 .cad-meta {
   display: flex;
   flex-wrap: wrap;
@@ -375,6 +384,70 @@ body.watch-college-annual-day {
   margin: 0.4rem 0 0;
   color: #d4c39a;
   font-size: 0.95rem;
+}
+
+.cad-program-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+}
+
+.cad-program-card {
+  background: var(--cad-card);
+  border: 1px solid var(--cad-line);
+  border-radius: 1rem;
+  padding: 1rem 1.05rem;
+  box-shadow: 0 10px 24px rgba(16, 35, 61, 0.07);
+}
+
+.cad-program-card h3 {
+  margin: 0;
+  font-family: var(--cad-font-display);
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.cad-program-card p {
+  margin: 0.4rem 0 0;
+  color: var(--cad-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.college-annual-day[data-kind='fest'] {
+  --cad-navy: #1a0820;
+  --cad-ink: #2b1038;
+  --cad-paper: #fff4ec;
+  --cad-gold: #ff7a18;
+  --cad-gold-soft: #ffd36a;
+  --cad-muted: #6d4b62;
+  --cad-card: #fffaf6;
+  --cad-line: rgba(255, 122, 24, 0.28);
+}
+
+.college-annual-day[data-kind='fest'] .cad-header {
+  background:
+    linear-gradient(180deg, rgba(26, 8, 32, 0.12), rgba(26, 8, 32, 0.5)),
+    linear-gradient(135deg, #7a1f6a 0%, #c43d2f 46%, #f59e0b 100%);
+  border-bottom-color: #ffd36a;
+}
+
+.college-annual-day[data-kind='fest'] .cad-hero-fallback {
+  background:
+    radial-gradient(ellipse at 12% 8%, #ff7a18 0%, transparent 42%),
+    radial-gradient(ellipse at 88% 18%, #ec4899 0%, transparent 40%),
+    radial-gradient(ellipse at 70% 92%, #22d3ee 0%, transparent 38%),
+    linear-gradient(160deg, #3b0764 0%, #9d174d 55%, #1a0820 100%);
+}
+
+.college-annual-day[data-kind='fest'] .cad-footer {
+  background:
+    linear-gradient(135deg, #3b0764 0%, #9d174d 60%, #1a0820 100%);
+  border-top-color: #ffd36a;
+}
+
+body.watch-college-annual-day:has(.college-annual-day[data-kind='fest']) {
+  background: #1a0820;
 }
 
 @media (max-width: 640px) {
