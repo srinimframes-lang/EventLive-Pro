@@ -4,6 +4,7 @@ import {
   buildCloudflareStreamIframeUrl,
   cloudflareStreamOriginFromUrl,
   cloudflareStreamPlayerMountKey,
+  isYoutubeOnlyWebsitePlayback,
   selectCloudflareStreamPlayer,
   selectWatchPlayerSurface,
 } from './cloudflareStreamPlayer.js';
@@ -196,6 +197,44 @@ test('external embed leftover Cloudflare fields do not take the watch surface', 
   const config = liveConfig({
     streamingProvider: 'external_embed',
     viewerPlayback: 'external_embed',
+  });
+  assert.equal(selectCloudflareStreamPlayer({ config }), null);
+  assert.equal(selectWatchPlayerSurface(config).surface, 'other');
+});
+
+test('YouTube-only leftover Cloudflare recording state does not take the watch surface', () => {
+  const config = {
+    provider: 'youtube',
+    streamingProvider: 'youtube',
+    viewerPlayback: 'cloudflare_stream',
+    liveIngestProvider: 'cloudflare_stream',
+    streamingDestination: 'youtube',
+    isLive: false,
+    isPublishing: undefined,
+    playbackMode: 'offline',
+    status: 'published',
+    cfRecordingPreparing: true,
+    cfStreamLiveInputId: LIVE_INPUT,
+    cfStreamVideoUid: '',
+    youtubeVideoId: 'dQw4w9WgXcQ',
+  };
+  assert.equal(isYoutubeOnlyWebsitePlayback(config), true);
+  assert.equal(selectCloudflareStreamPlayer({ config }), null);
+  assert.equal(selectWatchPlayerSurface(config).surface, 'other');
+  assert.equal(selectWatchPlayerSurface(config).player, null);
+});
+
+test('External Server Embed YouTube iframe leftover CF does not show recording-preparing', () => {
+  const config = liveConfig({
+    streamingProvider: 'external_embed',
+    viewerPlayback: 'external_embed',
+    isPublishing: false,
+    isLive: false,
+    playbackMode: 'offline',
+    cfRecordingPreparing: true,
+    cfStreamVideoUid: '',
+    externalEmbedType: 'iframe',
+    externalEmbedUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
   });
   assert.equal(selectCloudflareStreamPlayer({ config }), null);
   assert.equal(selectWatchPlayerSurface(config).surface, 'other');

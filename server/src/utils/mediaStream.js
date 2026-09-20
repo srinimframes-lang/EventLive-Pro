@@ -52,8 +52,11 @@ export const CLOUDFLARE_RTMPS_INGEST_URL = 'rtmps://live.cloudflare.com:443/live
 
 /** True when this event uses Cloudflare Stream Live ingest (not MediaMTX). */
 export function isCloudflareStreamLive(event = {}) {
-  const provider = String(event.streamingProvider || '').trim();
-  if (provider === 'external_embed' || provider === 'mux') return false;
+  const provider = String(event.streamingProvider || '').trim().toLowerCase().replace(/-/g, '_');
+  if (provider === 'external_embed' || provider === 'mux' || provider === 'youtube') return false;
+  const dest = String(event.streamingDestination || '').trim().toLowerCase().replace(/-/g, '_');
+  if (dest === 'youtube') return false;
+  if (String(event.streamProvider || '').trim().toLowerCase() === 'youtube') return false;
   return String(event.liveIngestProvider || '') === 'cloudflare_stream';
 }
 

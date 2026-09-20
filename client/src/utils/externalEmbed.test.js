@@ -102,6 +102,11 @@ test('YouTube embed URL and iframe HTML resolve to youtube.com/embed', () => {
     selectExternalEmbedPlayer({
       streamingProvider: 'external_embed',
       viewerPlayback: 'external_embed',
+      liveIngestProvider: 'cloudflare_stream',
+      cfRecordingPreparing: true,
+      cfStreamLiveInputId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      isLive: false,
+      playbackMode: 'offline',
       externalEmbedType: 'iframe',
       externalEmbedUrl: YT_EMBED,
     }),

@@ -9,6 +9,7 @@ import {
   selectCloudflareStreamPlayer,
   selectWatchPlayerSurface,
   cloudflareStreamPlayerMountKey,
+  isYoutubeOnlyWebsitePlayback,
 } from '../../utils/cloudflareStreamPlayer.js';
 import CloudflareStreamPlayer from './CloudflareStreamPlayer.jsx';
 import {
@@ -28,7 +29,11 @@ import {
   failoverBackupVideoId,
   shouldPlayYoutubeBackup,
 } from '../../utils/streamFailover.js';
-import { isYouTubeIframeSrc, selectExternalEmbedPlayer } from '../../utils/externalEmbed.js';
+import {
+  isExternalEmbedConfig,
+  isYouTubeIframeSrc,
+  selectExternalEmbedPlayer,
+} from '../../utils/externalEmbed.js';
 import {
   clearPlaybackPosition,
   loadLiveDvrIntent,
@@ -2240,12 +2245,18 @@ function LivePlayerView({ config, onLiveUiChange }) {
     };
   }, [config, hlsLiveResume]);
 
-  const isCloudflareIngestEarly =
-    String(config?.liveIngestProvider || '') === 'cloudflare_stream' ||
-    isCloudflareStreamHlsUrl(config?.playbackUrl || config?.hlsUrl);
   const youtubePlusServer = isYoutubePlusServerDestination(config);
+  const youtubeOnlyWebsite = isYoutubeOnlyWebsitePlayback(config);
+  const skipCloudflarePlayer =
+    isExternalEmbedConfig(config) || youtubeOnlyWebsite;
+  const isCloudflareIngestEarly =
+    !skipCloudflarePlayer &&
+    (String(config?.liveIngestProvider || '') === 'cloudflare_stream' ||
+      isCloudflareStreamHlsUrl(config?.playbackUrl || config?.hlsUrl));
   const cfPlaybackConfig =
-    cfLiveSessionEnded && config && config.isPublishing !== true
+    skipCloudflarePlayer
+      ? null
+      : cfLiveSessionEnded && config && config.isPublishing !== true
       ? {
           ...config,
           isLive: false,
@@ -2354,6 +2365,13 @@ function LivePlayerView({ config, onLiveUiChange }) {
       return <Offline message={SERVER_WAITING_MSG} />;
     }
     return <Offline message={OFFLINE_MSG} />;
+  }
+
+  // YouTube-only website embed is independent of leftover Cloudflare / OBS / recording state.
+  if (youtubeOnlyWebsite) {
+    const youtubeId = resolveYoutubeVideoId(config);
+    if (youtubeId) return <YouTubePlayer videoId={youtubeId} />;
+    return <Offline message="No YouTube video configured" />;
   }
 
   if (String(config.streamingProvider || '') === 'mux' || String(config.viewerPlayback || '') === 'mux') {

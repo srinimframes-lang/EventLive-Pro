@@ -89,6 +89,23 @@ test('isCloudflareStreamLive is opt-in only', () => {
     }),
     false,
   );
+  assert.equal(
+    isCloudflareStreamLive({
+      liveIngestProvider: 'cloudflare_stream',
+      streamingProvider: 'youtube',
+      streamProvider: 'youtube',
+      streamingDestination: 'youtube',
+    }),
+    false,
+  );
+  assert.equal(
+    isCloudflareStreamLive({
+      liveIngestProvider: 'cloudflare_stream',
+      streamingDestination: 'youtube_server',
+      streamProvider: 'rtmp',
+    }),
+    true,
+  );
 });
 
 test('deriveHlsPlaybackUrl appends dvrEnabled=true to Cloudflare HLS', () => {

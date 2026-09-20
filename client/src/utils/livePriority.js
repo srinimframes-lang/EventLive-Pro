@@ -125,7 +125,20 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
   // LIVE has highest priority — poll probe or socket live both win over stale "parts".
   // Cloudflare: REST/probe offline always beats a stale socket "isLive" that would
   // keep leftover Live Input DVR playing for ~10–20s then "Waiting for live…".
-  const cfIngest = String(config.liveIngestProvider || '') === 'cloudflare_stream';
+  // YouTube-only / External Embed playback is independent of leftover CF ingest.
+  const dest = String(config.streamingDestination || '').toLowerCase().replace(/-/g, '_');
+  const streamingProvider = String(config.streamingProvider || '').trim();
+  const viewerPlayback = String(config.viewerPlayback || '').trim();
+  const skipCloudflareRecordingState =
+    streamingProvider === 'external_embed' ||
+    viewerPlayback === 'external_embed' ||
+    streamingProvider === 'mux' ||
+    viewerPlayback === 'mux' ||
+    streamingProvider === 'youtube' ||
+    dest === 'youtube';
+  const cfIngest =
+    !skipCloudflareRecordingState &&
+    String(config.liveIngestProvider || '') === 'cloudflare_stream';
   const restStatusOffline =
     config.status === 'ended' ||
     config.status === 'cancelled' ||
@@ -182,7 +195,7 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
         next.playbackMode = 'offline';
       }
     }
-    if (String(config.liveIngestProvider || '') === 'cloudflare_stream') {
+    if (cfIngest) {
       next.isPublishing = config.isPublishing;
       next.cfRecordingPreparing = Boolean(config.cfRecordingPreparing);
       next.status = config.status;
@@ -203,6 +216,8 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
           }
         }
       }
+    } else if (skipCloudflareRecordingState) {
+      next.cfRecordingPreparing = false;
     }
   }
 

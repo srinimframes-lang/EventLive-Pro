@@ -64,13 +64,31 @@ function playbackOriginUrl(config) {
   );
 }
 
+/** YouTube-only website playback — leftover Cloudflare ingest must not own the player. */
+export function isYoutubeOnlyWebsitePlayback(config = {}) {
+  const dest = String(config.streamingDestination || '')
+    .toLowerCase()
+    .trim()
+    .replace(/-/g, '_');
+  const streamingProvider = String(config.streamingProvider || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  const provider = String(config.provider || config.streamProvider || '')
+    .trim()
+    .toLowerCase();
+  if (streamingProvider === 'youtube' || dest === 'youtube') return true;
+  return provider === 'youtube' && dest !== 'youtube_server' && dest !== 'server_youtube';
+}
+
 export function isCloudflareStreamEventConfig(config) {
   if (!config) return false;
   if (
     String(config.streamingProvider || '') === 'external_embed' ||
     String(config.viewerPlayback || '') === 'external_embed' ||
     String(config.streamingProvider || '') === 'mux' ||
-    String(config.viewerPlayback || '') === 'mux'
+    String(config.viewerPlayback || '') === 'mux' ||
+    isYoutubeOnlyWebsitePlayback(config)
   ) {
     return false;
   }

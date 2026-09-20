@@ -95,6 +95,48 @@ test('Cloudflare recording-preparing polls quickly and ignores stale socket live
   assert.equal(merged.reconnecting, false);
 });
 
+test('YouTube-only leftover Cloudflare ingest does not enter recording-preparing', () => {
+  const merged = mergeLivePriorityConfig(
+    {
+      isLive: false,
+      isPublishing: undefined,
+      playbackMode: 'offline',
+      status: 'published',
+      provider: 'youtube',
+      streamingProvider: 'youtube',
+      viewerPlayback: 'cloudflare_stream',
+      liveIngestProvider: 'cloudflare_stream',
+      streamingDestination: 'youtube',
+      cfRecordingPreparing: true,
+      youtubeVideoId: 'dQw4w9WgXcQ',
+    },
+    { isLive: false, playbackMode: 'offline', reconnecting: false }
+  );
+  assert.equal(merged.cfRecordingPreparing, false);
+  assert.equal(merged.playbackMode, 'offline');
+  assert.equal(merged.isLive, false);
+});
+
+test('External Server Embed leftover Cloudflare ingest does not enter recording-preparing', () => {
+  const merged = mergeLivePriorityConfig(
+    {
+      isLive: false,
+      isPublishing: false,
+      playbackMode: 'offline',
+      status: 'published',
+      streamingProvider: 'external_embed',
+      viewerPlayback: 'external_embed',
+      liveIngestProvider: 'cloudflare_stream',
+      cfRecordingPreparing: true,
+      externalEmbedType: 'iframe',
+      externalEmbedUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    },
+    { isLive: false, playbackMode: 'offline', reconnecting: false }
+  );
+  assert.equal(merged.cfRecordingPreparing, false);
+  assert.equal(merged.playbackMode, 'offline');
+});
+
 test('stale socket isLive cannot keep Cloudflare leftover DVR after OBS stop', () => {
   const liveInputId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const merged = mergeLivePriorityConfig(
