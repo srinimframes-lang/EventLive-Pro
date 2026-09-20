@@ -5,9 +5,12 @@ import {
   buildOriginHlsPlaybackUrl,
   buildRtmpCredentials,
   deriveHlsPlaybackUrl,
+  describeRtmpsIngestForLog,
   hlsPlaylistName,
   isAdaptiveStreamingEnabled,
   isCloudflareStreamLive,
+  normalizeCloudflareRtmpsIngestUrl,
+  normalizeCloudflareRtmpsKey,
   normalizePlaybackUrl,
   syncServerStreamFields,
 } from './mediaStream.js';
@@ -136,6 +139,41 @@ test('deriveHlsPlaybackUrl still rebuilds MediaMTX URLs for other events', () =>
   assert.equal(url.includes('dvrEnabled'), false);
 });
 
+test('Cloudflare RTMPS ingest URL keeps the official trailing slash for OBS', () => {
+  assert.equal(
+    normalizeCloudflareRtmpsIngestUrl('rtmps://live.cloudflare.com:443/live'),
+    'rtmps://live.cloudflare.com:443/live/',
+  );
+  assert.equal(
+    normalizeCloudflareRtmpsIngestUrl('rtmps://live.cloudflare.com:443/live/'),
+    'rtmps://live.cloudflare.com:443/live/',
+  );
+  assert.equal(
+    normalizeCloudflareRtmpsIngestUrl('rtmps://live.cloudflare.com/live/'),
+    'rtmps://live.cloudflare.com:443/live/',
+  );
+});
+
+test('Cloudflare RTMPS key is not shortened or encoded; only surrounding whitespace is stripped', () => {
+  const full =
+    'MTQ0MTcjM3MjI1NDE3ODIyNTI1MjYyMjE4NTI2ODI1NDcxMzUyMzcf256e6ea9351d51eea64c9454659e576';
+  assert.equal(normalizeCloudflareRtmpsKey(`\n${full} \r\n`), full);
+  assert.equal(normalizeCloudflareRtmpsKey(full), full);
+  assert.equal(normalizeCloudflareRtmpsKey(full).includes('%'), false);
+});
+
+test('OBS credential logs never include the stream key', () => {
+  const summary = describeRtmpsIngestForLog(
+    'rtmps://live.cloudflare.com:443/live/',
+    'super-secret-stream-key-value',
+  );
+  assert.equal(summary.ingestHost, 'live.cloudflare.com');
+  assert.equal(summary.ingestPath, '/live/');
+  assert.equal(summary.hasRtmpsCredential, true);
+  assert.equal(summary.rtmpsCredentialChars, 'super-secret-stream-key-value'.length);
+  assert.equal(JSON.stringify(summary).includes('super-secret-stream-key-value'), false);
+});
+
 test('buildRtmpCredentials uses Cloudflare RTMPS for opted-in events', () => {
   const creds = buildRtmpCredentials({
     _id: EVENT_ID,
@@ -145,7 +183,7 @@ test('buildRtmpCredentials uses Cloudflare RTMPS for opted-in events', () => {
     cfStreamRtmpsKey: 'cf-test-key',
     cfStreamHlsUrl: CF_HLS,
   });
-  assert.equal(creds.ingestUrl, CF_RTMPS);
+  assert.equal(creds.ingestUrl, `${CF_RTMPS}/`);
   assert.equal(creds.streamKey, 'cf-test-key');
   assert.equal(creds.playbackUrl, CF_HLS);
   assert.equal(creds.mediamtxPath, '');

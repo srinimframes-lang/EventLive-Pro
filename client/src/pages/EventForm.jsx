@@ -1994,7 +1994,9 @@ export default function EventForm() {
                     </div>
                   ) : null}
                   <p className="text-sm text-slate-600">
-                    {streamType === 'server_youtube' || streamType === 'youtube_server'
+                    {form.liveIngestProvider === 'cloudflare_stream'
+                      ? 'Point OBS at Cloudflare Stream RTMPS. Server URL must be rtmps://live.cloudflare.com:443/live/ (trailing slash required). Paste the Stream Key only in the key field.'
+                      : streamType === 'server_youtube' || streamType === 'youtube_server'
                       ? 'Point OBS at our MediaMTX server only. YouTube receives a forwarded copy automatically when forwarding is enabled.'
                       : 'Stream to our premium RTMP server. Use these credentials in OBS or your encoder.'}
                   </p>
@@ -2014,26 +2016,24 @@ export default function EventForm() {
                   )}
                   {isEdit && serverStream && !serverStreamLoading && (
                     <>
-                      <Field label="OBS Server URL" htmlFor="rtmpUrl">
-                        <input
-                          id="rtmpUrl"
-                          readOnly
-                          className="input font-mono text-xs"
-                          value={serverStream.rtmpUrl}
-                        />
-                      </Field>
-                      <Field label="Stream Key" htmlFor="streamKey">
-                        <input
-                          id="streamKey"
-                          readOnly
-                          className="input font-mono text-xs"
-                          value={serverStream.streamKey}
-                        />
-                      </Field>
+                      <CopyableObsField
+                        label="OBS Server URL"
+                        htmlFor="rtmpUrl"
+                        value={serverStream.rtmpUrl}
+                      />
+                      <CopyableObsField
+                        label="Stream Key"
+                        htmlFor="streamKey"
+                        value={serverStream.streamKey}
+                      />
                       <Field
                         label="HLS Playback URL"
                         htmlFor="hlsPlayerUrl"
-                        hint="Used on the public watch page for MediaMTX playback."
+                        hint={
+                          form.liveIngestProvider === 'cloudflare_stream'
+                            ? 'Cloudflare Stream HLS used on the public watch page.'
+                            : 'Used on the public watch page for MediaMTX playback.'
+                        }
                       >
                         <input
                           id="hlsPlayerUrl"
@@ -2046,22 +2046,16 @@ export default function EventForm() {
                   )}
                   {!isEdit && serverStream && (
                     <>
-                      <Field label="OBS Server URL" htmlFor="rtmpUrlNew">
-                        <input
-                          id="rtmpUrlNew"
-                          readOnly
-                          className="input font-mono text-xs"
-                          value={serverStream.rtmpUrl}
-                        />
-                      </Field>
-                      <Field label="Stream Key" htmlFor="streamKeyNew">
-                        <input
-                          id="streamKeyNew"
-                          readOnly
-                          className="input font-mono text-xs"
-                          value={serverStream.streamKey}
-                        />
-                      </Field>
+                      <CopyableObsField
+                        label="OBS Server URL"
+                        htmlFor="rtmpUrlNew"
+                        value={serverStream.rtmpUrl}
+                      />
+                      <CopyableObsField
+                        label="Stream Key"
+                        htmlFor="streamKeyNew"
+                        value={serverStream.streamKey}
+                      />
                       <Field label="HLS Playback URL" htmlFor="hlsPlayerUrlNew">
                         <input
                           id="hlsPlayerUrlNew"
@@ -2419,6 +2413,38 @@ function Field({ label, htmlFor, hint, children }) {
       {children}
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
     </div>
+  );
+}
+
+function CopyableObsField({ label, htmlFor, value, hint }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt('Copy:', value);
+    }
+  };
+  return (
+    <Field label={label} htmlFor={htmlFor} hint={hint}>
+      <div className="flex gap-2">
+        <input
+          id={htmlFor}
+          readOnly
+          spellCheck={false}
+          autoComplete="off"
+          onFocus={(e) => e.target.select()}
+          className="input font-mono text-xs"
+          value={value}
+        />
+        <button type="button" className="btn-outline shrink-0 text-xs" onClick={copy}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </Field>
   );
 }
 

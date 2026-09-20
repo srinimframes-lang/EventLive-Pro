@@ -123,6 +123,19 @@ test('liveInputMetaName is unique per event id', () => {
   assert.notEqual(a, b);
 });
 
+test('mapLiveInputResult canonicalizes RTMPS URL and keeps the full stream key', () => {
+  const mapped = mapLiveInputResult({
+    uid: 'uid-slash',
+    rtmps: {
+      url: 'rtmps://live.cloudflare.com:443/live',
+      streamKey: `\n${SECRET_KEY}\r\n`,
+    },
+    playback: { hls: CF_HLS },
+  });
+  assert.equal(mapped.rtmpsUrl, CF_RTMPS);
+  assert.equal(mapped.rtmpsKey, SECRET_KEY);
+});
+
 test('mapLiveInputResult stores CF fields and rejects incomplete payloads', () => {
   const mapped = mapLiveInputResult(cfApiResult('uid-1'));
   assert.equal(mapped.uid, 'uid-1');
@@ -178,6 +191,7 @@ test('createLiveInput POSTs a dedicated input and never logs the stream key', as
   assert.equal(calls[0].body.recording.requireSignedURLs, false);
   assert.equal(calls[0].body.timeoutSeconds, 30);
   assert.equal(calls[0].body.deleteRecordingAfterDays, 30);
+  assert.equal(calls[0].body.enabled, true);
   assert.equal(CF_RECORDING_RETENTION_DAYS, 30);
   assert.equal(CF_RECORDING_DISCONNECT_TIMEOUT_SECONDS, 30);
   assert.equal(cloudflareLiveInputRecordingPayload().deleteRecordingAfterDays, 30);
@@ -186,6 +200,7 @@ test('createLiveInput POSTs a dedicated input and never logs the stream key', as
   assert.notEqual(cloudflareLiveInputRecordingPayload().recording.timeoutSeconds, 0);
   assert.match(calls[0].body.meta.name, /cccccccccccccccccccccccc/);
   assert.equal(created.uid, 'live-uid-new');
+  assert.equal(created.rtmpsUrl, CF_RTMPS);
   assert.equal(created.rtmpsKey, SECRET_KEY);
   assert.equal(JSON.stringify(calls[0].body).includes(SECRET_KEY), false);
 });
@@ -703,6 +718,7 @@ test('30-day Live Input retention is configured on create payload', () => {
   assert.equal(payload.recording.timeoutSeconds, 30);
   assert.equal(payload.deleteRecordingAfterDays, 30);
   assert.equal(payload.timeoutSeconds, 30);
+  assert.equal(payload.enabled, true);
   assert.equal(liveInputRecordingNeedsEnsure({ recordingMode: 'automatic', timeoutSeconds: 30, deleteRecordingAfterDays: 30 }), false);
   assert.equal(liveInputRecordingNeedsEnsure({ recordingMode: 'automatic', timeoutSeconds: 0, deleteRecordingAfterDays: 30 }), true);
   assert.equal(liveInputRecordingNeedsEnsure({ recordingMode: 'off', timeoutSeconds: 30, deleteRecordingAfterDays: 30 }), true);
@@ -841,6 +857,7 @@ test('ensureCloudflareLiveInputRecording PUTs automatic + 30-day config when tim
 test('ensureCloudflareLiveInputRecordingForEvent skips a second PUT for the same input', async () => {
   let puts = 0;
   const deps = {
+    getLiveInputStatus: async () => ({ uid: 'live-input-uid-ensure-once', status: 'disconnected', enabled: true, isPublishing: false }),
     getLiveInputRecordingConfig: async () => ({
       uid: 'live-input-uid-ensure-once',
       recordingMode: 'automatic',
@@ -858,6 +875,27 @@ test('ensureCloudflareLiveInputRecordingForEvent skips a second PUT for the same
   assert.equal(first.updated, true);
   assert.equal(second.reason, 'already_ensured');
   assert.equal(puts, 1);
+});
+
+test('ensureCloudflareLiveInputRecordingForEvent does not PUT while OBS is connected', async () => {
+  let puts = 0;
+  const result = await ensureCloudflareLiveInputRecordingForEvent(
+    { cfStreamLiveInputId: 'live-input-uid-busy' },
+    {
+      getLiveInputStatus: async () => ({
+        uid: 'live-input-uid-busy',
+        status: 'connected',
+        enabled: true,
+        isPublishing: true,
+      }),
+      updateLiveInputRecording: async () => {
+        puts += 1;
+        return { updated: true };
+      },
+    },
+  );
+  assert.equal(result.reason, 'ingest_active');
+  assert.equal(puts, 0);
 });
 
 test('buildCloudflareStreamIframeUrl uses stored customer host and the given UID', () => {

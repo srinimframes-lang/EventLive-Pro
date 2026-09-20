@@ -347,7 +347,7 @@ export default function AdminEvents() {
                 )}
                 {expandedStreamId === ev.id && (
                   <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-                    <p className="text-sm font-semibold text-slate-800">MediaMTX stream credentials</p>
+                    <p className="text-sm font-semibold text-slate-800">OBS stream credentials</p>
                     {streamLoadingId === ev.id && (
                       <p className="text-sm text-slate-500">Loading stream credentials…</p>
                     )}

@@ -47,11 +47,74 @@ export function mediamtxPathName(streamKey) {
   return `live/${streamKey}`;
 }
 
+/** Official Cloudflare Stream OBS ingest URL. Trailing slash is required. */
+export const CLOUDFLARE_RTMPS_INGEST_URL = 'rtmps://live.cloudflare.com:443/live/';
+
 /** True when this event uses Cloudflare Stream Live ingest (not MediaMTX). */
 export function isCloudflareStreamLive(event = {}) {
   const provider = String(event.streamingProvider || '').trim();
   if (provider === 'external_embed' || provider === 'mux') return false;
   return String(event.liveIngestProvider || '') === 'cloudflare_stream';
+}
+
+/**
+ * Canonical OBS Server URL for Cloudflare Stream.
+ * Cloudflare documents `rtmps://live.cloudflare.com:443/live/` with the trailing slash.
+ * Do not fold the stream key into this URL.
+ */
+export function normalizeCloudflareRtmpsIngestUrl(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  const noSlash = trimmed.replace(/\/+$/, '');
+  if (/^rtmps:\/\/live\.cloudflare\.com(?::443)?\/live$/i.test(noSlash)) {
+    return CLOUDFLARE_RTMPS_INGEST_URL;
+  }
+  try {
+    const parsed = new URL(trimmed.replace(/^rtmps:/i, 'https:'));
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'live.cloudflare.com' || host.endsWith('.live.cloudflare.com')) {
+      const path = `${(parsed.pathname || '/live').replace(/\/+$/, '') || '/live'}/`;
+      const port = parsed.port && parsed.port !== '443' ? parsed.port : '443';
+      return `rtmps://${parsed.hostname}:${port}${path}`;
+    }
+  } catch {
+    /* keep trimmed original below */
+  }
+  return trimmed;
+}
+
+/**
+ * Stream keys must be passed to OBS in full.
+ * Only strip BOM / CR / LF / surrounding whitespace — never encode, slice, or rewrite.
+ */
+export function normalizeCloudflareRtmpsKey(raw) {
+  return String(raw ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/[\r\n\t]+/g, '')
+    .trim();
+}
+
+/** Safe ingest summary for logs — never includes the stream key. */
+export function describeRtmpsIngestForLog(url, key) {
+  const ingestUrl = String(url || '');
+  let host = '';
+  let path = '';
+  try {
+    const parsed = new URL(ingestUrl.replace(/^rtmps:/i, 'https:'));
+    host = parsed.hostname;
+    path = parsed.pathname || '';
+  } catch {
+    host = '';
+    path = '';
+  }
+  const keyLen = String(key || '').length;
+  return {
+    ingestHost: host,
+    ingestPath: path,
+    ingestUrlPresent: Boolean(ingestUrl),
+    hasRtmpsCredential: keyLen > 0,
+    rtmpsCredentialChars: keyLen,
+  };
 }
 
 export function resolveStreamKey(event) {
@@ -174,8 +237,8 @@ export function deriveWebRtcPlaybackUrl(event) {
 
 export function buildRtmpCredentials(event) {
   if (isCloudflareStreamLive(event)) {
-    const ingestUrl = String(event.cfStreamRtmpsUrl || '').trim().replace(/\/+$/, '');
-    const streamKey = String(event.cfStreamRtmpsKey || '').trim();
+    const ingestUrl = normalizeCloudflareRtmpsIngestUrl(event.cfStreamRtmpsUrl);
+    const streamKey = normalizeCloudflareRtmpsKey(event.cfStreamRtmpsKey);
     return {
       ingestUrl,
       streamKey,
@@ -291,7 +354,7 @@ export async function findEventByStreamKey(rawKey) {
 
 export async function ensureEventStreamKey(event) {
   if (isCloudflareStreamLive(event)) {
-    return String(event.cfStreamRtmpsKey || '').trim();
+    return normalizeCloudflareRtmpsKey(event.cfStreamRtmpsKey);
   }
   const creds = syncServerStreamFields(event);
   if (!creds) return '';

@@ -4,7 +4,12 @@
  */
 import mongoose from 'mongoose';
 import { Event } from '../models/Event.js';
-import { isCloudflareStreamLive } from '../utils/mediaStream.js';
+import {
+  describeRtmpsIngestForLog,
+  isCloudflareStreamLive,
+  normalizeCloudflareRtmpsIngestUrl,
+  normalizeCloudflareRtmpsKey,
+} from '../utils/mediaStream.js';
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 const REQUEST_TIMEOUT_MS = 15000;
@@ -62,8 +67,8 @@ export function liveInputMetaName({ eventId, slug = '' } = {}) {
 
 export function mapLiveInputResult(result) {
   const uid = String(result?.uid || '').trim();
-  const rtmpsUrl = String(result?.rtmps?.url || '').trim();
-  const rtmpsKey = String(result?.rtmps?.streamKey || '').trim();
+  const rtmpsUrl = normalizeCloudflareRtmpsIngestUrl(result?.rtmps?.url);
+  const rtmpsKey = normalizeCloudflareRtmpsKey(result?.rtmps?.streamKey);
   const hlsUrl = String(result?.playback?.hls || '').trim();
   if (!uid || !rtmpsUrl || !rtmpsKey || !hlsUrl) {
     throw new CloudflareStreamError(
@@ -160,6 +165,12 @@ async function cloudflareRequest(path, { method = 'GET', body, fetchImpl = fetch
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
+    cloudflareLog('request network error', {
+      method,
+      path,
+      error: err.name || 'Error',
+      message: String(err.message || 'network error').slice(0, 180),
+    });
     throw new CloudflareStreamError(
       `Cloudflare Stream request failed: ${err.message || 'network error'}`,
       { statusCode: 502, code: 'cloudflare_network_error' },
@@ -175,6 +186,13 @@ async function cloudflareRequest(path, { method = 'GET', body, fetchImpl = fetch
 
   if (!res.ok || json?.success === false) {
     const info = describeApiError(json, res.status);
+    cloudflareLog('api error', {
+      method,
+      path,
+      httpStatus: info.httpStatus,
+      code: info.code,
+      message: info.message,
+    });
     throw new CloudflareStreamError(info.message, {
       statusCode: res.status >= 400 && res.status < 600 ? res.status : 502,
       code: info.code != null ? `cloudflare_${info.code}` : 'cloudflare_api_error',
@@ -196,6 +214,7 @@ export const CF_RECORDING_DISCONNECT_TIMEOUT_SECONDS = 30;
 /** Live Input create/update recording + retention payload. */
 export function cloudflareLiveInputRecordingPayload() {
   return {
+    enabled: true,
     recording: {
       mode: 'automatic',
       timeoutSeconds: CF_RECORDING_DISCONNECT_TIMEOUT_SECONDS,
@@ -303,6 +322,25 @@ export async function ensureCloudflareLiveInputRecordingForEvent(event, deps = {
   if (cfRecordingEnsureDone.has(uid)) {
     return { updated: false, reason: 'already_ensured' };
   }
+  const getStatus = deps.getLiveInputStatus || getLiveInputStatus;
+  const status = await getStatus(uid, deps);
+  if (status?.enabled === false) {
+    cloudflareLog('live input is disabled; OBS ingest will be rejected until enabled', {
+      liveInputUid: uid,
+      enabled: false,
+      status: status.status || '',
+    });
+  }
+  if (
+    status?.isPublishing === true ||
+    LIVE_INPUT_PUBLISHING_STATUSES.has(String(status?.status || ''))
+  ) {
+    cloudflareLog('skip live input recording PUT while ingest is active', {
+      liveInputUid: uid,
+      status: status.status || '',
+    });
+    return { updated: false, reason: 'ingest_active' };
+  }
   const result = await ensureCloudflareLiveInputRecording(uid, deps);
   if (result?.updated || result?.reason === 'already_configured') {
     cfRecordingEnsureDone.add(uid);
@@ -322,7 +360,11 @@ export async function createLiveInput({ eventId, slug, title } = {}, { fetchImpl
     config,
   });
   const mapped = mapLiveInputResult(result);
-  cloudflareLog('created live input', { eventId: String(eventId || ''), uid: mapped.uid });
+  cloudflareLog('created live input', {
+    eventId: String(eventId || ''),
+    uid: mapped.uid,
+    ...describeRtmpsIngestForLog(mapped.rtmpsUrl, mapped.rtmpsKey),
+  });
   return mapped;
 }
 
@@ -489,11 +531,21 @@ export async function getLiveInputStatus(uid, { fetchImpl = fetch, config } = {}
     cloudflareLog('live input status', {
       uid: out.uid,
       status: out.status,
+      enabled: out.enabled,
       isPublishing: out.isPublishing,
     });
+    if (out.enabled === false) {
+      cloudflareLog('live input disabled — OBS Connecting/Disconnected until enabled', {
+        uid: out.uid,
+        enabled: false,
+      });
+    }
     return out;
-  } catch {
-    cloudflareLog('live input status failed', { uid: id });
+  } catch (err) {
+    cloudflareLog('live input status failed', {
+      uid: id,
+      error: err.message || 'unknown',
+    });
     return { uid: id, status: '', enabled: null, isPublishing: null };
   }
 }

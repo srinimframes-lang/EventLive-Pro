@@ -15,6 +15,7 @@ import {
   findEventByStreamKey,
   isAdaptiveStreamingEnabled,
   isCloudflareStreamLive,
+  describeRtmpsIngestForLog,
   normalizePlaybackUrl,
   parseMediaMtxPath,
   probeMediaMtxPublishing,
@@ -777,6 +778,15 @@ export const getStreamKey = asyncHandler(async (req, res) => {
 
   await ensureEventStreamKey(event);
   const creds = buildRtmpCredentials(event);
+  console.info(
+    '[stream-key] obs ingest credentials',
+    {
+      eventId: event.id,
+      liveIngestProvider: event.liveIngestProvider || '',
+      liveInputUid: isCloudflareStreamLive(event) ? String(event.cfStreamLiveInputId || '') : undefined,
+      ...describeRtmpsIngestForLog(creds.ingestUrl, creds.streamKey),
+    },
+  );
 
   res.status(200).json({
     success: true,
@@ -800,8 +810,10 @@ export const regenerateStreamKey = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res, { withKey: true });
   assertCanManageEvent(event, req.user, res);
 
-  event.rtmpStreamKey = streamKeyFromEventId(event._id);
-  await event.save();
+  if (!isCloudflareStreamLive(event)) {
+    event.rtmpStreamKey = streamKeyFromEventId(event._id);
+    await event.save();
+  }
 
   const creds = buildRtmpCredentials(event);
   res.status(200).json({
