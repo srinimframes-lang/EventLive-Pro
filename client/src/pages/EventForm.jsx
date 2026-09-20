@@ -1601,7 +1601,7 @@ export default function EventForm() {
                   <Field
                     label="Embed URL"
                     htmlFor="externalEmbedUrl"
-                    hint="HTTPS URL used as the iframe src. JavaScript and non-HTTPS URLs are rejected."
+                    hint="HTTPS iframe src. YouTube embed URLs (youtube.com/embed/VIDEO_ID) are accepted. JavaScript and non-HTTPS URLs are rejected."
                   >
                     <input
                       id="externalEmbedUrl"
@@ -1609,14 +1609,14 @@ export default function EventForm() {
                       type="url"
                       value={form.externalEmbedUrl}
                       onChange={handleChange}
-                      placeholder="https://example.com/live/embed"
+                      placeholder="https://www.youtube.com/embed/VIDEO_ID"
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     />
                   </Field>
                   <Field
                     label="Optional iframe HTML"
                     htmlFor="externalEmbedHtml"
-                    hint="Only the iframe src is kept. Script tags and event handlers are stripped."
+                    hint="Paste a full iframe tag if needed. Only the HTTPS src is kept — including YouTube embed HTML. Script tags and event handlers are stripped."
                   >
                     <textarea
                       id="externalEmbedHtml"
@@ -1624,7 +1624,7 @@ export default function EventForm() {
                       rows={3}
                       value={form.externalEmbedHtml}
                       onChange={handleChange}
-                      placeholder='<iframe src="https://example.com/live/embed"></iframe>'
+                      placeholder='<iframe src="https://www.youtube.com/embed/VIDEO_ID" allow="autoplay; encrypted-media" allowfullscreen></iframe>'
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     />
                   </Field>

@@ -28,7 +28,7 @@ import {
   failoverBackupVideoId,
   shouldPlayYoutubeBackup,
 } from '../../utils/streamFailover.js';
-import { selectExternalEmbedPlayer } from '../../utils/externalEmbed.js';
+import { isYouTubeIframeSrc, selectExternalEmbedPlayer } from '../../utils/externalEmbed.js';
 import {
   clearPlaybackPosition,
   loadLiveDvrIntent,
@@ -220,14 +220,19 @@ function ExternalEmbedIframe({ url }) {
   if (!src) {
     return <Offline message="External embed URL is missing." />;
   }
+  const youtube = isYouTubeIframeSrc(src);
   return (
     <Frame>
       <iframe
         className="absolute inset-0 h-full w-full border-0"
         src={src}
-        title="External live stream"
+        title={youtube ? 'YouTube live stream' : 'External live stream'}
         referrerPolicy="strict-origin-when-cross-origin"
-        sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+        sandbox={
+          youtube
+            ? undefined
+            : 'allow-scripts allow-same-origin allow-presentation allow-popups'
+        }
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         allowFullScreen
       />

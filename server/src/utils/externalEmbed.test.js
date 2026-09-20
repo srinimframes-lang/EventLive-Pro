@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyExternalEmbedFields,
+  canonicalizeExternalIframeSrc,
   extractIframeSrc,
   inferStreamingProvider,
+  isYouTubeIframeSrc,
   resolveExternalEmbedPlayback,
   sanitizeHttpsUrl,
   sanitizeHlsUrl,
@@ -88,4 +90,40 @@ test('resolveExternalEmbedPlayback picks iframe or HLS', () => {
     externalHlsUrl: 'https://ok.example/live.m3u8',
   });
   assert.deepEqual(hls, { type: 'hls', url: 'https://ok.example/live.m3u8', valid: true });
+});
+
+const YT_ID = 'dQw4w9WgXcQ';
+const YT_EMBED = `https://www.youtube.com/embed/${YT_ID}`;
+const YT_IFRAME = `<iframe width="560" height="315" src="${YT_EMBED}" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+
+test('YouTube embed URL and iframe HTML are accepted for External Server Embed', () => {
+  assert.equal(extractIframeSrc(YT_IFRAME), YT_EMBED);
+  assert.equal(canonicalizeExternalIframeSrc(YT_EMBED), YT_EMBED);
+  assert.equal(canonicalizeExternalIframeSrc(`https://youtu.be/${YT_ID}`), YT_EMBED);
+  assert.equal(isYouTubeIframeSrc(YT_EMBED), true);
+
+  const fromUrl = resolveExternalEmbedPlayback({
+    externalEmbedType: 'iframe',
+    externalEmbedUrl: YT_EMBED,
+  });
+  assert.deepEqual(fromUrl, { type: 'iframe', url: YT_EMBED, valid: true });
+
+  const fromHtml = resolveExternalEmbedPlayback({
+    externalEmbedType: 'iframe',
+    externalEmbedHtml: YT_IFRAME,
+  });
+  assert.deepEqual(fromHtml, { type: 'iframe', url: YT_EMBED, valid: true });
+
+  const target = { streamProvider: 'none' };
+  applyExternalEmbedFields(target, {
+    externalEmbedType: 'iframe',
+    externalEmbedHtml: YT_IFRAME,
+  });
+  assert.equal(target.streamingProvider, 'external_embed');
+  assert.equal(target.externalEmbedUrl, YT_EMBED);
+  assert.equal(target.externalEmbedHtml, `<iframe src="${YT_EMBED}"></iframe>`);
+  assert.equal(validateExternalEmbedPayload({
+    externalEmbedType: 'iframe',
+    externalEmbedUrl: YT_EMBED,
+  }), null);
 });

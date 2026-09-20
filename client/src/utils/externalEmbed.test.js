@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STREAMING_PROVIDER_OPTIONS,
+  canonicalizeExternalIframeSrc,
+  extractIframeSrc,
   inferStreamingProvider,
+  isYouTubeIframeSrc,
   selectExternalEmbedPlayer,
   validateExternalEmbedForm,
 } from './externalEmbed.js';
@@ -79,6 +82,46 @@ test('validateExternalEmbedForm rejects javascript and http', () => {
     validateExternalEmbedForm({
       externalEmbedType: 'iframe',
       externalEmbedUrl: 'https://ok.example/e',
+    }),
+    '',
+  );
+});
+
+const YT_ID = 'dQw4w9WgXcQ';
+const YT_EMBED = `https://www.youtube.com/embed/${YT_ID}`;
+const YT_IFRAME = `<iframe width="560" height="315" src="${YT_EMBED}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+
+test('YouTube embed URL and iframe HTML resolve to youtube.com/embed', () => {
+  assert.equal(extractIframeSrc(YT_IFRAME), YT_EMBED);
+  assert.equal(canonicalizeExternalIframeSrc(YT_EMBED), YT_EMBED);
+  assert.equal(
+    canonicalizeExternalIframeSrc(`https://www.youtube.com/watch?v=${YT_ID}`),
+    YT_EMBED,
+  );
+  assert.deepEqual(
+    selectExternalEmbedPlayer({
+      streamingProvider: 'external_embed',
+      viewerPlayback: 'external_embed',
+      externalEmbedType: 'iframe',
+      externalEmbedUrl: YT_EMBED,
+    }),
+    { mode: 'iframe', type: 'iframe', url: YT_EMBED },
+  );
+  assert.deepEqual(
+    selectExternalEmbedPlayer({
+      streamingProvider: 'external_embed',
+      viewerPlayback: 'external_embed',
+      externalEmbedType: 'iframe',
+      externalEmbedHtml: YT_IFRAME,
+    }),
+    { mode: 'iframe', type: 'iframe', url: YT_EMBED },
+  );
+  assert.equal(isYouTubeIframeSrc(YT_EMBED), true);
+  assert.equal(isYouTubeIframeSrc('https://ok.example/e'), false);
+  assert.equal(
+    validateExternalEmbedForm({
+      externalEmbedType: 'iframe',
+      externalEmbedHtml: YT_IFRAME,
     }),
     '',
   );
