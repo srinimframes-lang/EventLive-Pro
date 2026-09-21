@@ -158,6 +158,14 @@ export const env = {
       return Boolean(this.accountId && this.apiToken);
     },
   },
+  // Mux Live (optional at boot; required when creating Mux events).
+  mux: {
+    tokenId: String(process.env.MUX_TOKEN_ID || '').trim(),
+    tokenSecret: String(process.env.MUX_TOKEN_SECRET || '').trim(),
+    get configured() {
+      return Boolean(this.tokenId && this.tokenSecret);
+    },
+  },
   // YouTube OAuth (optional until Render env is set). Never expose to the client.
   youtube: {
     clientId: String(process.env.YOUTUBE_CLIENT_ID || '').trim(),

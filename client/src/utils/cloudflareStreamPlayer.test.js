@@ -259,3 +259,16 @@ test('External Server Embed YouTube iframe leftover CF does not show recording-p
   assert.equal(selectCloudflareStreamPlayer({ config }), null);
   assert.equal(selectWatchPlayerSurface(config).surface, 'other');
 });
+
+test('Mux leftover Cloudflare fields do not take the watch surface', () => {
+  const config = liveConfig({
+    streamingProvider: 'mux',
+    viewerPlayback: 'mux',
+    liveIngestProvider: 'cloudflare_stream',
+    cfStreamLiveInputId: LIVE_INPUT,
+    cfStreamHlsUrl: ORIGIN_HLS,
+    muxPlaybackId: 'muxLivePid',
+  });
+  assert.equal(selectCloudflareStreamPlayer({ config }), null);
+  assert.equal(selectWatchPlayerSurface(config).surface, 'other');
+});

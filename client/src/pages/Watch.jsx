@@ -25,6 +25,7 @@ import {
   mergeLivePriorityConfig,
 } from '../utils/livePriority.js';
 import { selectCloudflareStreamPlayer } from '../utils/cloudflareStreamPlayer.js';
+import { isMuxPlaybackConfig, selectMuxPlayer } from '../utils/muxPlayer.js';
 
 // Defer chat / Q&A / gallery / themed shell so the player can load first.
 const LiveChat = lazy(() => import('../components/live/LiveChat.jsx'));
@@ -96,7 +97,7 @@ export default function Watch() {
       ? String(config.recordings.length)
       : '';
   useEffect(() => {
-    if (!eventId || !streamProvider) return undefined;
+    if (!eventId) return undefined;
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
     const isYoutubePlusServer =
       String(streamDestination || '').toLowerCase().replace(/-/g, '_') === 'youtube_server';
@@ -104,8 +105,9 @@ export default function Watch() {
     const isExternalEmbed =
       String(config?.streamingProvider || '') === 'external_embed' ||
       String(config?.viewerPlayback || '') === 'external_embed';
+    const isMux = isMuxPlaybackConfig(config);
     if (isExternalEmbed) return undefined;
-    if (!isServer && !isYoutubePlusServer && !isYoutubeOnly) return undefined;
+    if (!isServer && !isYoutubePlusServer && !isYoutubeOnly && !isMux) return undefined;
     const intervalMs = livePollIntervalMs(
       {
         isLive: pollIsLive,
@@ -114,6 +116,9 @@ export default function Watch() {
         cfRecordingPreparing: Boolean(config?.cfRecordingPreparing),
         liveIngestProvider: config?.liveIngestProvider,
         playbackMode: config?.playbackMode,
+        streamingProvider: config?.streamingProvider,
+        viewerPlayback: config?.viewerPlayback,
+        muxRecordingPreparing: Boolean(config?.muxRecordingPreparing),
       },
       { socketConnected: room.connected }
     );
@@ -124,7 +129,7 @@ export default function Watch() {
       }
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey, config?.cfRecordingPreparing, config?.liveIngestProvider, config?.playbackMode]);
+  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey, config?.cfRecordingPreparing, config?.liveIngestProvider, config?.playbackMode, config?.streamingProvider, config?.viewerPlayback, config?.muxRecordingPreparing]);
 
   const [playerLiveConfirmed, setPlayerLiveConfirmed] = useState(false);
 
@@ -142,12 +147,21 @@ export default function Watch() {
     () => selectCloudflareStreamPlayer({ config: mergedConfig }),
     [mergedConfig]
   );
+  const muxPlayback = useMemo(
+    () => selectMuxPlayer(mergedConfig),
+    [mergedConfig]
+  );
   const displayIsLive = Boolean(
-    cfPlayback ? cfPlayback.mode === 'live' : mergedConfig?.isLive || playerLiveConfirmed
+    muxPlayback
+      ? muxPlayback.mode === 'live'
+      : cfPlayback
+        ? cfPlayback.mode === 'live'
+        : mergedConfig?.isLive || playerLiveConfirmed
   );
 
   const isRecordedReplay = Boolean(
-    cfPlayback?.mode === 'recorded' ||
+    muxPlayback?.mode === 'recorded' ||
+      cfPlayback?.mode === 'recorded' ||
       (mergedConfig &&
         !displayIsLive &&
         !isTemporaryRecordingFallback(mergedConfig) &&

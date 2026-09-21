@@ -12,7 +12,11 @@ function canManageEvent(event, user) {
 
 function isPremiumServerEvent(event, streamConfig) {
   const provider = streamConfig?.provider || event?.streamProvider;
-  return provider === 'rtmp' || provider === 'hls';
+  if (provider === 'rtmp' || provider === 'hls') return true;
+  const mux =
+    String(streamConfig?.streamingProvider || event?.streamingProvider || '') === 'mux' ||
+    String(streamConfig?.viewerPlayback || '') === 'mux';
+  return mux;
 }
 
 /**

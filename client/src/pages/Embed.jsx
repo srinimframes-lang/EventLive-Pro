@@ -9,6 +9,7 @@ import { resolveMediaUrl } from '../utils/format.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import FailoverToast from '../components/live/FailoverToast.jsx';
 import { livePollIntervalMs, mergeLivePriorityConfig } from '../utils/livePriority.js';
+import { isMuxPlaybackConfig } from '../utils/muxPlayer.js';
 
 /**
  * Minimal embeddable player — video only (no chrome, chat, gallery, ads).
@@ -62,12 +63,13 @@ export default function Embed() {
       ? String(config.recordings.length)
       : '';
   useEffect(() => {
-    if (!eventId || !streamProvider) return undefined;
+    if (!eventId) return undefined;
     const isServer = streamProvider === 'rtmp' || streamProvider === 'hls';
     const isYoutubePlusServer =
       String(streamDestination || '').toLowerCase().replace(/-/g, '_') === 'youtube_server';
     const isYoutubeOnly = streamProvider === 'youtube';
-    if (!isServer && !isYoutubePlusServer && !isYoutubeOnly) return undefined;
+    const isMux = isMuxPlaybackConfig(config);
+    if (!isServer && !isYoutubePlusServer && !isYoutubeOnly && !isMux) return undefined;
     const intervalMs = livePollIntervalMs(
       {
         isLive: pollIsLive,
@@ -76,6 +78,9 @@ export default function Embed() {
         cfRecordingPreparing: Boolean(config?.cfRecordingPreparing),
         liveIngestProvider: config?.liveIngestProvider,
         playbackMode: config?.playbackMode,
+        muxRecordingPreparing: Boolean(config?.muxRecordingPreparing),
+        streamingProvider: config?.streamingProvider,
+        viewerPlayback: config?.viewerPlayback,
       },
       { socketConnected: room.connected }
     );
@@ -84,7 +89,7 @@ export default function Embed() {
       if (cfg) setConfig((prev) => (prev ? { ...prev, ...cfg } : cfg));
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey, config?.cfRecordingPreparing, config?.liveIngestProvider, config?.playbackMode]);
+  }, [eventId, streamProvider, streamDestination, room.connected, pollIsLive, pollRecordingKey, config?.cfRecordingPreparing, config?.liveIngestProvider, config?.playbackMode, config?.streamingProvider, config?.viewerPlayback, config?.muxRecordingPreparing]);
 
   const mergedConfig = useMemo(
     () => mergeLivePriorityConfig(config, room.liveStatus, room.failoverState),

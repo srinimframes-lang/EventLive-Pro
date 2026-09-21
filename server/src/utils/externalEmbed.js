@@ -33,6 +33,7 @@ export function inferStreamingProvider(event = {}) {
   if (event.externalEmbedUrl || event.externalHlsUrl || event.externalEmbedHtml) {
     return 'external_embed';
   }
+  if (event.muxLiveStreamId || event.muxPlaybackId) return 'mux';
   if (String(event.liveIngestProvider || '') === 'cloudflare_stream') return 'cloudflare_stream';
   if (
     String(event.liveIngestProvider || '') === 'mediamtx' &&
@@ -141,6 +142,10 @@ export function resolveExternalEmbedPlayback(input = {}) {
     return { type: 'hls', url: hlsUrl, valid: Boolean(hlsUrl) };
   }
   return { type: 'iframe', url: embedUrl, valid: Boolean(embedUrl) };
+}
+
+export function isMuxEvent(event = {}) {
+  return inferStreamingProvider(event) === 'mux';
 }
 
 export function applyMuxFields(target) {

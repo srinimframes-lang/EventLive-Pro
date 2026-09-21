@@ -31,6 +31,12 @@ import {
   publicCloudflareOfflinePlayback,
   syncCloudflareLiveOfflineTransition,
 } from '../services/cloudflareStream.js';
+import {
+  isMuxEvent,
+  publicMuxPlayback,
+  syncMuxLiveStatus,
+  getMuxPublishingStatus,
+} from '../services/muxStream.js';
 import { publicBackgroundMusicSlice } from '../utils/backgroundMusic.js';
 import { getViewerHlsPlaybackBase, isHlsCdnEnabled } from '../utils/hlsCdn.js';
 import {
@@ -158,7 +164,7 @@ function isOnRecordingFallbackHost(req) {
 
 async function findEventOr404(id, res, { withKey = false } = {}) {
   const query = Event.findById(id);
-  if (withKey) query.select('+rtmpStreamKey +cfStreamRtmpsKey');
+  if (withKey) query.select('+rtmpStreamKey +cfStreamRtmpsKey +muxStreamKey');
   const event = await query;
   if (!event) {
     res.status(404);
@@ -221,9 +227,13 @@ function publicExternalEmbedStreamConfig(event) {
   };
 }
 
-function publicMuxStreamConfig(event) {
+function publicMuxStreamConfig(event, { isPublishing = null } = {}) {
   const ended = event.status === 'ended' || event.status === 'cancelled';
-  const isLive = ended ? Boolean(event.isLive) : event.status === 'live' || Boolean(event.isLive);
+  const mux = publicMuxPlayback(event, {
+    isLive: ended ? Boolean(event.isLive) : event.status === 'live' || Boolean(event.isLive),
+    isPublishing,
+  });
+  const isLive = mux.isLive;
   return {
     eventId: event.id,
     provider: 'none',
@@ -231,20 +241,29 @@ function publicMuxStreamConfig(event) {
     viewerPlayback: 'mux',
     liveIngestProvider: undefined,
     streamingDestination: undefined,
+    muxLiveStreamId: mux.muxLiveStreamId,
+    muxPlaybackId: mux.muxPlaybackId,
+    muxAssetId: mux.muxAssetId,
+    muxAssetPlaybackId: mux.muxAssetPlaybackId,
+    muxPlayerUrl: mux.muxPlayerUrl,
+    muxRecordingPreparing: mux.muxRecordingPreparing === true,
     youtubeVideoId: '',
     youtubeBroadcastId: '',
     youtubeWatchUrl: '',
     streamUrl: '',
-    hlsUrl: '',
-    playbackUrl: '',
+    hlsUrl: mux.hlsUrl,
+    playbackUrl: mux.playbackUrl,
     poster: event.coverImage || '',
     isLive,
-    reconnecting: false,
+    isPublishing: isPublishing === true ? true : isPublishing === false ? false : undefined,
+    reconnecting: mux.reconnecting,
     streamDisabled: event.streamDisabled,
     status: event.status,
-    playbackMode: isLive ? 'live' : 'offline',
+    playbackMode: mux.playbackMode,
     recordingUrl: '',
     recordings: [],
+    hasRecording: Boolean(mux.muxAssetPlaybackId),
+    recordingAvailable: Boolean(mux.muxAssetPlaybackId),
   };
 }
 
@@ -252,8 +271,8 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
   if (isExternalEmbedEvent(event)) {
     return publicExternalEmbedStreamConfig(event);
   }
-  if (String(event.streamingProvider || '') === 'mux') {
-    return publicMuxStreamConfig(event);
+  if (isMuxEvent(event) || String(event.streamingProvider || '') === 'mux') {
+    return publicMuxStreamConfig(event, { isPublishing });
   }
   const storedId = resolvePublicYoutubeVideoId(event);
   const playbackId = youtubePlayback?.videoId || '';
@@ -510,8 +529,16 @@ function adminRecordingConfig(event) {
 }
 
 export async function publishingStatusForEvent(event, deps = {}) {
-  if (isExternalEmbedEvent(event) || String(event.streamingProvider || '') === 'mux') {
+  if (isExternalEmbedEvent(event)) {
     return event.status === 'live' || Boolean(event.isLive);
+  }
+  if (isMuxEvent(event) || String(event.streamingProvider || '') === 'mux') {
+    const getMuxStatus = deps.getMuxPublishingStatus || getMuxPublishingStatus;
+    try {
+      return await getMuxStatus(event);
+    } catch {
+      return null;
+    }
   }
   if (isCloudflareStreamLive(event)) {
     const uid = String(event.cfStreamLiveInputId || '').trim();
@@ -668,6 +695,9 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
   event = (await resolveExpiredReconnect(event, io)) || event;
   const youtubePlayback = await resolveYoutubePlaybackForPublicEvent(event);
   const isPublishing = await publishingStatusForEvent(event);
+  if (isMuxEvent(event) || String(event.streamingProvider || '') === 'mux') {
+    event = await syncMuxLiveStatus(event, isPublishing);
+  }
   if (isCloudflareStreamLive(event)) {
     try {
       await ensureCloudflareLiveInputRecordingForEvent(event);
@@ -681,7 +711,10 @@ export const getStreamConfig = asyncHandler(async (req, res) => {
     });
     event = synced.event || event;
   }
-  const playableParts = isPublishing ? null : await persistPlayableRecordingParts(event);
+  const playableParts =
+    isMuxEvent(event) || String(event.streamingProvider || '') === 'mux' || isPublishing
+      ? null
+      : await persistPlayableRecordingParts(event);
   const data = publicStreamConfig(event, { isPublishing, youtubePlayback, playableParts });
   console.info('[youtube-embed] public stream config', {
     eventId: event.id,
@@ -783,6 +816,7 @@ export const getStreamKey = asyncHandler(async (req, res) => {
     {
       eventId: event.id,
       liveIngestProvider: event.liveIngestProvider || '',
+      muxLiveStreamId: isMuxEvent(event) ? String(event.muxLiveStreamId || '') : undefined,
       liveInputUid: isCloudflareStreamLive(event) ? String(event.cfStreamLiveInputId || '') : undefined,
       ...describeRtmpsIngestForLog(creds.ingestUrl, creds.streamKey),
     },
@@ -810,7 +844,7 @@ export const regenerateStreamKey = asyncHandler(async (req, res) => {
   const event = await findEventOr404(req.params.id, res, { withKey: true });
   assertCanManageEvent(event, req.user, res);
 
-  if (!isCloudflareStreamLive(event)) {
+  if (!isCloudflareStreamLive(event) && !isMuxEvent(event)) {
     event.rtmpStreamKey = streamKeyFromEventId(event._id);
     await event.save();
   }

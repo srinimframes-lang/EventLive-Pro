@@ -32,6 +32,13 @@ import {
   resolveYoutubeInput,
 } from '../services/youtubeLiveApi.js';
 import { createEventWithCloudflareLive, deleteCloudflareLiveInputForEvent, syncCloudflareSimulcastOutputs } from '../services/cloudflareStream.js';
+import {
+  createEventWithMuxLive,
+  deleteMuxLiveStreamForEvent,
+  ensureMuxLiveStreamForEvent,
+  isMuxEvent as isMuxStreamingEvent,
+  shouldProvisionMuxLive,
+} from '../services/muxStream.js';
 import { loadUserCredential } from '../utils/youtubeOauth.js';
 import { applyCollegeTemplateFields } from '../utils/collegeAnnualDay.js';
 import {
@@ -66,6 +73,13 @@ function applyStreamingProviderSelection(target, body, res) {
     clearExternalEmbedFields(target);
   }
   return provider;
+}
+
+async function createEventDocument(payload) {
+  if (shouldProvisionMuxLive(payload) || isMuxStreamingEvent(payload)) {
+    return createEventWithMuxLive(payload);
+  }
+  return createEventWithCloudflareLive(payload);
 }
 
 const EDITABLE_FIELDS = [
@@ -432,6 +446,8 @@ export const getEvent = asyncHandler(async (req, res) => {
   delete data.youtubeStreamKey;
   delete data.facebookStreamKey;
   delete data.cfStreamRtmpsKey;
+  delete data.muxStreamKey;
+  delete data.muxRtmpUrl;
   {
     const keyed = await Event.findById(event._id)
       .select('+youtubeStreamKey +facebookStreamKey')
@@ -599,7 +615,7 @@ export const createEvent = asyncHandler(async (req, res) => {
       payload.organizer = owners.organizer;
       payload.createdBy = owners.createdBy;
       payload.creditType = 'none';
-      const event = await createEventWithCloudflareLive(payload);
+      const event = await createEventDocument(payload);
       const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
       scheduleEventQrSync(event._id);
       // eslint-disable-next-line no-console
@@ -616,7 +632,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     // YouTube Live Link Generator: payment is optional and must not block creation.
     if (!chargeCredits) {
       payload.creditType = 'none';
-      const event = await createEventWithCloudflareLive(payload);
+      const event = await createEventDocument(payload);
       const populated = await decorateEventResponse(await loadVerifiedEvent(event._id));
       scheduleEventQrSync(event._id);
       // eslint-disable-next-line no-console
@@ -647,7 +663,7 @@ export const createEvent = asyncHandler(async (req, res) => {
 
     let event;
     try {
-      event = await createEventWithCloudflareLive(payload);
+      event = await createEventDocument(payload);
     } catch (err) {
       await changeBalance({
         userId: req.user._id,
@@ -758,6 +774,14 @@ export const updateEvent = asyncHandler(async (req, res) => {
     applyStreamTypeSelection(event, streamType);
   }
   applyStreamingProviderSelection(event, req.body, res);
+  if (isMuxStreamingEvent(event) && shouldProvisionMuxLive(event)) {
+    try {
+      await ensureMuxLiveStreamForEvent(event);
+    } catch (err) {
+      res.status(err.statusCode || 502);
+      throw err;
+    }
+  }
   const forwardErr = applyYoutubeForwardFields(event, req.body, { isCreate: false });
   if (forwardErr) {
     res.status(400);
@@ -890,6 +914,7 @@ export const deleteEvent = asyncHandler(async (req, res) => {
   }
 
   assertCanModify(event, req.user, res);
+  await deleteMuxLiveStreamForEvent(event);
   await deleteCloudflareLiveInputForEvent(event);
   await event.deleteOne();
 

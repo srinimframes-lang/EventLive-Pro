@@ -46,6 +46,15 @@ export function isTemporaryRecordingFallback(config) {
 export function livePollIntervalMs(config, { socketConnected = false } = {}) {
   if (
     config &&
+    (String(config.streamingProvider || '') === 'mux' ||
+      String(config.viewerPlayback || '') === 'mux') &&
+    !config.isLive &&
+    config.playbackMode !== 'recorded'
+  ) {
+    return LIVE_PRIORITY_POLL_MS;
+  }
+  if (
+    config &&
     !config.isLive &&
     (config.cfRecordingPreparing === true ||
       (String(config.liveIngestProvider || '') === 'cloudflare_stream' &&

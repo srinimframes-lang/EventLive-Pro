@@ -78,6 +78,11 @@ test('inferStreamingProvider does not rewrite legacy events without embed fields
   assert.equal(inferStreamingProvider({}), '');
 });
 
+test('inferStreamingProvider recognizes mux live stream fields', () => {
+  assert.equal(inferStreamingProvider({ streamingProvider: 'mux' }), 'mux');
+  assert.equal(inferStreamingProvider({ muxLiveStreamId: 'abc' }), 'mux');
+});
+
 test('resolveExternalEmbedPlayback picks iframe or HLS', () => {
   const iframe = resolveExternalEmbedPlayback({
     externalEmbedType: 'iframe',

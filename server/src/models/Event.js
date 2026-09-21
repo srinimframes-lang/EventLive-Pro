@@ -318,6 +318,15 @@ const eventSchema = new Schema(
     cfStreamVideoDurationSec: { type: Number },
     // Official Cloudflare video playback.hls for the saved VOD (never Live Input DVR).
     cfStreamPlaybackHlsUrl: { type: String, trim: true, default: '' },
+    // Mux Live Stream (Streaming Provider = Mux). One Live Stream per event.
+    muxLiveStreamId: { type: String, trim: true, default: '' },
+    muxPlaybackId: { type: String, trim: true, default: '' },
+    muxRtmpUrl: { type: String, trim: true, default: '' },
+    // Mux RTMP stream key — never returned unless explicitly selected.
+    muxStreamKey: { type: String, default: '', select: false },
+    muxAssetId: { type: String, trim: true, default: '' },
+    muxAssetPlaybackId: { type: String, trim: true, default: '' },
+    muxStatus: { type: String, trim: true, default: '' },
     // Website-only live background music (Cloudflare Stream events). Does not
     // mix into HLS or YouTube. Defaults keep existing events unchanged.
     backgroundMusicEnabled: { type: Boolean, default: false },
@@ -587,6 +596,7 @@ eventSchema.pre('validate', async function ensureSlugAndShortCode() {
 
 // Premium Server Live: persist RTMP URL, stream key, and playback URL from event id.
 eventSchema.pre('save', function ensureServerStreamFields() {
+  if (this.streamingProvider === 'mux') return;
   if (this.streamProvider !== 'rtmp') return;
   // Cloudflare Stream Live events keep their stored Live Input fields as-is.
   if (this.liveIngestProvider === 'cloudflare_stream') return;
@@ -596,6 +606,7 @@ eventSchema.pre('save', function ensureServerStreamFields() {
 // Keep YouTube fields in sync when only streamUrl was saved.
 // Manual URL / youtubeVideoId always win over a generated broadcast id.
 eventSchema.pre('save', function syncYoutubeFromStreamUrl() {
+  if (this.streamingProvider === 'mux' || this.streamingProvider === 'external_embed') return;
   const fromVideoId = extractYouTubeId(this.youtubeVideoId);
   const fromUrls =
     extractYouTubeId(this.youtubeWatchUrl) ||
@@ -632,6 +643,8 @@ eventSchema.set('toJSON', {
     delete ret.youtubeStreamKey;
     delete ret.facebookStreamKey;
     delete ret.cfStreamRtmpsKey;
+    delete ret.muxStreamKey;
+    delete ret.muxRtmpUrl;
     delete ret.youtubeProvisionError;
     return ret;
   },

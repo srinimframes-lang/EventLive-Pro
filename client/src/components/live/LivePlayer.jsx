@@ -12,6 +12,12 @@ import {
   isYoutubeOnlyWebsitePlayback,
 } from '../../utils/cloudflareStreamPlayer.js';
 import CloudflareStreamPlayer from './CloudflareStreamPlayer.jsx';
+import MuxPlayer from './MuxPlayer.jsx';
+import {
+  isMuxPlaybackConfig,
+  muxPlayerMountKey,
+  selectMuxPlayer,
+} from '../../utils/muxPlayer.js';
 import {
   buildHlsConfig,
   isRecordedVodAtNaturalEnd,
@@ -2183,6 +2189,10 @@ function LivePlayerView({ config, onLiveUiChange }) {
       setHlsLiveResume(false);
       return;
     }
+    if (isMuxPlaybackConfig(config) || isExternalEmbedConfig(config)) {
+      setHlsLiveResume(false);
+      return;
+    }
     // Parent/API confirmed LIVE — drop local override (player already on HLS).
     if (config.isLive) setHlsLiveResume(false);
   }, [config]);
@@ -2193,6 +2203,10 @@ function LivePlayerView({ config, onLiveUiChange }) {
   useEffect(() => {
     if (!config) return undefined;
     if (isYoutubePlusServerDestination(config)) {
+      setHlsLiveResume(false);
+      return undefined;
+    }
+    if (isMuxPlaybackConfig(config) || isExternalEmbedConfig(config)) {
       setHlsLiveResume(false);
       return undefined;
     }
@@ -2248,7 +2262,7 @@ function LivePlayerView({ config, onLiveUiChange }) {
   const youtubePlusServer = isYoutubePlusServerDestination(config);
   const youtubeOnlyWebsite = Boolean(config) && isYoutubeOnlyWebsitePlayback(config);
   const skipCloudflarePlayer =
-    Boolean(config) && (isExternalEmbedConfig(config) || youtubeOnlyWebsite);
+    Boolean(config) && (isExternalEmbedConfig(config) || youtubeOnlyWebsite || isMuxPlaybackConfig(config));
   const isCloudflareIngestEarly =
     !skipCloudflarePlayer &&
     (String(config?.liveIngestProvider || '') === 'cloudflare_stream' ||
@@ -2374,12 +2388,38 @@ function LivePlayerView({ config, onLiveUiChange }) {
     return <Offline message="No YouTube video configured" />;
   }
 
-  if (String(config.streamingProvider || '') === 'mux' || String(config.viewerPlayback || '') === 'mux') {
-    return <Offline message="Mux playback is not configured for this event." />;
-  }
-
   const poster = config.poster || '';
   const eventId = config.eventId || '';
+
+  if (isMuxPlaybackConfig(config)) {
+    const muxPlayer = selectMuxPlayer(config);
+    if (muxPlayer?.mode === 'live' || muxPlayer?.mode === 'recorded') {
+      return (
+        <Frame>
+          <MuxPlayer
+            key={muxPlayerMountKey({
+              mode: muxPlayer.mode,
+              playbackId: muxPlayer.playbackId,
+              eventId,
+            })}
+            mode={muxPlayer.mode}
+            playbackId={muxPlayer.playbackId}
+            iframeUrl={muxPlayer.iframeUrl}
+            poster={poster}
+            title={muxPlayer.mode === 'recorded' ? 'Recording' : 'Live stream'}
+          />
+        </Frame>
+      );
+    }
+    if (muxPlayer?.mode === 'recording-preparing') {
+      return <Offline message={RECORDING_PREPARING_MSG} />;
+    }
+    if (muxPlayer?.mode === 'ended' || config.status === 'ended' || config.status === 'cancelled') {
+      return <Offline message={ENDED_MSG} />;
+    }
+    return <Offline message={SERVER_WAITING_MSG} />;
+  }
+
   const cfPlayerOrigin = String(
     config.cfStreamPlayerUrl ||
       config.cfStreamHlsUrl ||

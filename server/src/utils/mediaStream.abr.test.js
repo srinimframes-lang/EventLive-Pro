@@ -9,6 +9,7 @@ import {
   hlsPlaylistName,
   isAdaptiveStreamingEnabled,
   isCloudflareStreamLive,
+  isMuxLive,
   normalizeCloudflareRtmpsIngestUrl,
   normalizeCloudflareRtmpsKey,
   normalizePlaybackUrl,
@@ -216,6 +217,27 @@ test('buildRtmpCredentials stays on MediaMTX when provider is missing', () => {
   assert.equal(creds.streamKey, EVENT_ID);
   assert.match(creds.playbackUrl, /\/live\/aaaaaaaaaaaaaaaaaaaaaaaa\/index\.m3u8$/);
   assert.equal(creds.mediamtxPath, `live/${EVENT_ID}`);
+});
+
+test('buildRtmpCredentials uses Mux RTMPS and never MediaMTX for mux events', () => {
+  const creds = buildRtmpCredentials({
+    _id: EVENT_ID,
+    streamProvider: 'none',
+    streamingProvider: 'mux',
+    muxRtmpUrl: 'rtmps://global-live.mux.com:443/app',
+    muxStreamKey: 'mux-secret-key',
+    muxPlaybackId: 'muxPlayback',
+    liveIngestProvider: 'cloudflare_stream',
+    cfStreamRtmpsUrl: CF_RTMPS,
+    cfStreamRtmpsKey: 'cf-test-key',
+  });
+  assert.equal(isMuxLive({ streamingProvider: 'mux' }), true);
+  assert.equal(creds.ingestUrl, 'rtmps://global-live.mux.com:443/app');
+  assert.equal(creds.streamKey, 'mux-secret-key');
+  assert.equal(creds.playbackUrl, 'https://stream.mux.com/muxPlayback.m3u8');
+  assert.equal(creds.mediamtxPath, '');
+  assert.equal(creds.ingestUrl.includes('cloudflare'), false);
+  assert.equal(creds.ingestUrl.includes('eventlivepro'), false);
 });
 
 test('syncServerStreamFields does not overwrite Cloudflare events', () => {

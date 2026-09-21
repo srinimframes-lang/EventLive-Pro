@@ -159,6 +159,26 @@ test('External Server Embed leftover Cloudflare ingest does not enter recording-
   assert.equal(merged.playbackMode, 'offline');
 });
 
+test('Mux leftover Cloudflare ingest does not enter recording-preparing', () => {
+  const merged = mergeLivePriorityConfig(
+    {
+      isLive: false,
+      isPublishing: false,
+      playbackMode: 'offline',
+      status: 'published',
+      streamingProvider: 'mux',
+      viewerPlayback: 'mux',
+      liveIngestProvider: 'cloudflare_stream',
+      cfRecordingPreparing: true,
+      muxPlaybackId: 'muxLivePid',
+    },
+    { isLive: false, playbackMode: 'offline', reconnecting: false }
+  );
+  assert.equal(merged.cfRecordingPreparing, false);
+  assert.equal(merged.playbackMode, 'offline');
+  assert.equal(merged.isLive, false);
+});
+
 test('stale socket isLive cannot keep Cloudflare leftover DVR after OBS stop', () => {
   const liveInputId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const merged = mergeLivePriorityConfig(

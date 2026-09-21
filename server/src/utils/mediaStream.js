@@ -50,6 +50,11 @@ export function mediamtxPathName(streamKey) {
 /** Official Cloudflare Stream OBS ingest URL. Trailing slash is required. */
 export const CLOUDFLARE_RTMPS_INGEST_URL = 'rtmps://live.cloudflare.com:443/live/';
 
+/** True when this event uses Mux Live ingest (not Cloudflare or MediaMTX). */
+export function isMuxLive(event = {}) {
+  return String(event.streamingProvider || '').trim().toLowerCase().replace(/-/g, '_') === 'mux';
+}
+
 /** True when this event uses Cloudflare Stream Live ingest (not MediaMTX). */
 export function isCloudflareStreamLive(event = {}) {
   const provider = String(event.streamingProvider || '').trim().toLowerCase().replace(/-/g, '_');
@@ -239,6 +244,22 @@ export function deriveWebRtcPlaybackUrl(event) {
 }
 
 export function buildRtmpCredentials(event) {
+  if (isMuxLive(event)) {
+    const ingestUrl = String(event.muxRtmpUrl || '').trim() || 'rtmps://global-live.mux.com:443/app';
+    const streamKey = String(event.muxStreamKey || '').trim();
+    const playbackId = String(event.muxPlaybackId || '').trim();
+    return {
+      ingestUrl,
+      streamKey,
+      fullUrl: ingestUrl && streamKey ? `${ingestUrl}/${streamKey}` : ingestUrl,
+      playbackUrl: playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : '',
+      webrtcUrl: '',
+      mediamtxPath: '',
+      hlsCdnEnabled: false,
+      hlsPlaybackBase: '',
+      adaptiveStreaming: false,
+    };
+  }
   if (isCloudflareStreamLive(event)) {
     const ingestUrl = normalizeCloudflareRtmpsIngestUrl(event.cfStreamRtmpsUrl);
     const streamKey = normalizeCloudflareRtmpsKey(event.cfStreamRtmpsKey);
@@ -283,7 +304,7 @@ export function freshServerStreamUrls(event) {
  */
 export function syncServerStreamFields(event) {
   if (event.streamProvider !== 'rtmp') return null;
-  if (isCloudflareStreamLive(event)) return null;
+  if (isMuxLive(event) || isCloudflareStreamLive(event)) return null;
   const key = streamKeyFromEventId(event._id || event.id);
   if (!key) return null;
   const eventLike = { ...(event.toObject?.() || event), rtmpStreamKey: key };
@@ -356,6 +377,9 @@ export async function findEventByStreamKey(rawKey) {
 }
 
 export async function ensureEventStreamKey(event) {
+  if (isMuxLive(event)) {
+    return String(event.muxStreamKey || '').trim();
+  }
   if (isCloudflareStreamLive(event)) {
     return normalizeCloudflareRtmpsKey(event.cfStreamRtmpsKey);
   }

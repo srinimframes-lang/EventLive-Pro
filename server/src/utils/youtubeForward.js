@@ -157,6 +157,8 @@ export function sanitizeStreamingSecrets(
   delete data.facebookStreamKey;
   delete data.rtmpStreamKey;
   delete data.cfStreamRtmpsKey;
+  delete data.muxStreamKey;
+  delete data.muxRtmpUrl;
   data.youtubeStreamKeySet = Boolean(hasYoutubeStreamKey);
   data.facebookStreamKeySet = Boolean(hasFacebookStreamKey);
   return data;

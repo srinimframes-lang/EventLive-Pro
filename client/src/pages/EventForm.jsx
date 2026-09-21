@@ -396,7 +396,10 @@ export default function EventForm() {
 
   useEffect(() => {
     const usesServer =
-      streamType === 'server' || streamType === 'server_youtube' || streamType === 'youtube_server';
+      streamType === 'server' ||
+      streamType === 'server_youtube' ||
+      streamType === 'youtube_server' ||
+      streamType === 'mux';
     if (!isEdit || !id || !usesServer || !form.isOnline) {
       setServerStream(null);
       return undefined;
@@ -1036,7 +1039,7 @@ export default function EventForm() {
             setThumbDirty(false);
           }
         }
-        if (usesServerIngest) {
+        if (usesServerIngest || streamingProvider === 'mux') {
           try {
             const keyInfo = await streamService.getKey(saved.id);
             setServerStream({
@@ -1659,10 +1662,43 @@ export default function EventForm() {
               )}
 
               {streamingProvider === 'mux' && (
-                <p className="text-xs text-slate-500">
-                  Mux is saved as this event&apos;s provider. Mux playback is not wired yet and
-                  does not change Cloudflare Stream or MediaMTX events.
-                </p>
+                <div className="space-y-4 rounded-xl border border-gold-200 bg-gold-50/50 p-4">
+                  <p className="text-sm text-slate-600">
+                    Point OBS at Mux RTMPS. Server URL is{' '}
+                    <code className="font-mono text-xs">rtmps://global-live.mux.com:443/app</code>.
+                    Paste the Stream Key only in the OBS key field. Viewers watch the EventLivePro
+                    Mux player — Cloudflare Stream and MediaMTX are not used.
+                  </p>
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    OBS Settings → Output → Streaming: Keyframe Interval = <strong>2</strong> (seconds),
+                    Rate Control CBR. Put only the Stream Key in OBS — do not paste the full RTMP URL
+                    into the key field.
+                  </p>
+                  {isEdit && serverStreamLoading && (
+                    <p className="text-sm text-slate-500">Loading Mux stream credentials…</p>
+                  )}
+                  {(isEdit ? serverStream && !serverStreamLoading : serverStream) ? (
+                    <>
+                      <CopyableObsField
+                        label="OBS Server URL"
+                        htmlFor="muxRtmpUrl"
+                        value={serverStream.rtmpUrl}
+                        hint="Mux RTMPS ingest URL. Copy into OBS Server."
+                      />
+                      <CopyableObsField
+                        label="Stream Key"
+                        htmlFor="muxStreamKey"
+                        value={serverStream.streamKey}
+                        hint="Authorized admin only. Never shown on the public watch page."
+                      />
+                    </>
+                  ) : !isEdit ? (
+                    <p className="text-sm text-slate-500">
+                      Mux creates one Live Stream when you save. OBS Server URL and Stream Key will
+                      appear on this page for authorized admins.
+                    </p>
+                  ) : null}
+                </div>
               )}
 
               {usesLegacyDestinations && (
