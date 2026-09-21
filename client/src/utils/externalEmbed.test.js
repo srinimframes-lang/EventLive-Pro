@@ -28,6 +28,7 @@ test('inferStreamingProvider prefers stored field and leaves legacy events intac
 });
 
 test('selectExternalEmbedPlayer only renders for external_embed configs', () => {
+  assert.equal(selectExternalEmbedPlayer(null), null);
   assert.equal(
     selectExternalEmbedPlayer({
       liveIngestProvider: 'cloudflare_stream',

@@ -216,6 +216,12 @@ test('external embed leftover Cloudflare fields do not take the watch surface', 
   assert.equal(selectWatchPlayerSurface(config).surface, 'other');
 });
 
+test('YouTube website playback helper is safe when stream config is still null', () => {
+  assert.equal(isYoutubeOnlyWebsitePlayback(null), false);
+  assert.equal(isYoutubeOnlyWebsitePlayback(undefined), false);
+  assert.equal(isYoutubeOnlyWebsitePlayback({}), false);
+});
+
 test('YouTube-only leftover Cloudflare recording state does not take the watch surface', () => {
   const config = {
     provider: 'youtube',

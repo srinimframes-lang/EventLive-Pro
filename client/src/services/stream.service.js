@@ -3,7 +3,8 @@ import api from './api.js';
 export const streamService = {
   async getConfig(eventId) {
     const { data } = await api.get(`/api/events/${eventId}/stream`);
-    return data.data;
+    const config = data?.data;
+    return config && typeof config === 'object' ? config : null;
   },
   async updateConfig(eventId, payload) {
     const { data } = await api.patch(`/api/events/${eventId}/stream`, payload);

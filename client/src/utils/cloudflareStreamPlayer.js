@@ -66,6 +66,7 @@ function playbackOriginUrl(config) {
 
 /** Website YouTube embed — leftover Cloudflare ingest must not own the player. */
 export function isYoutubeOnlyWebsitePlayback(config = {}) {
+  if (!config) return false;
   const dest = String(config.streamingDestination || '')
     .toLowerCase()
     .trim()

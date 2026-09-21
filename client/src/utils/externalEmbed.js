@@ -45,6 +45,7 @@ export function inferStreamingProvider(event = {}) {
 }
 
 export function isExternalEmbedConfig(config = {}) {
+  if (!config) return false;
   return (
     String(config.streamingProvider || '') === 'external_embed' ||
     String(config.viewerPlayback || '') === 'external_embed'

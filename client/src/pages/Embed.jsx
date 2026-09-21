@@ -36,9 +36,13 @@ export default function Embed() {
       .get(shortCode)
       .then(async (ev) => {
         if (!active) return;
-        setEvent(ensureSafeEventTheme(ev));
+        if (!ev || typeof ev !== 'object') {
+          throw new Error('Event not found');
+        }
         const cfg = await streamService.getConfig(ev.id).catch(() => null);
-        if (active) setConfig(cfg);
+        if (!active) return;
+        setEvent(ensureSafeEventTheme(ev));
+        setConfig(cfg);
       })
       .catch((err) => active && setError(err.message || 'Event not found'));
     return () => {

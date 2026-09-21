@@ -53,10 +53,15 @@ export default function Watch() {
   useEffect(() => {
     let active = true;
     setError('');
+    setEvent(null);
+    setConfig(null);
     eventService
       .get(idOrSlug)
       .then(async (ev) => {
         if (!active) return;
+        if (!ev || typeof ev !== 'object') {
+          throw new Error('Event not found');
+        }
         const canonical = watchPath(ev);
         if (canonical) {
           const current = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
@@ -65,9 +70,10 @@ export default function Watch() {
             return;
           }
         }
-        setEvent(ensureSafeEventTheme(ev));
         const cfg = await streamService.getConfig(ev.id).catch(() => null);
-        if (active) setConfig(cfg);
+        if (!active) return;
+        setEvent(ensureSafeEventTheme(ev));
+        setConfig(cfg);
       })
       .catch((err) => active && setError(err.message));
     return () => {

@@ -10,7 +10,11 @@ export const eventService = {
   },
   async get(idOrSlug) {
     const { data } = await api.get(`/api/events/${idOrSlug}`);
-    return data.data;
+    const event = data?.data;
+    if (!event || typeof event !== 'object') {
+      throw new Error(data?.message || 'Event not found');
+    }
+    return event;
   },
   async getYoutubeIngest(id) {
     const { data } = await api.get(`/api/events/${id}/youtube-ingest`);

@@ -2246,9 +2246,9 @@ function LivePlayerView({ config, onLiveUiChange }) {
   }, [config, hlsLiveResume]);
 
   const youtubePlusServer = isYoutubePlusServerDestination(config);
-  const youtubeOnlyWebsite = isYoutubeOnlyWebsitePlayback(config);
+  const youtubeOnlyWebsite = Boolean(config) && isYoutubeOnlyWebsitePlayback(config);
   const skipCloudflarePlayer =
-    isExternalEmbedConfig(config) || youtubeOnlyWebsite;
+    Boolean(config) && (isExternalEmbedConfig(config) || youtubeOnlyWebsite);
   const isCloudflareIngestEarly =
     !skipCloudflarePlayer &&
     (String(config?.liveIngestProvider || '') === 'cloudflare_stream' ||
