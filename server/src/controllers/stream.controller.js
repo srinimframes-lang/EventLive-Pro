@@ -361,11 +361,11 @@ function publicStreamConfig(event, { isPublishing = null, youtubePlayback = null
     streamingProvider: event.streamingProvider || undefined,
     liveIngestProvider: event.liveIngestProvider || undefined,
     streamingDestination: event.streamingDestination || undefined,
-    // Cloudflare Stream public player is the official iframe, not YouTube or MediaMTX HLS.
-    viewerPlayback: isCloudflareStreamLive(event)
-      ? 'cloudflare_stream'
-      : youtubePlusServer
-        ? 'youtube'
+    // Website YouTube embed (YouTube-only and YouTube + Server) is independent of leftover Cloudflare ingest.
+    viewerPlayback: youtubePlusServer || destination === 'youtube' || provider === 'youtube' || event.streamingProvider === 'youtube'
+      ? 'youtube'
+      : isCloudflareStreamLive(event)
+        ? 'cloudflare_stream'
         : isServer
           ? 'hls'
           : provider === 'youtube'

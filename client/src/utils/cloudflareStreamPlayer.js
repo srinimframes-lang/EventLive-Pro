@@ -64,7 +64,7 @@ function playbackOriginUrl(config) {
   );
 }
 
-/** YouTube-only website playback — leftover Cloudflare ingest must not own the player. */
+/** Website YouTube embed — leftover Cloudflare ingest must not own the player. */
 export function isYoutubeOnlyWebsitePlayback(config = {}) {
   const dest = String(config.streamingDestination || '')
     .toLowerCase()
@@ -77,8 +77,10 @@ export function isYoutubeOnlyWebsitePlayback(config = {}) {
   const provider = String(config.provider || config.streamProvider || '')
     .trim()
     .toLowerCase();
-  if (streamingProvider === 'youtube' || dest === 'youtube') return true;
-  return provider === 'youtube' && dest !== 'youtube_server' && dest !== 'server_youtube';
+  if (streamingProvider === 'youtube' || dest === 'youtube' || dest === 'youtube_server') {
+    return true;
+  }
+  return provider === 'youtube' && dest !== 'server_youtube';
 }
 
 export function isCloudflareStreamEventConfig(config) {

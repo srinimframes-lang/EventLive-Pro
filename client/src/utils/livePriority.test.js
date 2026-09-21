@@ -95,6 +95,28 @@ test('Cloudflare recording-preparing polls quickly and ignores stale socket live
   assert.equal(merged.reconnecting, false);
 });
 
+test('YouTube + Server leftover Cloudflare ingest does not enter recording-preparing', () => {
+  const merged = mergeLivePriorityConfig(
+    {
+      isLive: false,
+      isPublishing: undefined,
+      playbackMode: 'offline',
+      status: 'published',
+      provider: 'rtmp',
+      streamingProvider: 'cloudflare_stream',
+      viewerPlayback: 'cloudflare_stream',
+      liveIngestProvider: 'cloudflare_stream',
+      streamingDestination: 'youtube_server',
+      cfRecordingPreparing: true,
+      youtubeVideoId: 'dQw4w9WgXcQ',
+    },
+    { isLive: false, playbackMode: 'offline', reconnecting: false }
+  );
+  assert.equal(merged.cfRecordingPreparing, false);
+  assert.equal(merged.playbackMode, 'offline');
+  assert.equal(merged.isLive, false);
+});
+
 test('YouTube-only leftover Cloudflare ingest does not enter recording-preparing', () => {
   const merged = mergeLivePriorityConfig(
     {

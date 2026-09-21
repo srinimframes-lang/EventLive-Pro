@@ -135,7 +135,8 @@ export function mergeLivePriorityConfig(config, liveStatus, failoverState) {
     streamingProvider === 'mux' ||
     viewerPlayback === 'mux' ||
     streamingProvider === 'youtube' ||
-    dest === 'youtube';
+    dest === 'youtube' ||
+    dest === 'youtube_server';
   const cfIngest =
     !skipCloudflareRecordingState &&
     String(config.liveIngestProvider || '') === 'cloudflare_stream';

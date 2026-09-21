@@ -140,17 +140,31 @@ test('offline without Video UID stays preparing, never live DVR', () => {
   assert.equal(selected.showWaitingForLive, false);
 });
 
-test('YouTube + Server Cloudflare events still use the Stream iframe, not YouTube or HLS', () => {
+test('YouTube + Server leftover Cloudflare recording state does not take the watch surface', () => {
+  const config = liveConfig({
+    streamingDestination: 'youtube_server',
+    viewerPlayback: 'youtube',
+    provider: 'rtmp',
+    isPublishing: false,
+    isLive: false,
+    playbackMode: 'offline',
+    cfRecordingPreparing: true,
+    cfStreamVideoUid: '',
+    youtubeVideoId: 'dQw4w9wgGcQ',
+  });
+  assert.equal(isYoutubeOnlyWebsitePlayback(config), true);
+  assert.equal(selectCloudflareStreamPlayer({ config }), null);
+  assert.equal(selectWatchPlayerSurface(config).surface, 'other');
+});
+
+test('Server + YouTube Cloudflare events still use the Stream iframe for website playback', () => {
   const selected = selectWatchPlayerSurface(
     liveConfig({
-      streamingDestination: 'youtube_server',
-      viewerPlayback: 'youtube',
+      streamingDestination: 'server_youtube',
       provider: 'rtmp',
-      youtubeVideoId: 'dQw4w9wgGcQ',
     }),
   );
   assert.equal(selected.surface, 'cloudflare-iframe');
-  assert.equal(selected.component, 'CloudflareStreamPlayer');
   assert.equal(selected.player.mode, 'live');
   assert.equal(selected.player.uid, LIVE_INPUT);
 });
