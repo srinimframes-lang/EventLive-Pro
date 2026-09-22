@@ -91,7 +91,7 @@ export const eventService = {
     return data.data;
   },
 
-  /** Upload classic-wedding (or template) image. kind: hero | bride | groom | college-logo */
+  /** Upload template image. kind: hero | bride | groom | college-logo | template-logo | template-photo | template-extra */
   async uploadTemplateImage(id, kind, file) {
     const fd = new FormData();
     fd.append('image', file);

@@ -8,6 +8,7 @@ import { buildWatchUrl, formatDateTime, resolveMediaUrl, watchPath } from '../ut
 import { hasEventTheme, ensureSafeEventTheme, publicEventTypeLabel } from '../utils/eventTheme.js';
 import { resolveWatchWeddingTemplate } from '../utils/weddingTemplates.js';
 import { isCollegeAnnualDayTemplate } from '../utils/collegeAnnualDay.js';
+import { isExtendedPageTemplate } from '../utils/eventTemplates.js';
 import LivePlayer from '../components/live/LivePlayer.jsx';
 import ViewerCount from '../components/live/ViewerCount.jsx';
 import StreamingDetailsBox from '../components/live/StreamingDetailsBox.jsx';
@@ -35,6 +36,7 @@ const ThemedWatchLayout = lazy(() => import('../components/ThemedWatchLayout.jsx
 const ClassicWeddingPage = lazy(() => import('../components/classic-wedding/ClassicWeddingPage.jsx'));
 const WeddingTemplatePage = lazy(() => import('../components/wedding-templates/WeddingTemplatePage.jsx'));
 const CollegeAnnualDayPage = lazy(() => import('../components/college-annual-day/CollegeAnnualDayPage.jsx'));
+const EventTemplatePage = lazy(() => import('../components/event-templates/EventTemplatePage.jsx'));
 
 function PanelFallback() {
   return <p className="p-4 text-center text-sm text-slate-500">Loading…</p>;
@@ -203,20 +205,25 @@ export default function Watch() {
   const weddingTemplateId = resolveWatchWeddingTemplate(event, { hasTheme: themed });
   const isClassicWedding = event?.pageTemplate === 'classic-wedding' && !weddingTemplateId;
   const isCollegeAnnualDay = isCollegeAnnualDayTemplate(event?.pageTemplate) && !weddingTemplateId;
+  const isExtendedEventTemplate = isExtendedPageTemplate(event?.pageTemplate) && !weddingTemplateId;
 
   useEffect(() => {
-    if (!themed && !isClassicWedding && !weddingTemplateId && !isCollegeAnnualDay) return undefined;
+    if (!themed && !isClassicWedding && !weddingTemplateId && !isCollegeAnnualDay && !isExtendedEventTemplate) {
+      return undefined;
+    }
     document.body.classList.add('watch-themed');
     if (isClassicWedding) document.body.classList.add('watch-classic-wedding');
     if (weddingTemplateId) document.body.classList.add('watch-wedding-template');
     if (isCollegeAnnualDay) document.body.classList.add('watch-college-annual-day');
+    if (isExtendedEventTemplate) document.body.classList.add('watch-event-template');
     return () => {
       document.body.classList.remove('watch-themed');
       document.body.classList.remove('watch-classic-wedding');
       document.body.classList.remove('watch-wedding-template');
       document.body.classList.remove('watch-college-annual-day');
+      document.body.classList.remove('watch-event-template');
     };
-  }, [themed, isClassicWedding, weddingTemplateId, isCollegeAnnualDay]);
+  }, [themed, isClassicWedding, weddingTemplateId, isCollegeAnnualDay, isExtendedEventTemplate]);
 
   if (error)
     return (
@@ -253,6 +260,44 @@ export default function Watch() {
         ) : null}
         <Suspense fallback={<ThemeLoadingScreen label="Loading annual day page…" />}>
           <CollegeAnnualDayPage
+            event={event}
+            watchUrl={watchUrl}
+            mergedConfig={mergedConfig}
+            room={room}
+            chatOn={chatOn}
+            activeTab={activeTab}
+            setTab={setTab}
+            canAnswer={canAnswer}
+            onLiveUiChange={handleLiveUiChange}
+            displayIsLive={displayIsLive}
+            isRecordedReplay={isRecordedReplay}
+          />
+        </Suspense>
+      </>
+    );
+  }
+
+  // Additive event templates — visual layer only; player is unchanged.
+  if (isExtendedEventTemplate) {
+    return (
+      <>
+        <FailoverToast
+          message={room.failoverNotice}
+          visible={Boolean(room.failoverNotice)}
+          onDismiss={room.clearFailoverNotice}
+        />
+        {showRecovery ? (
+          <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-4">
+            <FailoverRecoveryBanner
+              visible
+              busy={emergencyBusy}
+              onContinueYoutube={() => runEmergency('continue_youtube')}
+              onSwitchServer={() => runEmergency('switch_server')}
+            />
+          </div>
+        ) : null}
+        <Suspense fallback={<ThemeLoadingScreen label="Loading event page…" />}>
+          <EventTemplatePage
             event={event}
             watchUrl={watchUrl}
             mergedConfig={mergedConfig}

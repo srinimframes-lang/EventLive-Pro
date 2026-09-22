@@ -5,6 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { changeBalance } from '../utils/credits.js';
 import { linkCost } from '../config/credits.js';
 import { snapshotTheme } from '../controllers/theme.controller.js';
+import { applyEventTemplateFields } from '../utils/eventTemplates.js';
 import { regionFromDistrictSlug } from '../constants/districts.js';
 import { extractYouTubeId } from '../utils/youtube.js';
 import {
@@ -115,6 +116,10 @@ const EDITABLE_FIELDS = [
   'chiefGuestDesignation',
   'principalName',
   'collegeAddress',
+  'templateLogo',
+  'templatePhoto',
+  'templateExtraPhoto',
+  'pageTemplateData',
   'studioName',
   'photographerName',
   'photographerLogo',
@@ -508,6 +513,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) payload[field] = req.body[field];
   }
   applyCollegeTemplateFields(payload, req.body);
+  applyEventTemplateFields(payload, req.body);
   normalizeStudioFields(payload);
   if (payload.description === undefined || payload.description === null) {
     payload.description = '';
@@ -727,6 +733,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     event[field] = req.body[field];
   }
   applyCollegeTemplateFields(event, req.body);
+  applyEventTemplateFields(event, req.body);
   normalizeStudioFields(event);
   if (req.body.youtubeLiveUrl !== undefined) event.youtubeLiveUrl = req.body.youtubeLiveUrl;
   const bodyYoutube = resolveYoutubeInput(req.body);

@@ -7,7 +7,7 @@ import {
   RESERVED_PUBLIC_ROOTS,
   slugifyName,
 } from '../utils/seo.js';
-import { weddingPageTemplateEnum } from '../utils/weddingTemplates.js';
+import { pageTemplateEnum } from '../utils/eventTemplates.js';
 
 const { Schema, model } = mongoose;
 
@@ -183,7 +183,7 @@ const eventSchema = new Schema(
     // Public page template (opt-in). Existing events stay on "default".
     pageTemplate: {
       type: String,
-      enum: weddingPageTemplateEnum(),
+      enum: pageTemplateEnum(),
       default: 'default',
       index: true,
     },
@@ -208,6 +208,12 @@ const eventSchema = new Schema(
     chiefGuestDesignation: { type: String, trim: true, default: '', maxlength: 160 },
     principalName: { type: String, trim: true, default: '', maxlength: 120 },
     collegeAddress: { type: String, trim: true, default: '', maxlength: 400 },
+
+    // Additive event templates (opt-in). Unused by wedding / reception / college.
+    templateLogo: { type: String, trim: true, default: '' },
+    templatePhoto: { type: String, trim: true, default: '' },
+    templateExtraPhoto: { type: String, trim: true, default: '' },
+    pageTemplateData: { type: Schema.Types.Mixed, default: {} },
 
     // ── Photography branding ──────────────────────────────────
     studioName: { type: String, trim: true, default: '', maxlength: 120 },

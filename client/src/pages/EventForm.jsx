@@ -12,7 +12,6 @@ import { toDateTimeLocal, extractYouTubeId, resolveMediaUrl } from '../utils/for
 import {
   COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION,
   isCollegeAnnualDayTemplate,
-  normalizePageTemplate,
   WEDDING_TEMPLATE_OPTIONS,
 } from '../utils/weddingTemplates.js';
 import {
@@ -23,6 +22,13 @@ import {
   normalizeCollegeSections,
 } from '../utils/collegeAnnualDay.js';
 import { normalizeStudioForm } from '../utils/studioFields.js';
+import {
+  EXTENDED_PAGE_TEMPLATE_OPTIONS,
+  isExtendedPageTemplate,
+  normalizeEventPageTemplate,
+  normalizePageTemplateData,
+} from '../utils/eventTemplates.js';
+import EventTemplateFields from '../components/event-templates/EventTemplateFields.jsx';
 import { themeService } from '../services/theme.service.js';
 import ThemeGallery from '../components/theme/ThemeGallery.jsx';
 import EventQrCard from '../components/EventQrCard.jsx';
@@ -114,6 +120,10 @@ const EMPTY = {
   chiefGuestDesignation: '',
   principalName: '',
   collegeAddress: '',
+  templateLogo: '',
+  templatePhoto: '',
+  templateExtraPhoto: '',
+  pageTemplateData: {},
   theme: '',
   shortCode: '',
   slug: '',
@@ -133,6 +143,16 @@ const EMPTY = {
   backgroundMusicVolume: DEFAULT_BACKGROUND_MUSIC_VOLUME,
 };
 
+const TEMPLATE_IMAGE_KIND_FIELDS = {
+  hero: 'heroBackgroundImage',
+  bride: 'bridePhoto',
+  groom: 'groomPhoto',
+  'college-logo': 'collegeLogo',
+  'template-logo': 'templateLogo',
+  'template-photo': 'templatePhoto',
+  'template-extra': 'templateExtraPhoto',
+};
+
 export default function EventForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -147,6 +167,9 @@ export default function EventForm() {
   const bridePhotoInputRef = useRef(null);
   const groomPhotoInputRef = useRef(null);
   const collegeLogoInputRef = useRef(null);
+  const templateLogoInputRef = useRef(null);
+  const templatePhotoInputRef = useRef(null);
+  const templateExtraInputRef = useRef(null);
   const pendingCoverRef = useRef(null);
   const pendingThumbRef = useRef(null);
   const coverSourceRef = useRef(null);
@@ -157,6 +180,9 @@ export default function EventForm() {
   const pendingBridePhotoRef = useRef(null);
   const pendingGroomPhotoRef = useRef(null);
   const pendingCollegeLogoRef = useRef(null);
+  const pendingTemplateLogoRef = useRef(null);
+  const pendingTemplatePhotoRef = useRef(null);
+  const pendingTemplateExtraRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
@@ -290,7 +316,7 @@ export default function EventForm() {
           studioMapsUrl: event.studioMapsUrl || '',
           coverImage: event.coverImage || '',
           shareThumbnail: event.shareThumbnail || '',
-          pageTemplate: normalizePageTemplate(event.pageTemplate),
+          pageTemplate: normalizeEventPageTemplate(event.pageTemplate),
           heroBackgroundImage: event.heroBackgroundImage || '',
           bridePhoto: event.bridePhoto || '',
           groomPhoto: event.groomPhoto || '',
@@ -305,6 +331,13 @@ export default function EventForm() {
           chiefGuestDesignation: event.chiefGuestDesignation || '',
           principalName: event.principalName || '',
           collegeAddress: event.collegeAddress || '',
+          templateLogo: event.templateLogo || '',
+          templatePhoto: event.templatePhoto || '',
+          templateExtraPhoto: event.templateExtraPhoto || '',
+          pageTemplateData: normalizePageTemplateData(
+            normalizeEventPageTemplate(event.pageTemplate),
+            event.pageTemplateData
+          ),
           theme: event.theme?.id || event.theme || '',
           shortCode: event.shortCode || '',
           slug: event.slug || '',
@@ -662,33 +695,32 @@ export default function EventForm() {
     }
   };
 
+  const templateImagePendingRefs = {
+    hero: pendingHeroRef,
+    bride: pendingBridePhotoRef,
+    groom: pendingGroomPhotoRef,
+    'college-logo': pendingCollegeLogoRef,
+    'template-logo': pendingTemplateLogoRef,
+    'template-photo': pendingTemplatePhotoRef,
+    'template-extra': pendingTemplateExtraRef,
+  };
+  const templateImageInputRefs = {
+    hero: heroInputRef,
+    bride: bridePhotoInputRef,
+    groom: groomPhotoInputRef,
+    'college-logo': collegeLogoInputRef,
+    'template-logo': templateLogoInputRef,
+    'template-photo': templatePhotoInputRef,
+    'template-extra': templateExtraInputRef,
+  };
+
   const handleTemplateImageUpload = async (kind, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const field =
-      kind === 'hero'
-        ? 'heroBackgroundImage'
-        : kind === 'bride'
-          ? 'bridePhoto'
-          : kind === 'college-logo'
-            ? 'collegeLogo'
-            : 'groomPhoto';
-    const pendingRef =
-      kind === 'hero'
-        ? pendingHeroRef
-        : kind === 'bride'
-          ? pendingBridePhotoRef
-          : kind === 'college-logo'
-            ? pendingCollegeLogoRef
-            : pendingGroomPhotoRef;
-    const inputRef =
-      kind === 'hero'
-        ? heroInputRef
-        : kind === 'bride'
-          ? bridePhotoInputRef
-          : kind === 'college-logo'
-            ? collegeLogoInputRef
-            : groomPhotoInputRef;
+    const field = TEMPLATE_IMAGE_KIND_FIELDS[kind];
+    if (!field) return;
+    const pendingRef = templateImagePendingRefs[kind];
+    const inputRef = templateImageInputRefs[kind];
 
     if (!isEdit) {
       pendingRef.current = file;
@@ -704,7 +736,7 @@ export default function EventForm() {
       setError(err.message);
     } finally {
       setUploadingTemplateImg(false);
-      if (inputRef.current) inputRef.current.value = '';
+      if (inputRef?.current) inputRef.current.value = '';
     }
   };
 
@@ -858,7 +890,7 @@ export default function EventForm() {
       endTime: endIso,
       brideName: form.brideName?.trim() || '',
       groomName: form.groomName?.trim() || '',
-      pageTemplate: normalizePageTemplate(form.pageTemplate),
+      pageTemplate: normalizeEventPageTemplate(form.pageTemplate),
       chatEnabled: form.chatEnabled,
       collegeName: form.collegeName?.trim() || '',
       academicYear: form.academicYear?.trim() || '',
@@ -871,6 +903,13 @@ export default function EventForm() {
       principalName: form.principalName?.trim() || '',
       collegeAddress: form.collegeAddress?.trim() || '',
     };
+
+    if (isExtendedPageTemplate(form.pageTemplate)) {
+      payload.pageTemplateData = normalizePageTemplateData(
+        form.pageTemplate,
+        form.pageTemplateData
+      );
+    }
 
     if (form.isOnline) {
       payload.streamingProvider = streamingProvider;
@@ -993,6 +1032,9 @@ export default function EventForm() {
     const pendingBride = pendingBridePhotoRef.current;
     const pendingGroom = pendingGroomPhotoRef.current;
     const pendingCollegeLogo = pendingCollegeLogoRef.current;
+    const pendingTemplateLogo = pendingTemplateLogoRef.current;
+    const pendingTemplatePhoto = pendingTemplatePhotoRef.current;
+    const pendingTemplateExtra = pendingTemplateExtraRef.current;
     pendingCoverRef.current = null;
     pendingThumbRef.current = null;
     pendingLogoRef.current = null;
@@ -1000,6 +1042,9 @@ export default function EventForm() {
     pendingBridePhotoRef.current = null;
     pendingGroomPhotoRef.current = null;
     pendingCollegeLogoRef.current = null;
+    pendingTemplateLogoRef.current = null;
+    pendingTemplatePhotoRef.current = null;
+    pendingTemplateExtraRef.current = null;
 
     let saved = null;
     try {
@@ -1030,6 +1075,15 @@ export default function EventForm() {
         if (pendingGroom) uploads.push(eventService.uploadTemplateImage(saved.id, 'groom', pendingGroom));
         if (pendingCollegeLogo) {
           uploads.push(eventService.uploadTemplateImage(saved.id, 'college-logo', pendingCollegeLogo));
+        }
+        if (pendingTemplateLogo) {
+          uploads.push(eventService.uploadTemplateImage(saved.id, 'template-logo', pendingTemplateLogo));
+        }
+        if (pendingTemplatePhoto) {
+          uploads.push(eventService.uploadTemplateImage(saved.id, 'template-photo', pendingTemplatePhoto));
+        }
+        if (pendingTemplateExtra) {
+          uploads.push(eventService.uploadTemplateImage(saved.id, 'template-extra', pendingTemplateExtra));
         }
         if (uploads.length) {
           const results = await Promise.all(uploads);
@@ -1096,6 +1150,10 @@ export default function EventForm() {
 
   if (loading) return <p className="py-20 text-center text-slate-500">Loading…</p>;
 
+  const isCollegeTemplate = isCollegeAnnualDayTemplate(form.pageTemplate);
+  const isExtendedTemplate = isExtendedPageTemplate(form.pageTemplate);
+  const showTemplateDescription = isEdit || isCollegeTemplate || isExtendedTemplate;
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:py-10">
       <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
@@ -1156,17 +1214,19 @@ export default function EventForm() {
               } />
           </Field>
 
-          {(isEdit || isCollegeAnnualDayTemplate(form.pageTemplate)) && (
+          {(showTemplateDescription) && (
             <Field
-              label={isCollegeAnnualDayTemplate(form.pageTemplate) ? 'Event Description' : 'Description'}
+              label={isCollegeTemplate || isExtendedTemplate ? 'Event Description' : 'Description'}
               htmlFor="description"
             >
               <textarea id="description" name="description" rows={5}
                 className="input" value={form.description} onChange={handleChange}
                 placeholder={
-                  isCollegeAnnualDayTemplate(form.pageTemplate)
+                  isCollegeTemplate
                     ? 'Welcome note, programme highlights, or event description'
-                    : undefined
+                    : isExtendedTemplate
+                      ? 'Welcome note or event description shown on the public page'
+                      : undefined
                 } />
             </Field>
           )}
@@ -1218,6 +1278,11 @@ export default function EventForm() {
               <option value={COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION.id}>
                 {COLLEGE_ANNUAL_DAY_TEMPLATE_OPTION.label}
               </option>
+              {EXTENDED_PAGE_TEMPLATE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
               {WEDDING_TEMPLATE_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.label}
@@ -1225,6 +1290,16 @@ export default function EventForm() {
               ))}
             </select>
           </Field>
+
+          <EventTemplateFields
+            templateId={form.pageTemplate}
+            form={form}
+            setForm={setForm}
+            uploading={uploadingTemplateImg}
+            isEdit={isEdit}
+            imageRefs={templateImageInputRefs}
+            onTemplateImage={handleTemplateImageUpload}
+          />
 
           {isCollegeAnnualDayTemplate(form.pageTemplate) && (
             <div className="mt-4 space-y-4 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
@@ -1474,7 +1549,7 @@ export default function EventForm() {
         {/* ── Professional theme ─────────────────────────────── */}
         <Section
           title="Choose a theme"
-          subtitle="10 premium layout themes — optional; pick one for a custom live page design. Ignored when Classic Wedding or College Annual Day is selected."
+          subtitle="10 premium layout themes — optional; pick one for a custom live page design. Ignored when Classic Wedding, College Annual Day, or another event template is selected."
         >
           <ThemeGallery
             themes={allThemes}
@@ -1488,7 +1563,7 @@ export default function EventForm() {
         </Section>
 
         {/* ── Couple ─────────────────────────────────────────── */}
-        {!isCollegeAnnualDayTemplate(form.pageTemplate) && (
+        {!isCollegeTemplate && !isExtendedTemplate && (
         <Section title="The couple" subtitle="Shown on the live watch page.">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Bride's name" htmlFor="brideName">
